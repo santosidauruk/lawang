@@ -216,7 +216,7 @@ schema, events, API documentation, and tests.
 | Provider Submission | Asynchronous request sent to the provider. |
 | Verification Verdict | Provider outcome: verified or rejected with a bounded reason. |
 | Webhook Event | Signed provider callback, deduplicated by provider event ID. |
-| Session Event | Append-only normalized audit event for a session. |
+| Session Event | Append-only normalized audit event whose bounded type names the action applied to a session. |
 | Expired Session | Terminal session that exceeded its applicable deadline. |
 
 Never use `Artifact` alone when the intended meaning is accepted evidence. Distinguish
@@ -260,7 +260,43 @@ Biometric-before-document is intentionally not supported in this plan because th
 public state contract encodes document then biometric. Changing that order requires
 an explicit domain and API revision.
 
-### 4.2 Aggregate invariants
+### 4.2 Session Event action verbs
+
+Session Event types are action-based. The database constraint, generated query
+surface, Go domain type/constants, tests, audit output, and documentation use exactly:
+
+```text
+submit_personal_details
+confirm_identity_document
+confirm_biometric_capture
+submit_session
+verification_passed
+verification_failed
+expire
+```
+
+Do not reuse result/state strings as event types. Session state describes the result
+of a transition; the Session Event type describes the action applied. The canonical
+successful mapping is:
+
+| Session Event type | Resulting public state |
+| --- | --- |
+| `submit_personal_details` | `personal_details_submitted` |
+| `confirm_identity_document` | `identity_document_uploaded` |
+| `confirm_biometric_capture` | `biometric_capture_uploaded` |
+| `submit_session` | `verification_pending` |
+| `verification_passed` | `verified` |
+| `verification_failed` | `rejected` |
+| `expire` | `expired` |
+
+The same `confirm_identity_document` type records a completed confirmation that ends
+in a bounded Local Validation Failure without a state transition. Its safe metadata
+distinguishes the bounded outcome, for example `accepted` from
+`local_validation_failed`; do not add a result-named event type. Idempotent replay
+does not append another event. Valid ignored provider callbacks remain Webhook Events
+and do not create a Session Event.
+
+### 4.3 Aggregate invariants
 
 - Resume tokens are random opaque credentials. Store only their cryptographic hash.
 - A session has one immutable Personal Details record.
@@ -274,6 +310,8 @@ an explicit domain and API revision.
 - A session requires accepted Identity Document and Biometric Capture Verification
   Verification Artifacts before Provider Submission.
 - Every state transition and its Session Event commit atomically.
+- The database and Go domain layer admit only the seven Session Event action verbs in
+  section 4.2; arbitrary strings are invalid.
 - External network or object-storage I/O never occurs while a database transaction is
   open.
 - Terminal states never transition.
@@ -661,7 +699,10 @@ copy the old Drizzle migration history or point Goose at the old database.
 
 - append-only event ID, session foreign key, bounded event type, safe JSON metadata,
   occurred timestamp.
-- event names describe outcomes (`personal_details_submitted`) rather than HTTP actions.
+- event type is constrained to the seven action verbs in section 4.2; use the same
+  exact strings in SQL and typed Go constants rather than public state/result names.
+- safe bounded metadata may describe an action outcome when no state transition occurs,
+  such as Identity Document local validation failure.
 - never include raw identity number, address, resume token, object URL, or OCR body.
 
 #### `upload_intents`
@@ -754,10 +795,10 @@ Confirmation ordering:
 7. Start a short DB transaction.
 8. Re-read the session and intent and repeat guards.
 9. On local mismatch: mark `validation_failed`, persist bounded failure reason, append
-   a safe Session Event, and commit. Do not create a Verification Artifact or advance
-   the session.
+   a safe `confirm_identity_document` Session Event with bounded failure metadata,
+   and commit. Do not create a Verification Artifact or advance the session.
 10. On success: mark confirmed, create one Verification Artifact, advance session,
-    append one event, and commit.
+    append `confirm_identity_document`, and commit.
 
 If the transactional re-read detects that state changed while storage/extraction ran,
 discard the external result and return the applicable conflict/idempotent outcome.
@@ -807,8 +848,8 @@ Submission follows this sequence:
 
 1. Authorize session and prove both required Verification Artifacts exist.
 2. In one PostgreSQL transaction, guard current state, transition to
-   `verification_pending`, set `verification_deadline_at`, append Session Event, and
-   insert an outbox row.
+   `verification_pending`, set `verification_deadline_at`, append `submit_session`,
+   and insert an outbox row.
 3. Commit and return `202`.
 4. The relay reads unpublished outbox rows and enqueues an Asynq task using the outbox
    UUID as stable `TaskID`.
@@ -867,7 +908,8 @@ suspected_fraud
 6. On failure, return `401`; do not parse, trust, log, or store the payload.
 7. On success, decode and validate the event.
 8. In one transaction, insert/deduplicate the provider event, guard the session state,
-   apply a valid verdict, append Session Event, and mark the callback applied.
+   apply a valid verdict, append `verification_passed` or `verification_failed`, and
+   mark the callback applied.
 
 A duplicate provider event ID returns `200` with no mutation. A valid but late or
 out-of-order event is stored as `ignored` with a bounded reason and returns `200`.
@@ -883,7 +925,7 @@ Use both expiry paths with one shared, guarded application operation:
 
 Applicant-stage expiry uses `expires_at`. Pending-provider expiry uses
 `verification_deadline_at`. The transition is idempotent and appends exactly one
-`session_expired` event. Valid callbacks received after expiry are stored as ignored.
+`expire` event. Valid callbacks received after expiry are stored as ignored.
 
 Provide `cmd/audit --session-id <uuid>` for authorized local/operational inspection.
 It prints session state and redacted event history. Do not expose an audit HTTP route
@@ -1067,6 +1109,8 @@ Acceptance:
 Deliver:
 
 - Session Event migration and named sqlc queries;
+- a database constraint and typed Go constants for exactly the seven action verbs in
+  section 4.2;
 - application-owned transaction port/adapter;
 - SQL proof of atomic state-plus-event write and rollback;
 - safe event metadata policy.
@@ -1118,6 +1162,7 @@ Deliver:
 - Personal Details migration/queries;
 - hybrid HTTP validation;
 - atomic insert + state transition + event;
+- `submit_personal_details` as the event type for the successful first submission;
 - identical and conflicting replay logic;
 - no PII duplicated into events.
 
@@ -1140,6 +1185,8 @@ Phase A:
 - superseding, TTL, `HeadObject`, file constraints;
 - Verification Artifact schema;
 - atomic confirm behavior.
+- `confirm_identity_document` for both accepted and bounded local-validation outcomes,
+  with the outcome distinguished only by safe metadata;
 
 Phase B:
 
@@ -1165,6 +1212,7 @@ Deliver:
 - no document extraction;
 - accepted Biometric Verification Artifact;
 - transition to `biometric_capture_uploaded`;
+- `confirm_biometric_capture` as the successful confirmation event type;
 - guard proving both required Verification Artifacts are present before submission.
 
 Acceptance:
@@ -1185,6 +1233,8 @@ Deliver:
 - Redis/Asynq adapter and worker process;
 - outbox schema, relay, stable task and idempotency IDs;
 - submit route returning `202` after DB commit;
+- `submit_session`, `verification_passed`, and `verification_failed` for submission
+  and applied provider-verdict Session Events;
 - fake provider service and scenario endpoint;
 - signed webhook verification, deduplication, applied/ignored processing;
 - verified/rejected transitions and bounded reasons;
@@ -1208,6 +1258,7 @@ cases.
 Deliver:
 
 - lazy and scheduled expiry;
+- `expire` as the sole expiry Session Event type;
 - orphan cleanup task and manual command;
 - redacted audit CLI;
 - `/health/live` and `/health/ready`;

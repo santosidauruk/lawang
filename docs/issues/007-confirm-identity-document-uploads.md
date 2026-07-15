@@ -47,8 +47,8 @@ replace a concept-bearing mistake; ask the user to revise it.
   without host rewriting.
 - Confirm trusts `HeadObject`, not request metadata: JPEG/PNG/PDF, non-zero, <= 10 MiB.
 - A confirmed intent creates at most one Verification Artifact.
-- Local mismatch records a bounded failure/event, creates no artifact, and does not
-  advance state.
+- Local mismatch records `confirm_identity_document` with bounded failure metadata,
+  creates no artifact, and does not advance state.
 - Confirmed and validation-failed replay returns the recorded outcome without another
   S3/extractor call or event.
 - External I/O results are discarded when the transactional re-read detects stale
@@ -67,8 +67,10 @@ replace a concept-bearing mistake; ask the user to revise it.
 - [ ] Deterministic extraction proves success and at least
       `identity_number_mismatch` without storing raw extraction output.
 - [ ] Successful confirm creates exactly one accepted Verification Artifact, advances
-      to `identity_document_uploaded`, and appends one safe event atomically.
+      to `identity_document_uploaded`, and appends one safe
+      `confirm_identity_document` event atomically.
 - [ ] Mismatch returns exact `422 LOCAL_VALIDATION_FAILED`, records bounded failure,
+      appends one safe `confirm_identity_document` event with bounded outcome metadata,
       creates no artifact, and leaves session state unchanged.
 - [ ] Confirmed/failed replay and concurrent confirms are idempotent and do not repeat
       external work or database effects.
@@ -136,4 +138,3 @@ all replay/race test output, and safe error examples. Add
 - [006 - Submit immutable Personal Details](./006-submit-immutable-personal-details.md)
 - Green Issue 001-006 compatibility report and current quality gate.
 - Required user-authored checkpoint described above.
-

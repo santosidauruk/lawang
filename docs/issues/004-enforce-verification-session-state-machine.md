@@ -31,6 +31,8 @@ forbidden, and terminal attempts leave no partial writes.
   pending provider, then verified/rejected.
 - `expired` is allowed only from an overdue non-terminal state.
 - `verified`, `rejected`, and `expired` never transition.
+- Transition code maps successful target states to the action-based Session Event
+  types fixed in `CONTEXT.md`; it never uses the target state string as the event type.
 - A DB update includes the expected prior state so concurrent/stale transitions lose
   safely rather than overwriting newer state.
 
@@ -46,6 +48,8 @@ forbidden, and terminal attempts leave no partial writes.
 - [ ] A PostgreSQL concurrency proof shows two competing transitions cannot both win.
 - [ ] The application transition commits exactly one safe Session Event on success
       and none on stale, forbidden, or terminal failure.
+- [ ] Tests assert the exact action-verb-to-resulting-state mapping and reject using
+      public state strings as Session Event types.
 - [ ] Existing Issue 002 HTTP behavior remains unchanged.
 
 ## API examples
@@ -81,4 +85,3 @@ rules, expected-state updates, terminal safety, and clock-controlled expiry.
 ## Blocked by
 
 - [003 - Append Session Events atomically](./003-append-session-events-atomically.md)
-

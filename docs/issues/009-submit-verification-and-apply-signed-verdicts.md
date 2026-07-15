@@ -41,7 +41,9 @@ comparison risks before implementing the relay and sibling callback cases.
 ## Reliability and security invariants
 
 - Submit requires both accepted artifacts and atomically commits pending state,
-  deadline, event, and outbox before returning `202`.
+  deadline, `submit_session` event, and outbox before returning `202`.
+- An applied successful verdict appends `verification_passed`; an applied rejected
+  verdict appends `verification_failed`.
 - Redis/provider failure after commit cannot lose durable work.
 - Outbox UUID is stable Asynq TaskID; session UUID is stable provider
   `Idempotency-Key`.
@@ -56,8 +58,8 @@ comparison risks before implementing the relay and sibling callback cases.
 
 - [ ] User-authored outbox proof and HMAC test pass critical review.
 - [ ] `POST /verification-sessions/{id}/submit` requires both accepted artifacts,
-      commits state/event/outbox atomically, and returns `202` without waiting for
-      Redis/provider.
+      commits pending state, `submit_session`, and outbox atomically, and returns
+      `202` without waiting for Redis/provider.
 - [ ] Exact replay while already pending is idempotent; its status and response body
       are frozen by a contract test before implementation.
 - [ ] Relay supports concurrent workers, stable TaskID, duplicate enqueue, retry, and
@@ -70,7 +72,8 @@ comparison risks before implementing the relay and sibling callback cases.
 - [ ] Webhook accepts lowercase/uppercase hex signatures, rejects malformed/invalid
       signatures before decoding, and never logs/stores invalid bodies.
 - [ ] Valid callback atomically deduplicates event, guards state, applies verified or
-      rejected verdict, appends one Session Event, and marks the event applied.
+      rejected verdict, appends exactly one `verification_passed` or
+      `verification_failed` Session Event, and marks the event applied.
 - [ ] Duplicate and late callbacks return `200` with no repeated transition/event.
 - [ ] Full successful and rejected API-worker-provider E2E flows pass using disposable
       PostgreSQL, MinIO, and Redis.
@@ -130,4 +133,3 @@ relay crash/retry output, stable IDs, and both E2E scenarios. Add
 
 - [008 - Confirm Biometric Capture uploads](./008-confirm-biometric-capture-uploads.md)
 - Required user-authored checkpoints described above.
-

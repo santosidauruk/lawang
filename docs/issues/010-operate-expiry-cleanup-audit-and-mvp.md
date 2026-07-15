@@ -37,7 +37,7 @@ then completes repetitive endpoint/schema documentation and sibling cases.
 - Applicant-stage expiry uses `expires_at`; pending-provider expiry uses
   `verification_deadline_at`.
 - Lazy and scheduled expiry call the same guarded use case and converge on one
-  `expired` state plus one `session_expired` event.
+  `expired` state plus one `expire` event.
 - Valid callbacks after expiry are recorded as bounded ignored events.
 - Cleanup selects only objects for superseded, expired, or validation-failed intents
   older than 24 hours and never objects backing confirmed intents/artifacts.
@@ -48,7 +48,8 @@ then completes repetitive endpoint/schema documentation and sibling cases.
 
 - [ ] User-authored expiry race test or cleanup proof receives critical review.
 - [ ] Lazy applicant operations and scheduled Asynq sweep use the same idempotent
-      expiry operation and produce one outcome/event under a race.
+      expiry operation and produce one `expired` state plus one `expire` event under
+      a race.
 - [ ] Pending-provider sessions use their separate deadline; late signed callbacks
       are stored as ignored and do not leave `expired`.
 - [ ] Scheduled and manual cleanup invoke the same use case, apply the 24-hour grace
@@ -136,4 +137,3 @@ cleanup safety, readiness, audit minimization, and remaining production limitati
 
 - [009 - Submit verification and apply signed verdicts](./009-submit-verification-and-apply-signed-verdicts.md)
 - Required user-authored checkpoint and OpenAPI review described above.
-

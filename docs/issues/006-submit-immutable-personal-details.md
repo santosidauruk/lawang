@@ -34,6 +34,8 @@ validation, and one atomic insert/state/event transaction.
 - Different replay returns `409 Conflict` without mutation.
 - Insert, transition to `personal_details_submitted`, and one safe Session Event commit
   atomically.
+- The first accepted submission appends `submit_personal_details`; identical replay
+  appends no event.
 - Concurrent different submissions cannot both succeed.
 
 ## Acceptance criteria
@@ -45,7 +47,7 @@ validation, and one atomic insert/state/event transaction.
 - [ ] `POST /verification-sessions/{id}/personal-details` requires a valid resume
       token and returns the current session summary on success.
 - [ ] First valid submission writes details, guarded state transition, and exactly one
-      Session Event in one transaction.
+      `submit_personal_details` Session Event in one transaction.
 - [ ] Identical replay returns `200` and performs no write/event; different replay
       returns the exact legacy `409` envelope.
 - [ ] Wrong state, terminal state, wrong token, malformed JSON, unknown fields,
@@ -109,4 +111,3 @@ idempotent replay, conflicts, and atomic state/event writes.
 - Read-only access to the old TypeScript Issue 006 behavioral tests. The sibling
   `../lawang` repository exists in the current environment, but its exact role/path
   must be revalidated at implementation time.
-

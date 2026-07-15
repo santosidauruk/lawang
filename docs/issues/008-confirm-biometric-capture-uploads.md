@@ -39,7 +39,8 @@ handlers alone are insufficient evidence.
 - A Biometric Upload Intent creates at most one accepted Biometric Verification
   Artifact.
 - Successful confirm advances from `identity_document_uploaded` to
-  `biometric_capture_uploaded` and appends one event atomically.
+  `biometric_capture_uploaded` and appends one `confirm_biometric_capture` event
+  atomically.
 - Submission readiness requires both accepted Verification Artifact rows.
 
 ## Acceptance criteria
@@ -50,7 +51,8 @@ handlers alone are insufficient evidence.
 - [ ] Confirm uses real `HeadObject` metadata and enforces JPEG/PNG, non-zero, and
       5 MiB maximum without invoking the document extractor.
 - [ ] Successful confirm creates one artifact, advances state, and appends one event
-      atomically; replay/concurrency creates no duplicates.
+      of type `confirm_biometric_capture` atomically; replay/concurrency creates no
+      duplicates.
 - [ ] Wrong kind, PDF biometric, oversized/empty object, wrong state, superseded or
       expired intent, and stale transactional re-read return bounded errors.
 - [ ] A guarded readiness query/use case returns ready only when both accepted
@@ -97,4 +99,3 @@ tests, and identity regression output. Add
 
 - [007 - Confirm Identity Document uploads](./007-confirm-identity-document-uploads.md)
 - Required user-authored checkpoint described above.
-

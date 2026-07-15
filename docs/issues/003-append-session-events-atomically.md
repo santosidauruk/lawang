@@ -26,7 +26,12 @@ neither.
 
 ## Domain and data invariants
 
-- `session_events` is append-only and uses outcome-oriented bounded event names.
+- `session_events` is append-only and uses exactly these action-based event types:
+  `submit_personal_details`, `confirm_identity_document`,
+  `confirm_biometric_capture`, `submit_session`, `verification_passed`,
+  `verification_failed`, and `expire`.
+- Public state/result strings such as `personal_details_submitted`, `verified`, and
+  `expired` are not Session Event types.
 - A state transition and its Session Event commit in one PostgreSQL transaction.
 - The application use case owns transaction boundaries; the adapter supplies the
   mechanism.
@@ -36,6 +41,9 @@ neither.
 
 - [ ] A forward migration creates `session_events` with session FK, bounded event
       type, safe JSON metadata, and `timestamptz` occurrence time.
+- [ ] The database rejects every event type outside the exact seven-verb list, and
+      the Go domain exposes the same strings as a typed event type/constants rather
+      than accepting arbitrary strings.
 - [ ] Named sqlc queries append and read ordered Session Events.
 - [ ] An application-consumed transaction port and PostgreSQL implementation support
       a focused state-plus-event use case without leaking adapter types.
@@ -60,6 +68,9 @@ Provide independently runnable `psql` proofs for:
 3. event ordering is deterministic by occurrence time plus stable event ID;
 4. deleting or mutating events is not part of any application query surface.
 
+The proof must exercise an allowed action verb and show an unknown verb plus a public
+state/result string are rejected by the database constraint.
+
 ## Tests
 
 - Application transaction tests with a small failure-injection fake.
@@ -82,4 +93,3 @@ rollback, append-only audit data, and safe metadata.
 ## Blocked by
 
 - [002 - Create and resume a Verification Session](./002-create-and-resume-verification-session.md)
-

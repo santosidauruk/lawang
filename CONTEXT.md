@@ -64,7 +64,7 @@ The system has one bounded context: **Verification**.
 | Provider Submission | Asynchronous request sent to the provider. |
 | Verification Verdict | Provider outcome: verified or rejected with a bounded reason. |
 | Webhook Event | Signed provider callback deduplicated by provider event ID. |
-| Session Event | Append-only normalized audit event for a Verification Session. |
+| Session Event | Append-only normalized audit event whose bounded type names the action applied to a Verification Session. |
 | Expired Session | Terminal Verification Session that exceeded its applicable deadline. |
 | Implementation evidence | Test, SQL proof, or command output retained for project handoff; never call this a Verification Artifact. |
 
@@ -101,6 +101,40 @@ created
 `verified`, `rejected`, and `expired` are terminal. Biometric-before-document is not
 supported by this contract.
 
+## Session Event Action Verbs
+
+Session Event types are action-based and use exactly these database and Go strings:
+
+```text
+submit_personal_details
+confirm_identity_document
+confirm_biometric_capture
+submit_session
+verification_passed
+verification_failed
+expire
+```
+
+Do not derive Session Event types from public state names. Public states describe the
+resulting aggregate state; Session Event types describe the action that was applied.
+The canonical successful transition mapping is:
+
+| Session Event type | Resulting public state |
+| --- | --- |
+| `submit_personal_details` | `personal_details_submitted` |
+| `confirm_identity_document` | `identity_document_uploaded` |
+| `confirm_biometric_capture` | `biometric_capture_uploaded` |
+| `submit_session` | `verification_pending` |
+| `verification_passed` | `verified` |
+| `verification_failed` | `rejected` |
+| `expire` | `expired` |
+
+`confirm_identity_document` is also recorded when the confirmation action completes
+with a bounded Local Validation Failure and the session state does not advance. Put
+the safe bounded outcome in event metadata; do not create another result-based event
+type. Idempotent replays and ignored provider callbacks do not append another Session
+Event.
+
 ## Aggregate Invariants
 
 - Resume tokens are high-entropy opaque credentials. Store only deterministic
@@ -116,6 +150,8 @@ supported by this contract.
 - Provider submission requires accepted Identity Document and Biometric Capture
   Verification Artifacts.
 - Every state transition and Session Event commit atomically.
+- The database constraint and Go event type/constants admit exactly the seven Session
+  Event action verbs above; neither layer accepts arbitrary strings.
 - External network and object-storage I/O never runs inside a database transaction.
 - After external I/O, a short transaction re-reads and guards relevant state before
   committing.
