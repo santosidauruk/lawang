@@ -52,6 +52,16 @@ func TestVerificationSessionMigrationAndSQLProof(t *testing.T) {
 	if migrationOutput == "" {
 		t.Fatal("migration produced no psql output")
 	}
+	resumeMigrationOutput := runPSQLFile(
+		t,
+		ctx,
+		container,
+		"../../sql/migrations/00002_add_resume_token_authentication.sql",
+		"/tmp/00002_add_resume_token_authentication.sql",
+	)
+	if resumeMigrationOutput == "" {
+		t.Fatal("resume-token migration produced no psql output")
+	}
 	exerciseOutput := runPSQLFile(
 		t,
 		ctx,
@@ -69,7 +79,8 @@ func TestVerificationSessionMigrationAndSQLProof(t *testing.T) {
 	var createdAt time.Time
 	var updatedAt time.Time
 	err = database.QueryRow(ctx, `
-		INSERT INTO verification_sessions DEFAULT VALUES
+		INSERT INTO verification_sessions (resume_token_hash, expires_at)
+		VALUES (sha256(convert_to('integration-proof-token', 'UTF8')), now() + interval '30 minutes')
 		RETURNING id::text, status, created_at, updated_at
 	`).Scan(&id, &status, &createdAt, &updatedAt)
 	if err != nil {
@@ -85,7 +96,14 @@ func TestVerificationSessionMigrationAndSQLProof(t *testing.T) {
 		t.Errorf("database-generated timestamps must be non-zero: created=%s updated=%s", createdAt, updatedAt)
 	}
 
-	_, err = database.Exec(ctx, "INSERT INTO verification_sessions (status) VALUES ('unknown_public_state')")
+	_, err = database.Exec(ctx, `
+		INSERT INTO verification_sessions (status, resume_token_hash, expires_at)
+		VALUES (
+			'unknown_public_state',
+			sha256(convert_to('invalid-integration-status-token', 'UTF8')),
+			now() + interval '30 minutes'
+		)
+	`)
 	var postgresError *pgconn.PgError
 	if !errors.As(err, &postgresError) || postgresError.Code != "23514" {
 		t.Fatalf("unknown state error = %v, want PostgreSQL check violation 23514", err)
@@ -99,6 +117,14 @@ func TestVerificationSessionMigrationAndSQLProof(t *testing.T) {
 		"/tmp/verification_session_proof.sql",
 	)
 	t.Logf("SQL proof output:\n%s", proofOutput)
+	resumeProofOutput := runPSQLFile(
+		t,
+		ctx,
+		container,
+		"../../sql/proofs/002_resume_token_authentication.sql",
+		"/tmp/002_resume_token_authentication.sql",
+	)
+	t.Logf("resume-token SQL proof output:\n%s", resumeProofOutput)
 }
 
 func runPSQLFile(

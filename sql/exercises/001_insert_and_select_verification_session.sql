@@ -2,7 +2,8 @@
 
 BEGIN;
 
-INSERT INTO verification_sessions DEFAULT VALUES
+INSERT INTO verification_sessions (resume_token_hash, expires_at)
+VALUES (sha256(convert_to('sql-exercise-nonsecret-token', 'UTF8')), now() + interval '30 minutes')
 RETURNING id, status, created_at, updated_at;
 
 SELECT id, status, created_at, updated_at

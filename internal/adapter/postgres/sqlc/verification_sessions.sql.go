@@ -7,19 +7,102 @@ package sqlc
 
 import (
 	"context"
+	"time"
+
+	"github.com/google/uuid"
 )
 
-const insertVerificationSession = `-- name: InsertVerificationSession :one
-INSERT INTO verification_sessions DEFAULT VALUES
-RETURNING id, status, created_at, updated_at
+const createVerificationSession = `-- name: CreateVerificationSession :one
+INSERT INTO verification_sessions (resume_token_hash, expires_at)
+VALUES ($1, $2)
+RETURNING id, status, resume_token_hash, expires_at, created_at, updated_at
 `
 
-func (q *Queries) InsertVerificationSession(ctx context.Context) (VerificationSession, error) {
-	row := q.db.QueryRow(ctx, insertVerificationSession)
-	var i VerificationSession
+type CreateVerificationSessionParams struct {
+	ResumeTokenHash []byte    `json:"resume_token_hash"`
+	ExpiresAt       time.Time `json:"expires_at"`
+}
+
+type CreateVerificationSessionRow struct {
+	ID              uuid.UUID `json:"id"`
+	Status          string    `json:"status"`
+	ResumeTokenHash []byte    `json:"resume_token_hash"`
+	ExpiresAt       time.Time `json:"expires_at"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
+}
+
+func (q *Queries) CreateVerificationSession(ctx context.Context, arg CreateVerificationSessionParams) (CreateVerificationSessionRow, error) {
+	row := q.db.QueryRow(ctx, createVerificationSession, arg.ResumeTokenHash, arg.ExpiresAt)
+	var i CreateVerificationSessionRow
 	err := row.Scan(
 		&i.ID,
 		&i.Status,
+		&i.ResumeTokenHash,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getAuthorizedVerificationSession = `-- name: GetAuthorizedVerificationSession :one
+SELECT id, status, resume_token_hash, expires_at, created_at, updated_at
+FROM verification_sessions
+WHERE id = $1 AND resume_token_hash = $2
+`
+
+type GetAuthorizedVerificationSessionParams struct {
+	ID              uuid.UUID `json:"id"`
+	ResumeTokenHash []byte    `json:"resume_token_hash"`
+}
+
+type GetAuthorizedVerificationSessionRow struct {
+	ID              uuid.UUID `json:"id"`
+	Status          string    `json:"status"`
+	ResumeTokenHash []byte    `json:"resume_token_hash"`
+	ExpiresAt       time.Time `json:"expires_at"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
+}
+
+func (q *Queries) GetAuthorizedVerificationSession(ctx context.Context, arg GetAuthorizedVerificationSessionParams) (GetAuthorizedVerificationSessionRow, error) {
+	row := q.db.QueryRow(ctx, getAuthorizedVerificationSession, arg.ID, arg.ResumeTokenHash)
+	var i GetAuthorizedVerificationSessionRow
+	err := row.Scan(
+		&i.ID,
+		&i.Status,
+		&i.ResumeTokenHash,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getVerificationSessionByID = `-- name: GetVerificationSessionByID :one
+SELECT id, status, resume_token_hash, expires_at, created_at, updated_at
+FROM verification_sessions
+WHERE id = $1
+`
+
+type GetVerificationSessionByIDRow struct {
+	ID              uuid.UUID `json:"id"`
+	Status          string    `json:"status"`
+	ResumeTokenHash []byte    `json:"resume_token_hash"`
+	ExpiresAt       time.Time `json:"expires_at"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
+}
+
+func (q *Queries) GetVerificationSessionByID(ctx context.Context, id uuid.UUID) (GetVerificationSessionByIDRow, error) {
+	row := q.db.QueryRow(ctx, getVerificationSessionByID, id)
+	var i GetVerificationSessionByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.Status,
+		&i.ResumeTokenHash,
+		&i.ExpiresAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

@@ -11,8 +11,10 @@ import (
 )
 
 type VerificationSession struct {
-	ID        uuid.UUID `json:"id"`
-	Status    string    `json:"status"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID              uuid.UUID `json:"id"`
+	Status          string    `json:"status"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
+	ResumeTokenHash []byte    `json:"resume_token_hash"`
+	ExpiresAt       time.Time `json:"expires_at"`
 }

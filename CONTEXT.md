@@ -139,6 +139,9 @@ Event.
 
 - Resume tokens are high-entropy opaque credentials. Store only deterministic
   cryptographic hashes and return the raw token once.
+- An applicant-facing session expires 30 minutes after creation. The application
+  clock decides both creation expiry and resume eligibility; `now >= expires_at` is
+  expired.
 - Personal Details is immutable and one-to-one with a Verification Session.
 - Identical Personal Details replay succeeds without another write or event;
   different replay returns a conflict.
@@ -178,6 +181,10 @@ URLs, webhook bodies, stack traces, or SDK/database errors.
 Applicant routes use a resume token in `Authorization: Bearer <token>`. The Bearer
 scheme is case-insensitive; the credential must be exactly one non-whitespace value.
 The provider webhook uses HMAC-SHA256 and does not use the resume token.
+
+Issue 002 freezes `401 MISSING_AUTHORIZATION`, `401 MALFORMED_AUTHORIZATION`, and
+`401 INVALID_RESUME_TOKEN`. Legacy compatibility distinguishes an unknown UUID as
+`404 SESSION_NOT_FOUND`; expiry added by the Go contract is `410 SESSION_EXPIRED`.
 
 ## Architecture and Dependency Rules
 

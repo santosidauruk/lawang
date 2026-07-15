@@ -1,8 +1,8 @@
 # Create and Resume a Verification Session
 
-Status: needs-triage  
+Status: done
 Type: AFK  
-Labels: needs-triage  
+Labels: done
 Source: `docs/plan-go.md` sections 4, 5.1-5.2, 7, 8, 14, and 16 Issue 2
 
 ## User stories covered
@@ -35,18 +35,18 @@ authorized `GET /verification-sessions/{id}` returns the current public summary.
 
 ## Acceptance criteria
 
-- [ ] `POST /verification-sessions` returns `201` with `id`, `created`, RFC3339
+- [x] `POST /verification-sessions` returns `201` with `id`, `created`, RFC3339
       `expiresAt`, and a raw `resumeToken`.
-- [ ] PostgreSQL remains the source of the session UUID and persisted default state.
-- [ ] Only a resume-token hash is persisted; the raw token is absent from DB, events,
+- [x] PostgreSQL remains the source of the session UUID and persisted default state.
+- [x] Only a resume-token hash is persisted; the raw token is absent from DB, events,
       response logs, and error logs.
-- [ ] `GET /verification-sessions/{id}` requires a valid Bearer token and returns
+- [x] `GET /verification-sessions/{id}` requires a valid Bearer token and returns
       `200` without the raw token.
-- [ ] Missing, empty, multipart, whitespace-containing, malformed-scheme, wrong-token,
+- [x] Missing, empty, multipart, whitespace-containing, malformed-scheme, wrong-token,
       unknown-session, and expired-session cases have frozen public responses.
-- [ ] Authorization cannot distinguish a session ID from a wrong token in a way that
+- [x] Authorization cannot distinguish a session ID from a wrong token in a way that
       leaks sensitive existence unless the legacy contract explicitly requires it.
-- [ ] Fixed-clock application tests and real PostgreSQL/HTTP integration tests pass.
+- [x] Fixed-clock application tests and real PostgreSQL/HTTP integration tests pass.
 
 ## API examples
 
@@ -109,7 +109,10 @@ Retain request/response examples, a redacted DB proof, auth edge-case test outpu
 the integration command. Add `docs/learning/002-resume-token-authentication.md`
 explaining one-time token return, hashing, Bearer parsing, and fixed-clock expiry.
 
+Completed in `docs/learning/002-resume-token-authentication.md`. The disposable
+PostgreSQL proof reports a 32-byte stored hash without printing token material; the
+focused application, HTTP contract, SQL, and real PostgreSQL/HTTP tests pass.
+
 ## Blocked by
 
 - [001 - Scaffold an isolated runnable Go SQL lab](./001-scaffold-isolated-runnable-go-sql-lab.md)
-

@@ -5,8 +5,9 @@ Lawang Verification bounded context. This repository does not share migrations,
 dependencies, generated files, or a database with the TypeScript project.
 
 The current executable slice provides typed startup configuration, JSON logging,
-graceful HTTP shutdown, `GET /health/live`, an isolated PostgreSQL development
-service, the first forward-only migration, a raw SQL exercise/proof, and sqlc output.
+graceful HTTP shutdown, `GET /health/live`, creation and authenticated resume of a
+Verification Session, isolated PostgreSQL development, forward-only migrations,
+raw SQL exercises/proofs, and sqlc output.
 
 ## Requirements
 
@@ -77,6 +78,19 @@ Expected body:
 ```json
 {"status":"ok"}
 ```
+
+Create a Verification Session, retain the one-time `resumeToken`, then resume it:
+
+```sh
+curl -i -X POST http://localhost:8080/verification-sessions
+curl -i \
+  -H 'Authorization: Bearer <resumeToken>' \
+  http://localhost:8080/verification-sessions/<id>
+```
+
+The database stores only a unique 32-byte SHA-256 token hash. A session expires 30
+minutes after creation; use the returned RFC3339 `expiresAt` rather than client-side
+assumptions.
 
 Stop the process with `Ctrl-C`; SIGINT and SIGTERM trigger bounded graceful shutdown.
 
