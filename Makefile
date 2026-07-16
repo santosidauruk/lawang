@@ -13,7 +13,7 @@ include .env
 export
 endif
 
-.PHONY: tools deps-up deps-down migrate sql proof run fmt fmt-check vet staticcheck test sqlc-generate sqlc-diff migration-validate compose-validate quality
+.PHONY: tools deps-up deps-down migrate sql proof proof-events run fmt fmt-check vet staticcheck test sqlc-generate sqlc-diff migration-validate compose-validate quality
 
 tools:
 	GOBIN=$(TOOLS_DIR) $(GO) install github.com/sqlc-dev/sqlc/cmd/sqlc@$(SQLC_VERSION)
@@ -34,6 +34,9 @@ sql:
 
 proof:
 	psql "$(DATABASE_URL)" -f sql/proofs/001_verification_session_defaults.sql
+
+proof-events:
+	psql "$(DATABASE_URL)" -f sql/proofs/003_atomic_session_events.sql
 
 run:
 	$(GO) run ./cmd/api

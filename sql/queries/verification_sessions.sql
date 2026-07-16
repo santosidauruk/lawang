@@ -12,3 +12,8 @@ WHERE id = $1;
 SELECT id, status, resume_token_hash, expires_at, created_at, updated_at
 FROM verification_sessions
 WHERE id = $1 AND resume_token_hash = $2;
+
+-- name: MarkVerificationSessionPersonalDetailsSubmitted :execrows
+UPDATE verification_sessions
+SET status = 'personal_details_submitted', updated_at = $2
+WHERE id = $1 AND status = 'created';

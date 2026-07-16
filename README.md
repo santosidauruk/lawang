@@ -6,8 +6,8 @@ dependencies, generated files, or a database with the TypeScript project.
 
 The current executable slice provides typed startup configuration, JSON logging,
 graceful HTTP shutdown, `GET /health/live`, creation and authenticated resume of a
-Verification Session, isolated PostgreSQL development, forward-only migrations,
-raw SQL exercises/proofs, and sqlc output.
+Verification Session, atomic append-only Session Events, isolated PostgreSQL
+development, forward-only migrations, raw SQL exercises/proofs, and sqlc output.
 
 ## Requirements
 
@@ -59,7 +59,14 @@ timestamps, and the bounded status constraint:
 make proof
 ```
 
-Both commands run committed SQL directly through `psql`.
+Against a disposable migrated database, run the atomic state-plus-event commit,
+rollback, ordering, bounded payload, and append-only proof:
+
+```sh
+make proof-events
+```
+
+These commands run committed SQL directly through `psql`.
 
 ## Run the API
 

@@ -12,7 +12,10 @@ const applicantSessionTTL = 30 * time.Minute
 
 type Status string
 
-const StatusCreated Status = "created"
+const (
+	StatusCreated                  Status = "created"
+	StatusPersonalDetailsSubmitted Status = "personal_details_submitted"
+)
 
 type VerificationSession struct {
 	ID              uuid.UUID

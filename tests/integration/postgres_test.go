@@ -11,6 +11,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	postgresadapter "github.com/santosidauruk/lawang-go/internal/adapter/postgres"
+	"github.com/santosidauruk/lawang-go/internal/application/session"
+	"github.com/santosidauruk/lawang-go/internal/domain/sessionevent"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 )
@@ -61,6 +64,16 @@ func TestVerificationSessionMigrationAndSQLProof(t *testing.T) {
 	)
 	if resumeMigrationOutput == "" {
 		t.Fatal("resume-token migration produced no psql output")
+	}
+	eventMigrationOutput := runPSQLFile(
+		t,
+		ctx,
+		container,
+		"../../sql/migrations/00003_create_session_events.sql",
+		"/tmp/00003_create_session_events.sql",
+	)
+	if eventMigrationOutput == "" {
+		t.Fatal("Session Event migration produced no psql output")
 	}
 	exerciseOutput := runPSQLFile(
 		t,
@@ -125,6 +138,248 @@ func TestVerificationSessionMigrationAndSQLProof(t *testing.T) {
 		"/tmp/002_resume_token_authentication.sql",
 	)
 	t.Logf("resume-token SQL proof output:\n%s", resumeProofOutput)
+	eventProofOutput := runPSQLFile(
+		t,
+		ctx,
+		container,
+		"../../sql/proofs/003_atomic_session_events.sql",
+		"/tmp/003_atomic_session_events.sql",
+	)
+	t.Logf("atomic Session Event SQL proof output:\n%s", eventProofOutput)
+}
+
+func TestSessionEventMigrationAdmitsExactlyTheSevenActionVerbs(t *testing.T) {
+	ctx, database := openSessionEventDatabase(t)
+
+	var sessionID uuid.UUID
+	err := database.QueryRow(ctx, `
+		INSERT INTO verification_sessions (resume_token_hash, expires_at)
+		VALUES (sha256(convert_to('event-type-proof-token', 'UTF8')), now() + interval '30 minutes')
+		RETURNING id
+	`).Scan(&sessionID)
+	if err != nil {
+		t.Fatalf("insert Verification Session: %v", err)
+	}
+
+	allowed := []string{
+		"submit_personal_details",
+		"confirm_identity_document",
+		"confirm_biometric_capture",
+		"submit_session",
+		"verification_passed",
+		"verification_failed",
+		"expire",
+	}
+	for _, eventType := range allowed {
+		if _, err := database.Exec(ctx, `
+			INSERT INTO session_events (session_id, event_type)
+			VALUES ($1, $2)
+		`, sessionID, eventType); err != nil {
+			t.Errorf("insert allowed event type %q: %v", eventType, err)
+		}
+	}
+
+	for _, eventType := range []string{"unknown", "personal_details_submitted", "verified", "expired"} {
+		_, err := database.Exec(ctx, `
+			INSERT INTO session_events (session_id, event_type)
+			VALUES ($1, $2)
+		`, sessionID, eventType)
+		var postgresError *pgconn.PgError
+		if !errors.As(err, &postgresError) || postgresError.Code != "23514" {
+			t.Errorf("insert rejected event type %q error = %v, want check violation 23514", eventType, err)
+		}
+	}
+}
+
+func TestSessionEventMigrationRejectsUnboundedOrSensitiveMetadata(t *testing.T) {
+	ctx, database := openSessionEventDatabase(t)
+
+	var sessionID uuid.UUID
+	err := database.QueryRow(ctx, `
+		INSERT INTO verification_sessions (resume_token_hash, expires_at)
+		VALUES (sha256(convert_to('metadata-proof-token', 'UTF8')), now() + interval '30 minutes')
+		RETURNING id
+	`).Scan(&sessionID)
+	if err != nil {
+		t.Fatalf("insert Verification Session: %v", err)
+	}
+
+	for _, metadata := range []string{
+		`{"personal_details":{"name":"Applicant"}}`,
+		`{"resume_token":"secret"}`,
+		`{"object_url":"https://storage.invalid/private"}`,
+		`{"identity_number":"123"}`,
+		`{"address":"private"}`,
+		`{"raw_extraction":{"identity_number":"123"}}`,
+		`{"provider_body":{"result":"raw"}}`,
+	} {
+		_, err := database.Exec(ctx, `
+			INSERT INTO session_events (session_id, event_type, metadata)
+			VALUES ($1, 'confirm_identity_document', $2::jsonb)
+		`, sessionID, metadata)
+		var postgresError *pgconn.PgError
+		if !errors.As(err, &postgresError) || postgresError.Code != "23514" {
+			t.Errorf("insert metadata %s error = %v, want check violation 23514", metadata, err)
+		}
+	}
+
+	for _, metadata := range []string{
+		`{}`,
+		`{"outcome":"accepted"}`,
+		`{"outcome":"local_validation_failed"}`,
+	} {
+		if _, err := database.Exec(ctx, `
+			INSERT INTO session_events (session_id, event_type, metadata)
+			VALUES ($1, 'confirm_identity_document', $2::jsonb)
+		`, sessionID, metadata); err != nil {
+			t.Errorf("insert safe metadata %s: %v", metadata, err)
+		}
+	}
+}
+
+func TestSessionEventsCannotBeUpdatedOrDeleted(t *testing.T) {
+	ctx, database := openSessionEventDatabase(t)
+
+	var eventID uuid.UUID
+	err := database.QueryRow(ctx, `
+		WITH inserted_session AS (
+			INSERT INTO verification_sessions (resume_token_hash, expires_at)
+			VALUES (sha256(convert_to('append-only-proof-token', 'UTF8')), now() + interval '30 minutes')
+			RETURNING id
+		)
+		INSERT INTO session_events (session_id, event_type)
+		SELECT id, 'submit_personal_details' FROM inserted_session
+		RETURNING id
+	`).Scan(&eventID)
+	if err != nil {
+		t.Fatalf("insert Session Event: %v", err)
+	}
+
+	for name, statement := range map[string]string{
+		"update": `UPDATE session_events SET metadata = '{"outcome":"accepted"}' WHERE id = $1`,
+		"delete": `DELETE FROM session_events WHERE id = $1`,
+	} {
+		_, err := database.Exec(ctx, statement, eventID)
+		var postgresError *pgconn.PgError
+		if !errors.As(err, &postgresError) || postgresError.Code != "55000" {
+			t.Errorf("%s Session Event error = %v, want object-not-in-prerequisite-state 55000", name, err)
+		}
+	}
+}
+
+func TestPostgresEventTransactionCommitsOneStateChangeAndOneOrderedEvent(t *testing.T) {
+	ctx, database := openSessionEventDatabase(t)
+
+	now := time.Date(2026, 7, 15, 10, 0, 0, 0, time.UTC)
+	sessions := postgresadapter.NewSessionStore(database)
+	created, err := sessions.Create(ctx, session.CreateParams{
+		ResumeTokenHash: []byte("12345678901234567890123456789012"),
+		ExpiresAt:       now.Add(30 * time.Minute),
+	})
+	if err != nil {
+		t.Fatalf("create Verification Session: %v", err)
+	}
+	transactions := postgresadapter.NewEventTransactions(database)
+	service := session.NewEventService(transactions, integrationClock{now: now})
+
+	if err := service.RecordPersonalDetailsSubmission(ctx, created.ID); err != nil {
+		t.Fatalf("RecordPersonalDetailsSubmission() error = %v", err)
+	}
+
+	updated, err := sessions.FindByID(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("read updated Verification Session: %v", err)
+	}
+	if updated.Status != session.StatusPersonalDetailsSubmitted {
+		t.Errorf("status = %q, want %q", updated.Status, session.StatusPersonalDetailsSubmitted)
+	}
+	events, err := transactions.ListEvents(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("ListEvents() error = %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("events = %d, want exactly 1", len(events))
+	}
+	if events[0].Type != sessionevent.SubmitPersonalDetails || !events[0].OccurredAt.Equal(now) {
+		t.Errorf("event = %#v, want submit_personal_details at fixed time", events[0])
+	}
+}
+
+func TestPostgresEventTransactionRollsBackStateWhenOperationFails(t *testing.T) {
+	ctx, database := openSessionEventDatabase(t)
+
+	now := time.Date(2026, 7, 15, 10, 0, 0, 0, time.UTC)
+	sessions := postgresadapter.NewSessionStore(database)
+	created, err := sessions.Create(ctx, session.CreateParams{
+		ResumeTokenHash: []byte("abcdefghijklmnopqrstuvwxyz123456"),
+		ExpiresAt:       now.Add(30 * time.Minute),
+	})
+	if err != nil {
+		t.Fatalf("create Verification Session: %v", err)
+	}
+	transactions := postgresadapter.NewEventTransactions(database)
+	forcedFailure := errors.New("forced failure after guarded update")
+
+	err = transactions.WithinTransaction(ctx, func(tx session.EventTransaction) error {
+		if err := tx.MarkPersonalDetailsSubmitted(ctx, created.ID, now); err != nil {
+			return err
+		}
+		return forcedFailure
+	})
+	if !errors.Is(err, forcedFailure) {
+		t.Fatalf("WithinTransaction() error = %v, want forced failure", err)
+	}
+
+	unchanged, err := sessions.FindByID(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("read Verification Session after rollback: %v", err)
+	}
+	if unchanged.Status != session.StatusCreated {
+		t.Errorf("status after rollback = %q, want %q", unchanged.Status, session.StatusCreated)
+	}
+	events, err := transactions.ListEvents(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("ListEvents() after rollback error = %v", err)
+	}
+	if len(events) != 0 {
+		t.Errorf("events after rollback = %d, want 0", len(events))
+	}
+}
+
+func openSessionEventDatabase(t *testing.T) (context.Context, *pgx.Conn) {
+	t.Helper()
+	ctx := context.Background()
+	container, err := postgres.Run(
+		ctx,
+		postgresImage,
+		postgres.WithDatabase("lawang_test"),
+		postgres.WithUsername("lawang"),
+		postgres.WithPassword("lawang"),
+		postgres.BasicWaitStrategies(),
+	)
+	if err != nil {
+		t.Fatalf("start disposable PostgreSQL: %v", err)
+	}
+	testcontainers.CleanupContainer(t, container)
+
+	for _, migration := range []struct{ host, container string }{
+		{"../../sql/migrations/00001_create_verification_sessions.sql", "/tmp/00001.sql"},
+		{"../../sql/migrations/00002_add_resume_token_authentication.sql", "/tmp/00002.sql"},
+		{"../../sql/migrations/00003_create_session_events.sql", "/tmp/00003.sql"},
+	} {
+		runPSQLFile(t, ctx, container, migration.host, migration.container)
+	}
+
+	databaseURL, err := container.ConnectionString(ctx, "sslmode=disable")
+	if err != nil {
+		t.Fatalf("PostgreSQL connection string: %v", err)
+	}
+	database, err := pgx.Connect(ctx, databaseURL)
+	if err != nil {
+		t.Fatalf("connect PostgreSQL: %v", err)
+	}
+	t.Cleanup(func() { _ = database.Close(context.Background()) })
+	return ctx, database
 }
 
 func runPSQLFile(

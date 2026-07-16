@@ -10,6 +10,14 @@ import (
 	"github.com/google/uuid"
 )
 
+type SessionEvent struct {
+	ID         uuid.UUID `json:"id"`
+	SessionID  uuid.UUID `json:"session_id"`
+	EventType  string    `json:"event_type"`
+	Metadata   []byte    `json:"metadata"`
+	OccurredAt time.Time `json:"occurred_at"`
+}
+
 type VerificationSession struct {
 	ID              uuid.UUID `json:"id"`
 	Status          string    `json:"status"`

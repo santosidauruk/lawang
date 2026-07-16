@@ -1,8 +1,8 @@
 # Append Session Events Atomically
 
-Status: needs-triage  
+Status: done  
 Type: AFK  
-Labels: needs-triage  
+Labels: done  
 Source: `docs/plan-go.md` sections 4, 6.4, 8, 14, and 16 Issue 3
 
 ## User stories covered
@@ -39,20 +39,20 @@ neither.
 
 ## Acceptance criteria
 
-- [ ] A forward migration creates `session_events` with session FK, bounded event
+- [x] A forward migration creates `session_events` with session FK, bounded event
       type, safe JSON metadata, and `timestamptz` occurrence time.
-- [ ] The database rejects every event type outside the exact seven-verb list, and
+- [x] The database rejects every event type outside the exact seven-verb list, and
       the Go domain exposes the same strings as a typed event type/constants rather
       than accepting arbitrary strings.
-- [ ] Named sqlc queries append and read ordered Session Events.
-- [ ] An application-consumed transaction port and PostgreSQL implementation support
+- [x] Named sqlc queries append and read ordered Session Events.
+- [x] An application-consumed transaction port and PostgreSQL implementation support
       a focused state-plus-event use case without leaking adapter types.
-- [ ] A forced failure after the guarded update proves both update and event roll back.
-- [ ] The success path commits exactly one update and exactly one event.
-- [ ] Event payload policy and tests reject or structurally prevent Personal Details,
+- [x] A forced failure after the guarded update proves both update and event roll back.
+- [x] The success path commits exactly one update and exactly one event.
+- [x] Event payload policy and tests reject or structurally prevent Personal Details,
       tokens, object URLs, identity numbers, addresses, and raw extraction/provider
       bodies.
-- [ ] Package dependency checks show adapters -> application -> domain.
+- [x] Package dependency checks show adapters -> application -> domain.
 
 ## API examples
 
@@ -89,6 +89,12 @@ Retain SQL proof output, transaction failure test output, dependency evidence, a
 the unchanged session API snapshot. Add
 `docs/learning/003-atomic-session-events.md` explaining transaction ownership,
 rollback, append-only audit data, and safe metadata.
+
+Completed in `docs/learning/003-atomic-session-events.md`. The disposable PostgreSQL
+proof reports atomic commit and rollback, deterministic event ordering, exact verb
+and safe-metadata constraints, and append-only mutation rejection. Application,
+adapter, architecture, generated-query, and unchanged create/resume HTTP regression
+tests pass through the repository quality gate.
 
 ## Blocked by
 

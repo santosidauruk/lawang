@@ -34,6 +34,7 @@ func TestApplicantCreatesAndResumesSessionOverHTTPWithPostgreSQL(t *testing.T) {
 	for _, migration := range []struct{ host, container string }{
 		{"../../sql/migrations/00001_create_verification_sessions.sql", "/tmp/00001.sql"},
 		{"../../sql/migrations/00002_add_resume_token_authentication.sql", "/tmp/00002.sql"},
+		{"../../sql/migrations/00003_create_session_events.sql", "/tmp/00003.sql"},
 	} {
 		runPSQLFile(t, ctx, container, migration.host, migration.container)
 	}

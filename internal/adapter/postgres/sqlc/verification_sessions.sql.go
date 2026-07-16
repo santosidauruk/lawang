@@ -108,3 +108,22 @@ func (q *Queries) GetVerificationSessionByID(ctx context.Context, id uuid.UUID) 
 	)
 	return i, err
 }
+
+const markVerificationSessionPersonalDetailsSubmitted = `-- name: MarkVerificationSessionPersonalDetailsSubmitted :execrows
+UPDATE verification_sessions
+SET status = 'personal_details_submitted', updated_at = $2
+WHERE id = $1 AND status = 'created'
+`
+
+type MarkVerificationSessionPersonalDetailsSubmittedParams struct {
+	ID        uuid.UUID `json:"id"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+func (q *Queries) MarkVerificationSessionPersonalDetailsSubmitted(ctx context.Context, arg MarkVerificationSessionPersonalDetailsSubmittedParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markVerificationSessionPersonalDetailsSubmitted, arg.ID, arg.UpdatedAt)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
