@@ -4,12 +4,6 @@ import "regexp"
 
 var bearerPattern = regexp.MustCompile(`(?i)^Bearer[ \t]+(\S+)$`)
 
-type APIError struct {
-	Code    string         `json:"code"`
-	Message string         `json:"message"`
-	Details map[string]any `json:"details,omitempty"`
-}
-
 func ParseBearer(authorization string) (string, *APIError) {
 	if authorization == "" {
 		return "", &APIError{

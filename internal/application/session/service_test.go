@@ -127,6 +127,20 @@ func TestResumeRejectsExpiredSessionUsingInjectedClock(t *testing.T) {
 	}
 }
 
+func TestCreatePropagatesCancellationToStorage(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	store := cancelAwareStore{}
+	issuer := stubTokenIssuer{raw: "raw-resume-token", hash: []byte("token-hash")}
+	service := session.NewService(store, &issuer, fixedClock{})
+
+	_, err := service.Create(ctx)
+
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Create() error = %v, want context cancellation from storage", err)
+	}
+}
+
 type recordingStore struct {
 	createParams session.CreateParams
 	created      session.VerificationSession
@@ -161,3 +175,13 @@ func (i *stubTokenIssuer) Equal(_, _ []byte) bool { return i.equal }
 type fixedClock struct{ now time.Time }
 
 func (c fixedClock) Now() time.Time { return c.now }
+
+type cancelAwareStore struct{}
+
+func (cancelAwareStore) Create(ctx context.Context, _ session.CreateParams) (session.VerificationSession, error) {
+	return session.VerificationSession{}, ctx.Err()
+}
+
+func (cancelAwareStore) FindByID(ctx context.Context, _ uuid.UUID) (session.VerificationSession, error) {
+	return session.VerificationSession{}, ctx.Err()
+}

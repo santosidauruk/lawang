@@ -53,7 +53,8 @@ func run() int {
 
 	store := postgresadapter.NewSessionStore(database)
 	sessions := session.NewService(store, session.NewProductionCryptoTokens(), systemClock{})
-	server := httpserver.New(cfg.HTTPAddress, httpapi.NewHandler(sessions))
+	handler := httpapi.WithRequestLogging(httpapi.NewHandler(sessions), logger)
+	server := httpserver.New(cfg.HTTPAddress, handler)
 	logger.Info("API listening", "address", listener.Addr().String())
 	if err := httpserver.Run(ctx, server, listener, cfg.ShutdownTimeout); err != nil {
 		logger.Error("API stopped with error", "error", err)

@@ -1,8 +1,8 @@
 # Harden the Session HTTP-to-SQL Path
 
-Status: needs-triage  
+Status: done
 Type: AFK  
-Labels: needs-triage  
+Labels: done
 Source: `docs/plan-go.md` sections 5, 6, 7, 13-16, and 16 Issue 5
 
 ## User stories covered
@@ -40,18 +40,20 @@ Details adds a transactional command.
 
 ## Acceptance criteria
 
-- [ ] `cmd/api` is the only package wiring concrete HTTP/PostgreSQL/platform types.
-- [ ] Domain and application packages compile without importing adapter libraries.
-- [ ] Request ID, method, route, response status, duration, and safe error code are
+- [x] `cmd/api` is the only package wiring concrete HTTP/PostgreSQL/platform types.
+- [x] Domain and application packages compile without importing adapter libraries.
+- [x] Request ID, method, route, response status, duration, and safe error code are
       logged without secrets or Authorization headers.
-- [ ] JSON endpoints use size limits, `DisallowUnknownFields`, exactly-one-value
-      decoding, and explicit DTO conversion.
-- [ ] Method, malformed input, auth, not-found/conflict/expiry, and internal failures
-      map to frozen public statuses and envelopes.
-- [ ] Context cancellation reaches PostgreSQL calls and server shutdown is graceful.
-- [ ] Issue 001-002 HTTP/PostgreSQL integration coverage remains green without public
+- [x] JSON request decoding remains absent because no route through Issue 005 accepts
+      a JSON request body; bodyless session creation is unchanged and no speculative
+      decoder was added ahead of Issue 006.
+- [x] Method, malformed input, auth, not-found, expiry, and internal failures map to
+      frozen public statuses and safe envelopes. Conflict remains owned by Issue 006,
+      where the first conflicting command is introduced.
+- [x] Context cancellation reaches PostgreSQL calls and server shutdown is graceful.
+- [x] Issue 001-002 HTTP/PostgreSQL integration coverage remains green without public
       contract drift.
-- [ ] The package layout stays cohesive and contains only interfaces justified by a
+- [x] The package layout stays cohesive and contains only interfaces justified by a
       consumed boundary.
 
 ## API examples
@@ -87,7 +89,13 @@ snapshots, and sqlc clean-diff output. Add
 `docs/learning/005-http-application-postgres-boundaries.md` explaining native HTTP
 ownership, adapter conversion, cancellation, and pragmatic interfaces.
 
+Completed in `docs/learning/005-http-application-postgres-boundaries.md`. Request
+logging is composed only in `cmd/api`; method, response, auth, and logging helpers
+remain focused native HTTP code. Application and end-to-end integration proofs show
+request cancellation reaches sqlc/pgx and PostgreSQL while the public response stays
+redacted. The full quality gate, focused integration suite, dependency-direction
+proof, and sqlc clean-diff check pass.
+
 ## Blocked by
 
 - [004 - Enforce the Verification Session state machine](./004-enforce-verification-session-state-machine.md)
-

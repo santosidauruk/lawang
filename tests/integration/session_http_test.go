@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/santosidauruk/lawang-go/internal/adapter/httpapi"
 	postgresadapter "github.com/santosidauruk/lawang-go/internal/adapter/postgres"
@@ -98,6 +99,34 @@ func TestApplicantCreatesAndResumesSessionOverHTTPWithPostgreSQL(t *testing.T) {
 	}
 	if _, exists := resumed["resumeToken"]; exists {
 		t.Fatal("GET response exposed the raw resume token")
+	}
+}
+
+func TestCancelledHTTPRequestReachesPostgreSQLAndReturnsSafeError(t *testing.T) {
+	_, database := openSessionEventDatabase(t)
+	store := postgresadapter.NewSessionStore(database)
+	service := session.NewService(store, session.NewProductionCryptoTokens(), integrationClock{})
+	id := uuid.New()
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	request := httptest.NewRequest(http.MethodGet, "/verification-sessions/"+id.String(), nil).WithContext(cancelled)
+	request.Header.Set("Authorization", "Bearer opaque-token")
+	response := httptest.NewRecorder()
+
+	httpapi.NewHandler(service).ServeHTTP(response, request)
+
+	if response.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d; body=%s", response.Code, http.StatusInternalServerError, response.Body.String())
+	}
+	var body struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode error body: %v", err)
+	}
+	if body.Code != "INTERNAL" || body.Message != "internal server error" {
+		t.Errorf("error body = %#v, want safe INTERNAL envelope", body)
 	}
 }
 

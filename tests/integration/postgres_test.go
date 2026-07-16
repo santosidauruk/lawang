@@ -429,6 +429,19 @@ func TestPostgresExpectedStateGuardAllowsOnlyOneCompetingTransition(t *testing.T
 	}
 }
 
+func TestSessionStorePreservesPostgresContextCancellation(t *testing.T) {
+	_, database := openSessionEventDatabase(t)
+	store := postgresadapter.NewSessionStore(database)
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := store.FindByID(cancelled, uuid.New())
+
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("FindByID() error = %v, want context.Canceled", err)
+	}
+}
+
 func openSessionEventDatabase(t *testing.T) (context.Context, *pgx.Conn) {
 	t.Helper()
 	ctx := context.Background()

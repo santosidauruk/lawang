@@ -1,10 +1,14 @@
 package httpapi_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -41,6 +45,53 @@ func TestLiveHealthRejectsUnsupportedMethod(t *testing.T) {
 	}
 	if got, want := response.Header().Get("Allow"), "GET, HEAD"; got != want {
 		t.Errorf("Allow = %q, want %q", got, want)
+	}
+	var body struct {
+		Code string `json:"code"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode error body: %v", err)
+	}
+	if got, want := body.Code, "METHOD_NOT_ALLOWED"; got != want {
+		t.Errorf("error code = %q, want %q", got, want)
+	}
+}
+
+func TestSessionRoutesRejectUnsupportedMethods(t *testing.T) {
+	id := uuid.MustParse("4dbfda8d-f69e-453f-a1c4-2dba229fc73b")
+	tests := []struct {
+		name      string
+		method    string
+		path      string
+		wantAllow string
+	}{
+		{name: "create is POST only", method: http.MethodGet, path: "/verification-sessions", wantAllow: http.MethodPost},
+		{name: "resume is GET only", method: http.MethodPost, path: "/verification-sessions/" + id.String(), wantAllow: "GET, HEAD"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			request := httptest.NewRequest(test.method, test.path, nil)
+			response := httptest.NewRecorder()
+
+			httpapi.NewHandler(&stubSessionService{}).ServeHTTP(response, request)
+
+			if response.Code != http.StatusMethodNotAllowed {
+				t.Fatalf("status = %d, want %d", response.Code, http.StatusMethodNotAllowed)
+			}
+			if got := response.Header().Get("Allow"); got != test.wantAllow {
+				t.Errorf("Allow = %q, want %q", got, test.wantAllow)
+			}
+			var body struct {
+				Code string `json:"code"`
+			}
+			if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+				t.Fatalf("decode error body: %v", err)
+			}
+			if body.Code != "METHOD_NOT_ALLOWED" {
+				t.Errorf("error code = %q, want METHOD_NOT_ALLOWED", body.Code)
+			}
+		})
 	}
 }
 
@@ -159,8 +210,154 @@ func TestResumeVerificationSessionErrorContract(t *testing.T) {
 	}
 }
 
+func TestHTTPAdapterMapsMalformedAndInternalFailuresToSafeEnvelopes(t *testing.T) {
+	tests := []struct {
+		name       string
+		method     string
+		path       string
+		header     string
+		service    *stubSessionService
+		wantStatus int
+		wantCode   string
+	}{
+		{
+			name: "malformed session id", method: http.MethodGet, path: "/verification-sessions/not-a-uuid",
+			header: "Bearer opaque-token", service: &stubSessionService{},
+			wantStatus: http.StatusBadRequest, wantCode: "VALIDATION_ERROR",
+		},
+		{
+			name: "resume storage failure", method: http.MethodGet,
+			path:   "/verification-sessions/4dbfda8d-f69e-453f-a1c4-2dba229fc73b",
+			header: "Bearer opaque-token", service: &stubSessionService{resumeErr: errors.New("pgx secret failure")},
+			wantStatus: http.StatusInternalServerError, wantCode: "INTERNAL",
+		},
+		{
+			name: "create storage failure", method: http.MethodPost, path: "/verification-sessions",
+			service:    &stubSessionService{createErr: errors.New("pgx secret failure")},
+			wantStatus: http.StatusInternalServerError, wantCode: "INTERNAL",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			request := httptest.NewRequest(test.method, test.path, nil)
+			if test.header != "" {
+				request.Header.Set("Authorization", test.header)
+			}
+			response := httptest.NewRecorder()
+
+			httpapi.NewHandler(test.service).ServeHTTP(response, request)
+
+			if response.Code != test.wantStatus {
+				t.Fatalf("status = %d, want %d", response.Code, test.wantStatus)
+			}
+			var body struct {
+				Code string `json:"code"`
+			}
+			if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+				t.Fatalf("decode error body: %v", err)
+			}
+			if body.Code != test.wantCode {
+				t.Errorf("error code = %q, want %q", body.Code, test.wantCode)
+			}
+			if strings.Contains(response.Body.String(), "pgx secret failure") {
+				t.Fatalf("error body exposed storage failure: %s", response.Body.String())
+			}
+		})
+	}
+}
+
+func TestRequestLoggingRecordsSafeHTTPOutcomeWithoutCredentials(t *testing.T) {
+	const rawToken = "do-not-log-this-resume-token"
+	id := uuid.MustParse("4dbfda8d-f69e-453f-a1c4-2dba229fc73b")
+	service := &stubSessionService{resumeErr: errors.New("database password must stay private")}
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logs, nil))
+	handler := httpapi.WithRequestLogging(httpapi.NewHandler(service), logger)
+	request := httptest.NewRequest(http.MethodGet, "/verification-sessions/"+id.String(), nil)
+	request.Header.Set("Authorization", "Bearer "+rawToken)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	requestID := response.Header().Get("X-Request-ID")
+	if requestID == "" {
+		t.Fatal("X-Request-ID is empty")
+	}
+	var entry map[string]any
+	if err := json.Unmarshal(logs.Bytes(), &entry); err != nil {
+		t.Fatalf("decode request log: %v; output=%s", err, logs.String())
+	}
+	for key, want := range map[string]any{
+		"request_id": requestID,
+		"method":     http.MethodGet,
+		"route":      "/verification-sessions/{id}",
+		"status":     float64(http.StatusInternalServerError),
+		"error_code": "INTERNAL",
+	} {
+		if got := entry[key]; got != want {
+			t.Errorf("log[%q] = %#v, want %#v", key, got, want)
+		}
+	}
+	if _, ok := entry["duration_ms"].(float64); !ok {
+		t.Errorf("duration_ms = %#v, want number", entry["duration_ms"])
+	}
+	var errorBody struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &errorBody); err != nil {
+		t.Fatalf("decode error response: %v", err)
+	}
+	if errorBody.Code != "INTERNAL" || errorBody.Message != "internal server error" {
+		t.Errorf("error response = %#v, want safe INTERNAL envelope", errorBody)
+	}
+	if strings.Contains(logs.String(), rawToken) || strings.Contains(logs.String(), "Authorization") || strings.Contains(logs.String(), "database password") {
+		t.Fatalf("request log exposed credentials or internal error: %s", logs.String())
+	}
+}
+
+func TestRequestLoggingRecordsAuthenticationErrorCode(t *testing.T) {
+	id := uuid.MustParse("4dbfda8d-f69e-453f-a1c4-2dba229fc73b")
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logs, nil))
+	handler := httpapi.WithRequestLogging(httpapi.NewHandler(&stubSessionService{}), logger)
+	request := httptest.NewRequest(http.MethodGet, "/verification-sessions/"+id.String(), nil)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	var entry map[string]any
+	if err := json.Unmarshal(logs.Bytes(), &entry); err != nil {
+		t.Fatalf("decode request log: %v", err)
+	}
+	if got, want := entry["error_code"], "MISSING_AUTHORIZATION"; got != want {
+		t.Errorf("error_code = %#v, want %#v", got, want)
+	}
+}
+
+func TestResumePropagatesRequestCancellationToApplication(t *testing.T) {
+	id := uuid.MustParse("4dbfda8d-f69e-453f-a1c4-2dba229fc73b")
+	service := &contextSessionService{}
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	request := httptest.NewRequest(http.MethodGet, "/verification-sessions/"+id.String(), nil).WithContext(cancelled)
+	request.Header.Set("Authorization", "Bearer opaque-token")
+	response := httptest.NewRecorder()
+
+	httpapi.NewHandler(service).ServeHTTP(response, request)
+
+	if !errors.Is(service.resumeContextError, context.Canceled) {
+		t.Fatalf("Resume() context error = %v, want context.Canceled", service.resumeContextError)
+	}
+	if response.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusInternalServerError)
+	}
+}
+
 type stubSessionService struct {
 	created     session.CreatedSession
+	createErr   error
 	summary     session.Summary
 	resumeID    uuid.UUID
 	resumeToken string
@@ -168,11 +365,24 @@ type stubSessionService struct {
 }
 
 func (s *stubSessionService) Create(context.Context) (session.CreatedSession, error) {
-	return s.created, nil
+	return s.created, s.createErr
 }
 
 func (s *stubSessionService) Resume(_ context.Context, id uuid.UUID, token string) (session.Summary, error) {
 	s.resumeID = id
 	s.resumeToken = token
 	return s.summary, s.resumeErr
+}
+
+type contextSessionService struct {
+	resumeContextError error
+}
+
+func (service *contextSessionService) Create(ctx context.Context) (session.CreatedSession, error) {
+	return session.CreatedSession{}, ctx.Err()
+}
+
+func (service *contextSessionService) Resume(ctx context.Context, _ uuid.UUID, _ string) (session.Summary, error) {
+	service.resumeContextError = ctx.Err()
+	return session.Summary{}, ctx.Err()
 }

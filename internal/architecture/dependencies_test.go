@@ -58,6 +58,58 @@ func TestSessionEventApplicationQueriesAreAppendAndReadOnly(t *testing.T) {
 	}
 }
 
+func TestOnlyCommandPackagesComposeRuntimeComponents(t *testing.T) {
+	root := repositoryRoot(t)
+	compositionOnly := map[string]struct{}{
+		"github.com/jackc/pgx/v5/pgxpool":                                 {},
+		"github.com/santosidauruk/lawang-go/internal/adapter/httpapi":     {},
+		"github.com/santosidauruk/lawang-go/internal/adapter/postgres":    {},
+		"github.com/santosidauruk/lawang-go/internal/platform/config":     {},
+		"github.com/santosidauruk/lawang-go/internal/platform/httpserver": {},
+		"github.com/santosidauruk/lawang-go/internal/platform/logging":    {},
+	}
+
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			if entry.Name() == ".git" || entry.Name() == "bin" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if filepath.Ext(path) != ".go" || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		relative, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		if strings.HasPrefix(relative, "cmd"+string(filepath.Separator)) {
+			return nil
+		}
+
+		parsed, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
+		if err != nil {
+			return err
+		}
+		for _, imported := range parsed.Imports {
+			name, err := strconv.Unquote(imported.Path.Value)
+			if err != nil {
+				return err
+			}
+			if _, found := compositionOnly[name]; found {
+				t.Errorf("%s composes runtime-only dependency %q outside cmd", relative, name)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("inspect runtime composition imports: %v", err)
+	}
+}
+
 func forbiddenAdapterImport(name string) bool {
 	return strings.Contains(name, "github.com/jackc/pgx") ||
 		strings.Contains(name, "/internal/adapter/postgres/sqlc") ||

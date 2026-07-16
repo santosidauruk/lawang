@@ -2,8 +2,6 @@ package httpapi
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"net/http"
 	"time"
 
@@ -19,10 +17,10 @@ type SessionService interface {
 // NewHandler builds the public HTTP routing surface.
 func NewHandler(sessionService SessionService) http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /health/live", liveHealth)
+	mux.HandleFunc("/health/live", requireMethod(http.MethodGet, liveHealth))
 	if sessionService != nil {
-		mux.HandleFunc("POST /verification-sessions", createVerificationSession(sessionService))
-		mux.HandleFunc("GET /verification-sessions/{id}", resumeVerificationSession(sessionService))
+		mux.HandleFunc("/verification-sessions", requireMethod(http.MethodPost, createVerificationSession(sessionService)))
+		mux.HandleFunc("/verification-sessions/{id}", requireMethod(http.MethodGet, resumeVerificationSession(sessionService)))
 	}
 	return mux
 }
@@ -59,32 +57,6 @@ func resumeVerificationSession(service SessionService) http.HandlerFunc {
 	}
 }
 
-func writeSessionError(response http.ResponseWriter, id uuid.UUID, err error) {
-	var serviceError *session.Error
-	if !errors.As(err, &serviceError) {
-		writeJSON(response, http.StatusInternalServerError, APIError{Code: "INTERNAL", Message: "internal server error"})
-		return
-	}
-
-	details := map[string]any{"id": id.String()}
-	switch serviceError.Code {
-	case session.CodeSessionNotFound:
-		writeJSON(response, http.StatusNotFound, APIError{
-			Code: string(serviceError.Code), Message: "session " + id.String() + " not found", Details: details,
-		})
-	case session.CodeInvalidResumeToken:
-		writeJSON(response, http.StatusUnauthorized, APIError{
-			Code: string(serviceError.Code), Message: "invalid resume token", Details: details,
-		})
-	case session.CodeSessionExpired:
-		writeJSON(response, http.StatusGone, APIError{
-			Code: string(serviceError.Code), Message: "verification session expired", Details: details,
-		})
-	default:
-		writeJSON(response, http.StatusInternalServerError, APIError{Code: "INTERNAL", Message: "internal server error"})
-	}
-}
-
 func liveHealth(response http.ResponseWriter, _ *http.Request) {
 	response.Header().Set("Content-Type", "application/json")
 	response.WriteHeader(http.StatusOK)
@@ -110,10 +82,4 @@ func createVerificationSession(service SessionService) http.HandlerFunc {
 			ExpiresAt: created.ExpiresAt.UTC().Format(time.RFC3339), ResumeToken: created.ResumeToken,
 		})
 	}
-}
-
-func writeJSON(response http.ResponseWriter, status int, body any) {
-	response.Header().Set("Content-Type", "application/json")
-	response.WriteHeader(status)
-	_ = json.NewEncoder(response).Encode(body)
 }
