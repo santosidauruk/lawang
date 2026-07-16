@@ -11,6 +11,7 @@ import (
 	generated "github.com/santosidauruk/lawang-go/internal/adapter/postgres/sqlc"
 	"github.com/santosidauruk/lawang-go/internal/application/session"
 	"github.com/santosidauruk/lawang-go/internal/domain/sessionevent"
+	"github.com/santosidauruk/lawang-go/internal/domain/verificationsession"
 )
 
 type transactionBeginner interface {
@@ -72,22 +73,24 @@ type eventTransaction struct {
 	queries *generated.Queries
 }
 
-func (t *eventTransaction) MarkPersonalDetailsSubmitted(
+func (t *eventTransaction) UpdateState(
 	ctx context.Context,
 	id uuid.UUID,
+	expected verificationsession.State,
+	next verificationsession.State,
 	updatedAt time.Time,
 ) error {
-	rows, err := t.queries.MarkVerificationSessionPersonalDetailsSubmitted(
+	rows, err := t.queries.GuardVerificationSessionState(
 		ctx,
-		generated.MarkVerificationSessionPersonalDetailsSubmittedParams{
-			ID: id, UpdatedAt: updatedAt,
+		generated.GuardVerificationSessionStateParams{
+			ID: id, ExpectedState: expected.String(), NextState: next.String(), UpdatedAt: updatedAt,
 		},
 	)
 	if err != nil {
 		return err
 	}
 	if rows != 1 {
-		return session.ErrSessionTransitionRejected
+		return session.ErrSessionTransitionStale
 	}
 	return nil
 }

@@ -1,8 +1,8 @@
 # Enforce the Verification Session State Machine
 
-Status: needs-triage  
+**Status**: done  
 Type: AFK  
-Labels: needs-triage  
+Labels: done  
 Source: `docs/plan-go.md` sections 4.1-4.2, 6, 7.3, 8, 11, 14, and 16 Issue 4
 
 ## User stories covered
@@ -38,19 +38,19 @@ forbidden, and terminal attempts leave no partial writes.
 
 ## Acceptance criteria
 
-- [ ] Domain types model every public state without stringly typed transition logic.
-- [ ] Table-driven tests cover every allowed transition, representative forbidden
+- [x] Domain types model every public state without stringly typed transition logic.
+- [x] Table-driven tests cover every allowed transition, representative forbidden
       transitions, all terminal states, and expiry before/after the applicable
       deadline.
-- [ ] Domain tests run with no DB, filesystem, network, or real clock.
-- [ ] A named guarded-update query changes a row only from its expected state and
+- [x] Domain tests run with no DB, filesystem, network, or real clock.
+- [x] A named guarded-update query changes a row only from its expected state and
       surfaces stale/concurrent failure distinctly.
-- [ ] A PostgreSQL concurrency proof shows two competing transitions cannot both win.
-- [ ] The application transition commits exactly one safe Session Event on success
+- [x] A PostgreSQL concurrency proof shows two competing transitions cannot both win.
+- [x] The application transition commits exactly one safe Session Event on success
       and none on stale, forbidden, or terminal failure.
-- [ ] Tests assert the exact action-verb-to-resulting-state mapping and reject using
+- [x] Tests assert the exact action-verb-to-resulting-state mapping and reject using
       public state strings as Session Event types.
-- [ ] Existing Issue 002 HTTP behavior remains unchanged.
+- [x] Existing Issue 002 HTTP behavior remains unchanged.
 
 ## API examples
 
@@ -81,6 +81,13 @@ PostgreSQL concurrency proof. Do not use `time.Sleep` as the synchronization pro
 Retain the transition matrix, domain test output, concurrency proof, and unchanged API
 snapshot. Add `docs/learning/004-session-state-machine.md` explaining pure domain
 rules, expected-state updates, terminal safety, and clock-controlled expiry.
+
+Completed in `docs/learning/004-session-state-machine.md`. The pure domain suite
+covers the canonical matrix, all other forward state/action combinations, every
+terminal state, and the exact expiry boundary. The disposable PostgreSQL proof uses
+two connections and a channel barrier to demonstrate exactly one winner, one stale
+loser, and one committed Session Event. The existing create/resume HTTP regression
+suite remains unchanged.
 
 ## Blocked by
 

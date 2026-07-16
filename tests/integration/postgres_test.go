@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	postgresadapter "github.com/santosidauruk/lawang-go/internal/adapter/postgres"
 	"github.com/santosidauruk/lawang-go/internal/application/session"
 	"github.com/santosidauruk/lawang-go/internal/domain/sessionevent"
+	"github.com/santosidauruk/lawang-go/internal/domain/verificationsession"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 )
@@ -321,7 +323,13 @@ func TestPostgresEventTransactionRollsBackStateWhenOperationFails(t *testing.T) 
 	forcedFailure := errors.New("forced failure after guarded update")
 
 	err = transactions.WithinTransaction(ctx, func(tx session.EventTransaction) error {
-		if err := tx.MarkPersonalDetailsSubmitted(ctx, created.ID, now); err != nil {
+		if err := tx.UpdateState(
+			ctx,
+			created.ID,
+			verificationsession.Created,
+			verificationsession.PersonalDetailsSubmitted,
+			now,
+		); err != nil {
 			return err
 		}
 		return forcedFailure
@@ -343,6 +351,81 @@ func TestPostgresEventTransactionRollsBackStateWhenOperationFails(t *testing.T) 
 	}
 	if len(events) != 0 {
 		t.Errorf("events after rollback = %d, want 0", len(events))
+	}
+}
+
+func TestPostgresExpectedStateGuardAllowsOnlyOneCompetingTransition(t *testing.T) {
+	ctx, database := openSessionEventDatabase(t)
+	now := time.Date(2026, 7, 16, 10, 0, 0, 0, time.UTC)
+	sessions := postgresadapter.NewSessionStore(database)
+	created, err := sessions.Create(ctx, session.CreateParams{
+		ResumeTokenHash: []byte("12345678901234567890123456789012"),
+		ExpiresAt:       now.Add(30 * time.Minute),
+	})
+	if err != nil {
+		t.Fatalf("create Verification Session: %v", err)
+	}
+
+	databaseURL := database.Config().ConnString()
+	connections := make([]*pgx.Conn, 2)
+	for index := range connections {
+		connections[index], err = pgx.Connect(ctx, databaseURL)
+		if err != nil {
+			t.Fatalf("open competing connection %d: %v", index+1, err)
+		}
+		connection := connections[index]
+		t.Cleanup(func() { _ = connection.Close(context.Background()) })
+	}
+
+	start := make(chan struct{})
+	results := make(chan error, len(connections))
+	var ready sync.WaitGroup
+	ready.Add(len(connections))
+	for _, connection := range connections {
+		go func(connection *pgx.Conn) {
+			service := session.NewEventService(postgresadapter.NewEventTransactions(connection), integrationClock{now: now})
+			ready.Done()
+			<-start
+			results <- service.Transition(ctx, session.TransitionParams{
+				SessionID:     created.ID,
+				ExpectedState: verificationsession.Created,
+				Action:        sessionevent.SubmitPersonalDetails,
+			})
+		}(connection)
+	}
+	ready.Wait()
+	close(start)
+
+	wins := 0
+	stale := 0
+	for range connections {
+		result := <-results
+		switch {
+		case result == nil:
+			wins++
+		case errors.Is(result, session.ErrSessionTransitionStale):
+			stale++
+		default:
+			t.Fatalf("competing transition error = %v, want nil or stale", result)
+		}
+	}
+	if wins != 1 || stale != 1 {
+		t.Fatalf("competing outcomes = %d wins, %d stale; want exactly one each", wins, stale)
+	}
+
+	updated, err := sessions.FindByID(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("read winning state: %v", err)
+	}
+	if updated.Status != verificationsession.PersonalDetailsSubmitted {
+		t.Errorf("winning state = %q, want %q", updated.Status, verificationsession.PersonalDetailsSubmitted)
+	}
+	events, err := postgresadapter.NewEventTransactions(database).ListEvents(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("list winning Session Events: %v", err)
+	}
+	if len(events) != 1 || events[0].Type != sessionevent.SubmitPersonalDetails {
+		t.Errorf("winning events = %#v, want exactly one submit_personal_details", events)
 	}
 }
 

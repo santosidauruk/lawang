@@ -6,15 +6,22 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/santosidauruk/lawang-go/internal/domain/verificationsession"
 )
 
 const applicantSessionTTL = 30 * time.Minute
 
-type Status string
+type Status = verificationsession.State
 
 const (
-	StatusCreated                  Status = "created"
-	StatusPersonalDetailsSubmitted Status = "personal_details_submitted"
+	StatusCreated                  = verificationsession.Created
+	StatusPersonalDetailsSubmitted = verificationsession.PersonalDetailsSubmitted
+	StatusIdentityDocumentUploaded = verificationsession.IdentityDocumentUploaded
+	StatusBiometricCaptureUploaded = verificationsession.BiometricCaptureUploaded
+	StatusVerificationPending      = verificationsession.VerificationPending
+	StatusVerified                 = verificationsession.Verified
+	StatusRejected                 = verificationsession.Rejected
+	StatusExpired                  = verificationsession.Expired
 )
 
 type VerificationSession struct {

@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	generated "github.com/santosidauruk/lawang-go/internal/adapter/postgres/sqlc"
 	"github.com/santosidauruk/lawang-go/internal/application/session"
+	"github.com/santosidauruk/lawang-go/internal/domain/verificationsession"
 )
 
 type SessionStore struct {
@@ -26,8 +27,12 @@ func (s *SessionStore) Create(ctx context.Context, params session.CreateParams) 
 	if err != nil {
 		return session.VerificationSession{}, err
 	}
+	state, err := verificationsession.ParseState(row.Status)
+	if err != nil {
+		return session.VerificationSession{}, err
+	}
 	return session.VerificationSession{
-		ID: row.ID, Status: session.Status(row.Status), ResumeTokenHash: row.ResumeTokenHash,
+		ID: row.ID, Status: state, ResumeTokenHash: row.ResumeTokenHash,
 		ExpiresAt: row.ExpiresAt, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 	}, nil
 }
@@ -40,8 +45,12 @@ func (s *SessionStore) FindByID(ctx context.Context, id uuid.UUID) (session.Veri
 	if err != nil {
 		return session.VerificationSession{}, err
 	}
+	state, err := verificationsession.ParseState(row.Status)
+	if err != nil {
+		return session.VerificationSession{}, err
+	}
 	return session.VerificationSession{
-		ID: row.ID, Status: session.Status(row.Status), ResumeTokenHash: row.ResumeTokenHash,
+		ID: row.ID, Status: state, ResumeTokenHash: row.ResumeTokenHash,
 		ExpiresAt: row.ExpiresAt, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 	}, nil
 }

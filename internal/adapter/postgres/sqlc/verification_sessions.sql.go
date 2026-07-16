@@ -109,19 +109,26 @@ func (q *Queries) GetVerificationSessionByID(ctx context.Context, id uuid.UUID) 
 	return i, err
 }
 
-const markVerificationSessionPersonalDetailsSubmitted = `-- name: MarkVerificationSessionPersonalDetailsSubmitted :execrows
+const guardVerificationSessionState = `-- name: GuardVerificationSessionState :execrows
 UPDATE verification_sessions
-SET status = 'personal_details_submitted', updated_at = $2
-WHERE id = $1 AND status = 'created'
+SET status = $1, updated_at = $2
+WHERE id = $3 AND status = $4
 `
 
-type MarkVerificationSessionPersonalDetailsSubmittedParams struct {
-	ID        uuid.UUID `json:"id"`
-	UpdatedAt time.Time `json:"updated_at"`
+type GuardVerificationSessionStateParams struct {
+	NextState     string    `json:"next_state"`
+	UpdatedAt     time.Time `json:"updated_at"`
+	ID            uuid.UUID `json:"id"`
+	ExpectedState string    `json:"expected_state"`
 }
 
-func (q *Queries) MarkVerificationSessionPersonalDetailsSubmitted(ctx context.Context, arg MarkVerificationSessionPersonalDetailsSubmittedParams) (int64, error) {
-	result, err := q.db.Exec(ctx, markVerificationSessionPersonalDetailsSubmitted, arg.ID, arg.UpdatedAt)
+func (q *Queries) GuardVerificationSessionState(ctx context.Context, arg GuardVerificationSessionStateParams) (int64, error) {
+	result, err := q.db.Exec(ctx, guardVerificationSessionState,
+		arg.NextState,
+		arg.UpdatedAt,
+		arg.ID,
+		arg.ExpectedState,
+	)
 	if err != nil {
 		return 0, err
 	}
