@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/google/uuid"
+	"github.com/santosidauruk/lawang-go/internal/application/personaldetails"
 	"github.com/santosidauruk/lawang-go/internal/application/session"
 )
 
@@ -39,6 +40,31 @@ func writeSessionError(response http.ResponseWriter, id uuid.UUID, err error) {
 	default:
 		writeJSON(response, http.StatusInternalServerError, APIError{Code: "INTERNAL", Message: "internal server error"})
 	}
+}
+
+func writePersonalDetailsError(response http.ResponseWriter, id uuid.UUID, err error) {
+	var serviceError *personaldetails.Error
+	if errors.As(err, &serviceError) {
+		switch serviceError.Code {
+		case personaldetails.CodeConflict:
+			writeJSON(response, http.StatusConflict, APIError{
+				Code:    string(serviceError.Code),
+				Message: "personal details already submitted with different values for session " + serviceError.ID.String(),
+				Details: map[string]any{"id": serviceError.ID.String()},
+			})
+			return
+		case personaldetails.CodeIllegalTransition:
+			writeJSON(response, http.StatusConflict, APIError{
+				Code:    string(serviceError.Code),
+				Message: "illegal transition from " + serviceError.From.String() + " via " + serviceError.Action.String(),
+				Details: map[string]any{
+					"id": serviceError.ID.String(), "from": serviceError.From.String(), "event": serviceError.Action.String(),
+				},
+			})
+			return
+		}
+	}
+	writeSessionError(response, id, err)
 }
 
 func writeJSON(response http.ResponseWriter, status int, body any) {

@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/santosidauruk/lawang-go/internal/adapter/httpapi"
 	postgresadapter "github.com/santosidauruk/lawang-go/internal/adapter/postgres"
+	"github.com/santosidauruk/lawang-go/internal/application/personaldetails"
 	"github.com/santosidauruk/lawang-go/internal/application/session"
 	"github.com/santosidauruk/lawang-go/internal/platform/config"
 	"github.com/santosidauruk/lawang-go/internal/platform/httpserver"
@@ -52,8 +53,11 @@ func run() int {
 	}
 
 	store := postgresadapter.NewSessionStore(database)
-	sessions := session.NewService(store, session.NewProductionCryptoTokens(), systemClock{})
-	handler := httpapi.WithRequestLogging(httpapi.NewHandler(sessions), logger)
+	tokens := session.NewProductionCryptoTokens()
+	clock := systemClock{}
+	sessions := session.NewService(store, tokens, clock)
+	details := personaldetails.NewService(postgresadapter.NewPersonalDetailsTransactions(database), tokens, clock)
+	handler := httpapi.WithRequestLogging(httpapi.NewHandler(sessions, details), logger)
 	server := httpserver.New(cfg.HTTPAddress, handler)
 	logger.Info("API listening", "address", listener.Addr().String())
 	if err := httpserver.Run(ctx, server, listener, cfg.ShutdownTimeout); err != nil {

@@ -77,6 +77,16 @@ func TestVerificationSessionMigrationAndSQLProof(t *testing.T) {
 	if eventMigrationOutput == "" {
 		t.Fatal("Session Event migration produced no psql output")
 	}
+	personalDetailsMigrationOutput := runPSQLFile(
+		t,
+		ctx,
+		container,
+		"../../sql/migrations/00004_create_personal_details.sql",
+		"/tmp/00004_create_personal_details.sql",
+	)
+	if personalDetailsMigrationOutput == "" {
+		t.Fatal("Personal Details migration produced no psql output")
+	}
 	exerciseOutput := runPSQLFile(
 		t,
 		ctx,
@@ -148,6 +158,14 @@ func TestVerificationSessionMigrationAndSQLProof(t *testing.T) {
 		"/tmp/003_atomic_session_events.sql",
 	)
 	t.Logf("atomic Session Event SQL proof output:\n%s", eventProofOutput)
+	personalDetailsProofOutput := runPSQLFile(
+		t,
+		ctx,
+		container,
+		"../../sql/proofs/004_immutable_personal_details.sql",
+		"/tmp/004_immutable_personal_details.sql",
+	)
+	t.Logf("immutable Personal Details SQL proof output:\n%s", personalDetailsProofOutput)
 }
 
 func TestSessionEventMigrationAdmitsExactlyTheSevenActionVerbs(t *testing.T) {

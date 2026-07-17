@@ -58,6 +58,20 @@ func TestSessionEventApplicationQueriesAreAppendAndReadOnly(t *testing.T) {
 	}
 }
 
+func TestPersonalDetailsApplicationQueriesNeverUpdateOrDeleteDetails(t *testing.T) {
+	queryPath := filepath.Join(repositoryRoot(t), "sql/queries/personal_details.sql")
+	queries, err := os.ReadFile(queryPath)
+	if err != nil {
+		t.Fatalf("read Personal Details query surface: %v", err)
+	}
+	upper := strings.ToUpper(string(queries))
+	for _, mutation := range []string{"UPDATE PERSONAL_DETAILS", "DELETE FROM PERSONAL_DETAILS"} {
+		if strings.Contains(upper, mutation) {
+			t.Errorf("Personal Details application query surface contains forbidden mutation %q", mutation)
+		}
+	}
+}
+
 func TestOnlyCommandPackagesComposeRuntimeComponents(t *testing.T) {
 	root := repositoryRoot(t)
 	compositionOnly := map[string]struct{}{

@@ -10,6 +10,15 @@ import (
 	"github.com/google/uuid"
 )
 
+type PersonalDetail struct {
+	VerificationSessionID uuid.UUID `json:"verification_session_id"`
+	FullName              string    `json:"full_name"`
+	DateOfBirth           time.Time `json:"date_of_birth"`
+	IdentityNumber        string    `json:"identity_number"`
+	Address               string    `json:"address"`
+	CreatedAt             time.Time `json:"created_at"`
+}
+
 type SessionEvent struct {
 	ID         uuid.UUID `json:"id"`
 	SessionID  uuid.UUID `json:"session_id"`
