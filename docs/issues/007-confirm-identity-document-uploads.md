@@ -33,17 +33,18 @@ replace a concept-bearing mistake; ask the user to revise it.
 
 ## Active collaboration checkpoint
 
-Checkpoint 1 is active. The user authors and the agent reviews:
+Checkpoint 1 is complete and reviewed:
 
 1. `sql/migrations/00005_create_upload_intents.sql`;
 2. `sql/proofs/005_upload_intent_constraints.sql`; and
 3. the first real concurrent-creation test in
    `tests/integration/upload_intents_postgres_test.go`.
 
-Do not begin the application, PostgreSQL adapter, object-storage adapter, or HTTP
-implementation until this checkpoint proves the one-pending-intent invariant and
-receives review. The agreed later sequence is successful-confirm application TDD,
-PostgreSQL adapter, HTTP path, MinIO boundary, then replay/concurrency hardening.
+The migration proof and the real two-connection PostgreSQL test prove the
+one-pending-intent invariant. Checkpoint 2 is now active: the user authors the first
+successful-confirm application test before sibling implementation begins. The agreed
+later sequence is PostgreSQL adapter, HTTP path, MinIO boundary, then
+replay/concurrency hardening.
 
 ## Scope boundaries
 
@@ -77,7 +78,7 @@ PostgreSQL adapter, HTTP path, MinIO boundary, then replay/concurrency hardening
 
 ## Acceptance criteria
 
-- [ ] User-authored migration/proof passes critical review before sibling work begins.
+- [x] User-authored migration/proof passes critical review before sibling work begins.
 - [ ] `POST /verification-sessions/{id}/artifacts/upload-url` accepts only
       `identity_document` for this slice and returns a new intent ID and usable
       public-host presigned URL.

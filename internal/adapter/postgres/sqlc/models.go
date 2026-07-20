@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type PersonalDetail struct {
@@ -25,6 +26,20 @@ type SessionEvent struct {
 	EventType  string    `json:"event_type"`
 	Metadata   []byte    `json:"metadata"`
 	OccurredAt time.Time `json:"occurred_at"`
+}
+
+type UploadIntent struct {
+	ID                    uuid.UUID          `json:"id"`
+	VerificationSessionID uuid.UUID          `json:"verification_session_id"`
+	Kind                  string             `json:"kind"`
+	StorageKey            string             `json:"storage_key"`
+	Status                string             `json:"status"`
+	CreatedAt             time.Time          `json:"created_at"`
+	LatestStatusChangeAt  time.Time          `json:"latest_status_change_at"`
+	ExpiresAt             time.Time          `json:"expires_at"`
+	ConfirmedAt           pgtype.Timestamptz `json:"confirmed_at"`
+	ObjectDeletedAt       pgtype.Timestamptz `json:"object_deleted_at"`
+	FailureCode           pgtype.Text        `json:"failure_code"`
 }
 
 type VerificationSession struct {
