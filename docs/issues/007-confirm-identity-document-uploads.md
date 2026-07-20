@@ -1,8 +1,8 @@
 # Confirm Identity Document Uploads
 
-Status: needs-triage  
-Type: HITL  
-Labels: needs-triage  
+Status: ready-for-human
+Type: HITL
+Labels: ready-for-human
 Source: `docs/plan-go.md` sections 4-5, 6.4, 8-9, 12, 14, 16 Issue 7, and 17.2
 
 ## User stories covered
@@ -31,6 +31,20 @@ between Upload Intent, stored object, and Verification Artifact. The agent may t
 implement repetitive queries, adapter operations, and sibling tests. Do not silently
 replace a concept-bearing mistake; ask the user to revise it.
 
+## Active collaboration checkpoint
+
+Checkpoint 1 is active. The user authors and the agent reviews:
+
+1. `sql/migrations/00005_create_upload_intents.sql`;
+2. `sql/proofs/005_upload_intent_constraints.sql`; and
+3. the first real concurrent-creation test in
+   `tests/integration/upload_intents_postgres_test.go`.
+
+Do not begin the application, PostgreSQL adapter, object-storage adapter, or HTTP
+implementation until this checkpoint proves the one-pending-intent invariant and
+receives review. The agreed later sequence is successful-confirm application TDD,
+PostgreSQL adapter, HTTP path, MinIO boundary, then replay/concurrency hardening.
+
 ## Scope boundaries
 
 - Identity Document only; Biometric Capture belongs to Issue 008.
@@ -43,6 +57,13 @@ replace a concept-bearing mistake; ask the user to revise it.
 
 - One pending intent per `(session_id, identity_document)`; a new intent atomically
   supersedes the prior pending intent and uses a unique key.
+- The application generates the intent UUID and a fresh storage key before
+  persistence. Presign outside a transaction, then transactionally re-read guards,
+  supersede the previous pending intent, and insert the new one.
+- File constraints are derived from the bounded kind in application code and are not
+  copied into each intent row. Confirmation uses the currently deployed mapping.
+- If presigning fails, do not create or supersede an intent. If the transactional
+  re-read is stale, discard the unreturned URL and commit no stale intent.
 - Presigned URL and intent TTL are five minutes; URL signing uses the public endpoint
   without host rewriting.
 - Confirm trusts `HeadObject`, not request metadata: JPEG/PNG/PDF, non-zero, <= 10 MiB.

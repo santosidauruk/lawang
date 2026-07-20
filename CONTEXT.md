@@ -147,6 +147,12 @@ Event.
   different replay returns a conflict.
 - At most one pending Upload Intent exists per session and evidence kind.
 - A replacement intent supersedes the older pending intent and uses a new key.
+- Upload constraints are code-owned by bounded evidence kind and are not snapshotted
+  into Upload Intent rows. Confirmation uses the currently deployed kind mapping.
+- The application generates each Upload Intent ID and derives a fresh storage key
+  before persistence. Presigning happens outside the database transaction; only
+  after signing succeeds does a short guarded transaction supersede the previous
+  pending intent and insert the new one.
 - One Upload Intent creates at most one Verification Artifact.
 - A Verification Artifact exists only after metadata checks and required local
   validation succeed.

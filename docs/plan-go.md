@@ -707,11 +707,24 @@ copy the old Drizzle migration history or point Goose at the old database.
 
 #### `upload_intents`
 
-- UUID ID, session ID, kind, unique storage key, expected constraints, expiry, status,
+- UUID ID, session ID, kind, unique storage key, expiry, status,
   failure code, confirmation timestamp, and `object_deleted_at`.
 - statuses: `pending`, `confirmed`, `superseded`, `expired`, `validation_failed`.
 - partial unique index enforcing one `pending` row per `(session_id, kind)`.
 - bounded failure reasons. Do not store free-form extractor errors.
+
+The Upload Intent stores only the bounded `kind`, not a snapshot of allowed media
+types or maximum size. Application code owns the exact constraint mapping for each
+kind and confirmation applies the currently deployed mapping. Tests must freeze the
+Issue 007 Identity Document mapping as JPEG/PNG/PDF, non-zero, and at most 10 MiB.
+
+The application generates the Upload Intent UUID before persistence and uses it to
+construct a fresh unique storage key. After an initial authorization/state read, it
+presigns that key outside a database transaction. A short transaction then re-reads
+the relevant state, atomically supersedes the previous pending intent, and inserts
+the new intent with the application-supplied UUID and key. If signing fails, no intent
+is written. If the transactional re-read is stale, discard the unreturned URL. Never
+keep the supersede/insert transaction open while presigning.
 
 #### `verification_artifacts`
 
