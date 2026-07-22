@@ -366,6 +366,92 @@ func TestConfirmIdentityDocumentRecordsMismatchAtomically(t *testing.T) {
 
 }
 
+func TestConfirmIdentityDocumentDiscardsExternalResultWhenStorageKeyChanges(t *testing.T) {
+	now := time.Date(2026, 7, 16, 10, 0, 0, 0, time.UTC)
+	previousUpdatedAt := now.Add(-time.Minute)
+	sessionID := uuid.MustParse("aa77cecb-e281-4d42-8960-fe9b68e7d976")
+	uploadIntentID := uuid.MustParse("ccfa6ef3-2d45-4141-8b0f-caa51f6ae493")
+	identityNumber := "3173000000000001"
+	originalStorageKey := "identity-document-original"
+	changedStorageKey := "identity-document-changed"
+
+	transactions := newMemoryTransactions(
+		session.VerificationSession{
+			ID:              sessionID,
+			Status:          session.StatusPersonalDetailsSubmitted,
+			ResumeTokenHash: []byte("stored-hash"),
+			ExpiresAt:       now.Add(time.Minute),
+			UpdatedAt:       previousUpdatedAt,
+		},
+		personaldetails.PersonalDetails{
+			SessionID: sessionID,
+			Input: personaldetails.Input{
+				IdentityNumber: identityNumber,
+			},
+		},
+		artifact.UploadIntent{
+			ID:                    uploadIntentID,
+			VerificationSessionID: sessionID,
+			Kind:                  "identity_document",
+			StorageKey:            originalStorageKey,
+			Status:                "pending",
+			CreatedAt:             now,
+			LatestStatusChangeAt:  previousUpdatedAt,
+			ExpiresAt:             now.Add(5 * time.Minute),
+		},
+	)
+
+	service := artifact.NewService(
+		transactions,
+		transactions,
+		stubObjectStorage{metadata: artifact.ObjectMetadata{
+			ContentType: "image/jpeg",
+			SizeBytes:   1024,
+			ETag:        "identity-document-etag",
+		}},
+		stubDocumentExtractor{
+			extraction: artifact.DocumentExtraction{IdentityNumber: identityNumber},
+			onExtract: func(storageKey string) {
+				if storageKey != originalStorageKey {
+					t.Errorf("Extract() storage key = %q, want %q", storageKey, originalStorageKey)
+				}
+				transactions.state.uploadIntent.StorageKey = changedStorageKey
+			},
+		},
+		stubTokenIssuer{hash: []byte("stored-hash"), equal: true},
+		fixedClock{now: now},
+	)
+
+	_, err := service.Confirm(
+		context.Background(),
+		sessionID,
+		"raw-resume-token",
+		uploadIntentID,
+	)
+	if err == nil {
+		t.Fatal("Confirm() error = nil, want stale Upload Intent error")
+	}
+
+	storedIntent := transactions.state.uploadIntent
+	if storedIntent.StorageKey != changedStorageKey ||
+		storedIntent.Status != "pending" ||
+		storedIntent.ConfirmedAt != nil ||
+		storedIntent.FailureCode != nil ||
+		!storedIntent.LatestStatusChangeAt.Equal(previousUpdatedAt) {
+		t.Errorf("stored Upload Intent = %#v, want changed key with no confirmation effects", storedIntent)
+	}
+	if len(transactions.state.artifacts) != 0 {
+		t.Errorf("stored artifacts = %d, want 0", len(transactions.state.artifacts))
+	}
+	if len(transactions.state.events) != 0 {
+		t.Errorf("stored events = %d, want 0", len(transactions.state.events))
+	}
+	if transactions.state.session.Status != session.StatusPersonalDetailsSubmitted ||
+		!transactions.state.session.UpdatedAt.Equal(previousUpdatedAt) {
+		t.Errorf("stored session = %#v, want unchanged", transactions.state.session)
+	}
+}
+
 func (m *memoryTransactions) WithinTransaction(ctx context.Context, operation func(artifact.Transaction) error) error {
 	next := m.state
 
@@ -396,13 +482,17 @@ type stubObjectStorage struct {
 type stubDocumentExtractor struct {
 	extraction artifact.DocumentExtraction
 	err        error
+	onExtract  func(string)
 }
 
 func (s stubObjectStorage) HeadObject(_ context.Context, _ string) (artifact.ObjectMetadata, error) {
 	return s.metadata, s.err
 }
 
-func (s stubDocumentExtractor) Extract(_ context.Context, _ string) (artifact.DocumentExtraction, error) {
+func (s stubDocumentExtractor) Extract(_ context.Context, storageKey string) (artifact.DocumentExtraction, error) {
+	if s.onExtract != nil {
+		s.onExtract(storageKey)
+	}
 	return s.extraction, s.err
 }
 
