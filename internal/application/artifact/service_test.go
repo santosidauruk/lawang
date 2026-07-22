@@ -3,6 +3,7 @@ package artifact_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -23,11 +24,15 @@ type memoryState struct {
 }
 
 type memoryTransactions struct {
-	state memoryState
+	state                 memoryState
+	loadUploadIntentCalls int
+	loadDetailsCalls      int
+	appendEventErr        error
 }
 
 type memoryTransaction struct {
-	state *memoryState
+	state          *memoryState
+	appendEventErr error
 }
 
 func newMemoryTransactions(storedSession session.VerificationSession, storedDetails personaldetails.PersonalDetails, storedUploadIntent artifact.UploadIntent) *memoryTransactions {
@@ -304,6 +309,20 @@ func TestConfirmIdentityDocumentRecordsMismatchAtomically(t *testing.T) {
 	if err == nil {
 		t.Fatalf("Confirm() error = nil, want Local Validation Failure")
 	}
+	var serviceError *artifact.Error
+	if !errors.As(err, &serviceError) ||
+		serviceError.Code != artifact.CodeLocalValidationFailed ||
+		serviceError.Reason != artifact.ReasonIdentityNumberMismatch {
+		t.Fatalf(
+			"Confirm() error = %#v, want %s with reason %s",
+			err,
+			artifact.CodeLocalValidationFailed,
+			artifact.ReasonIdentityNumberMismatch,
+		)
+	}
+	if got := err.Error(); strings.Contains(got, storedIdentityNumber) || strings.Contains(got, extractedIdentityNumber) {
+		t.Fatalf("Confirm() error leaked an identity number: %q", got)
+	}
 
 	storedIntent := transactions.state.uploadIntent
 	if storedIntent.Status != "validation_failed" {
@@ -452,6 +471,179 @@ func TestConfirmIdentityDocumentDiscardsExternalResultWhenStorageKeyChanges(t *t
 	}
 }
 
+func TestConfirmIdentityDocumentRejectsInvalidTokenBeforeReadingIntentOrExternalIO(t *testing.T) {
+	now := time.Date(2026, 7, 16, 10, 0, 0, 0, time.UTC)
+	sessionID := uuid.MustParse("26b36016-e4ce-4e7a-9e40-d8c6b229746a")
+	uploadIntentID := uuid.MustParse("58bc726b-9175-4569-9980-64d315f36486")
+	transactions := newMemoryTransactions(
+		session.VerificationSession{
+			ID:              sessionID,
+			Status:          session.StatusPersonalDetailsSubmitted,
+			ResumeTokenHash: []byte("stored-hash"),
+			ExpiresAt:       now.Add(time.Minute),
+		},
+		personaldetails.PersonalDetails{SessionID: sessionID},
+		artifact.UploadIntent{
+			ID:                    uploadIntentID,
+			VerificationSessionID: sessionID,
+			Kind:                  "identity_document",
+			StorageKey:            "identity-document-key",
+			Status:                "pending",
+			ExpiresAt:             now.Add(5 * time.Minute),
+		},
+	)
+	storageCalls := 0
+	extractorCalls := 0
+	service := artifact.NewService(
+		transactions,
+		transactions,
+		stubObjectStorage{
+			metadata: artifact.ObjectMetadata{ContentType: "image/jpeg", SizeBytes: 1},
+			calls:    &storageCalls,
+		},
+		stubDocumentExtractor{
+			extraction: artifact.DocumentExtraction{},
+			calls:      &extractorCalls,
+		},
+		stubTokenIssuer{hash: []byte("wrong-hash"), equal: false},
+		fixedClock{now: now},
+	)
+
+	_, err := service.Confirm(context.Background(), sessionID, "wrong-token", uploadIntentID)
+
+	var serviceError *session.Error
+	if !errors.As(err, &serviceError) || serviceError.Code != session.CodeInvalidResumeToken {
+		t.Fatalf("Confirm() error = %#v, want %s", err, session.CodeInvalidResumeToken)
+	}
+	if transactions.loadUploadIntentCalls != 0 || transactions.loadDetailsCalls != 0 {
+		t.Errorf(
+			"reader calls after invalid token = intent:%d details:%d, want 0 for both",
+			transactions.loadUploadIntentCalls,
+			transactions.loadDetailsCalls,
+		)
+	}
+	if storageCalls != 0 || extractorCalls != 0 {
+		t.Errorf("external calls after invalid token = storage:%d extractor:%d, want 0 for both", storageCalls, extractorCalls)
+	}
+}
+
+func TestConfirmIdentityDocumentRejectsSessionAtExactExpiryBeforeExternalIO(t *testing.T) {
+	now := time.Date(2026, 7, 16, 10, 0, 0, 0, time.UTC)
+	sessionID := uuid.MustParse("ce93a4f4-aa9b-4531-b216-384d47fd9c57")
+	uploadIntentID := uuid.MustParse("bd4518e0-45e2-4a42-ac42-8d3b9f247f02")
+	transactions := newMemoryTransactions(
+		session.VerificationSession{
+			ID:              sessionID,
+			Status:          session.StatusPersonalDetailsSubmitted,
+			ResumeTokenHash: []byte("stored-hash"),
+			ExpiresAt:       now,
+		},
+		personaldetails.PersonalDetails{SessionID: sessionID},
+		artifact.UploadIntent{
+			ID:                    uploadIntentID,
+			VerificationSessionID: sessionID,
+			Kind:                  "identity_document",
+			StorageKey:            "identity-document-key",
+			Status:                "pending",
+			ExpiresAt:             now.Add(5 * time.Minute),
+		},
+	)
+	storageCalls := 0
+	extractorCalls := 0
+	service := artifact.NewService(
+		transactions,
+		transactions,
+		stubObjectStorage{calls: &storageCalls},
+		stubDocumentExtractor{calls: &extractorCalls},
+		stubTokenIssuer{hash: []byte("stored-hash"), equal: true},
+		fixedClock{now: now},
+	)
+
+	_, err := service.Confirm(context.Background(), sessionID, "raw-resume-token", uploadIntentID)
+
+	var serviceError *session.Error
+	if !errors.As(err, &serviceError) || serviceError.Code != session.CodeSessionExpired {
+		t.Fatalf("Confirm() error = %#v, want %s", err, session.CodeSessionExpired)
+	}
+	if transactions.loadUploadIntentCalls != 0 || transactions.loadDetailsCalls != 0 ||
+		storageCalls != 0 || extractorCalls != 0 {
+		t.Errorf(
+			"calls after expired session = intent:%d details:%d storage:%d extractor:%d, want all 0",
+			transactions.loadUploadIntentCalls,
+			transactions.loadDetailsCalls,
+			storageCalls,
+			extractorCalls,
+		)
+	}
+}
+
+func TestConfirmIdentityDocumentRollsBackAllWritesWhenEventAppendFails(t *testing.T) {
+	now := time.Date(2026, 7, 16, 10, 0, 0, 0, time.UTC)
+	previousUpdatedAt := now.Add(-time.Minute)
+	sessionID := uuid.MustParse("5dfef7f4-f44f-4df8-b1e4-df88d8046c31")
+	uploadIntentID := uuid.MustParse("62097a78-abf2-4c9c-990d-6845f9376d86")
+	identityNumber := "3173000000000001"
+	transactions := newMemoryTransactions(
+		session.VerificationSession{
+			ID:              sessionID,
+			Status:          session.StatusPersonalDetailsSubmitted,
+			ResumeTokenHash: []byte("stored-hash"),
+			ExpiresAt:       now.Add(time.Minute),
+			UpdatedAt:       previousUpdatedAt,
+		},
+		personaldetails.PersonalDetails{
+			SessionID: sessionID,
+			Input: personaldetails.Input{
+				IdentityNumber: identityNumber,
+			},
+		},
+		artifact.UploadIntent{
+			ID:                    uploadIntentID,
+			VerificationSessionID: sessionID,
+			Kind:                  "identity_document",
+			StorageKey:            "identity-document-key",
+			Status:                "pending",
+			LatestStatusChangeAt:  previousUpdatedAt,
+			ExpiresAt:             now.Add(5 * time.Minute),
+		},
+	)
+	injectedErr := errors.New("injected append event failure")
+	transactions.appendEventErr = injectedErr
+	service := artifact.NewService(
+		transactions,
+		transactions,
+		stubObjectStorage{metadata: artifact.ObjectMetadata{
+			ContentType: "image/jpeg",
+			SizeBytes:   1024,
+			ETag:        "identity-document-etag",
+		}},
+		stubDocumentExtractor{extraction: artifact.DocumentExtraction{IdentityNumber: identityNumber}},
+		stubTokenIssuer{hash: []byte("stored-hash"), equal: true},
+		fixedClock{now: now},
+	)
+
+	_, err := service.Confirm(context.Background(), sessionID, "raw-resume-token", uploadIntentID)
+
+	if !errors.Is(err, injectedErr) {
+		t.Fatalf("Confirm() error = %#v, want injected append failure", err)
+	}
+	storedIntent := transactions.state.uploadIntent
+	if storedIntent.Status != "pending" || storedIntent.ConfirmedAt != nil || storedIntent.FailureCode != nil ||
+		!storedIntent.LatestStatusChangeAt.Equal(previousUpdatedAt) {
+		t.Errorf("stored Upload Intent = %#v, want original pending state", storedIntent)
+	}
+	if len(transactions.state.artifacts) != 0 {
+		t.Errorf("stored artifacts = %d, want 0 after rollback", len(transactions.state.artifacts))
+	}
+	if transactions.state.session.Status != session.StatusPersonalDetailsSubmitted ||
+		!transactions.state.session.UpdatedAt.Equal(previousUpdatedAt) {
+		t.Errorf("stored session = %#v, want original state after rollback", transactions.state.session)
+	}
+	if len(transactions.state.events) != 0 {
+		t.Errorf("stored events = %d, want 0 after rollback", len(transactions.state.events))
+	}
+}
+
 func (m *memoryTransactions) WithinTransaction(ctx context.Context, operation func(artifact.Transaction) error) error {
 	next := m.state
 
@@ -464,7 +656,8 @@ func (m *memoryTransactions) WithinTransaction(ctx context.Context, operation fu
 
 	next.events = append([]session.AppendEventParams(nil), next.events...)
 	err := operation(&memoryTransaction{
-		state: &next,
+		state:          &next,
+		appendEventErr: m.appendEventErr,
 	})
 	if err != nil {
 		return err
@@ -477,19 +670,27 @@ func (m *memoryTransactions) WithinTransaction(ctx context.Context, operation fu
 type stubObjectStorage struct {
 	metadata artifact.ObjectMetadata
 	err      error
+	calls    *int
 }
 
 type stubDocumentExtractor struct {
 	extraction artifact.DocumentExtraction
 	err        error
 	onExtract  func(string)
+	calls      *int
 }
 
 func (s stubObjectStorage) HeadObject(_ context.Context, _ string) (artifact.ObjectMetadata, error) {
+	if s.calls != nil {
+		*s.calls++
+	}
 	return s.metadata, s.err
 }
 
 func (s stubDocumentExtractor) Extract(_ context.Context, storageKey string) (artifact.DocumentExtraction, error) {
+	if s.calls != nil {
+		*s.calls++
+	}
 	if s.onExtract != nil {
 		s.onExtract(storageKey)
 	}
@@ -533,6 +734,7 @@ func (m *memoryTransactions) LoadSession(
 }
 
 func (m *memoryTransactions) LoadUploadIntent(_ context.Context, sessionID uuid.UUID, uploadIntentID uuid.UUID) (artifact.UploadIntent, error) {
+	m.loadUploadIntentCalls++
 	if m.state.uploadIntent.VerificationSessionID != sessionID || m.state.uploadIntent.ID != uploadIntentID {
 		return artifact.UploadIntent{}, artifact.ErrUploadIntentNotFound
 	}
@@ -554,6 +756,7 @@ func loadPersonalDetails(state *memoryState, sessionID uuid.UUID) (personaldetai
 	return *state.details, nil
 }
 func (m *memoryTransactions) LoadPersonalDetails(_ context.Context, sessionID uuid.UUID) (personaldetails.PersonalDetails, error) {
+	m.loadDetailsCalls++
 	return loadPersonalDetails(&m.state, sessionID)
 }
 
@@ -620,6 +823,9 @@ func (m *memoryTransaction) UpdateSessionState(
 }
 
 func (m *memoryTransaction) AppendEvent(_ context.Context, event session.AppendEventParams) error {
+	if m.appendEventErr != nil {
+		return m.appendEventErr
+	}
 	m.state.events = append(m.state.events, event)
 	return nil
 }

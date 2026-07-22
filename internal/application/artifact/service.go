@@ -48,6 +48,21 @@ type DocumentExtraction struct {
 	IdentityNumber string
 }
 
+type ErrorCode string
+
+const CodeLocalValidationFailed ErrorCode = "LOCAL_VALIDATION_FAILED"
+
+type FailureReason string
+
+const ReasonIdentityNumberMismatch FailureReason = "identity_number_mismatch"
+
+type Error struct {
+	Code   ErrorCode
+	Reason FailureReason
+}
+
+func (e *Error) Error() string { return string(e.Code) }
+
 type ObjectStorage interface {
 	HeadObject(context.Context, string) (ObjectMetadata, error)
 }
@@ -240,7 +255,7 @@ func (s *Service) Confirm(ctx context.Context, sessionID uuid.UUID, rawToken str
 			if err := tx.MarkUploadIntentValidationFailed(
 				ctx,
 				uploadIntentID,
-				"identity_number_mismatch",
+				string(ReasonIdentityNumberMismatch),
 				confirmedAt,
 			); err != nil {
 				return err
@@ -255,7 +270,10 @@ func (s *Service) Confirm(ctx context.Context, sessionID uuid.UUID, rawToken str
 				return err
 			}
 
-			outcomeError = errors.New("identity number mismatch")
+			outcomeError = &Error{
+				Code:   CodeLocalValidationFailed,
+				Reason: ReasonIdentityNumberMismatch,
+			}
 			return nil
 		}
 
