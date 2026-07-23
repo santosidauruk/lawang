@@ -50,11 +50,26 @@ type DocumentExtraction struct {
 
 type ErrorCode string
 
-const CodeLocalValidationFailed ErrorCode = "LOCAL_VALIDATION_FAILED"
+const (
+	CodeLocalValidationFailed    ErrorCode = "LOCAL_VALIDATION_FAILED"
+	CodeUploadIntentExpired      ErrorCode = "UPLOAD_INTENT_EXPIRED"
+	CodeUploadIntentSuperseded   ErrorCode = "UPLOAD_INTENT_SUPERSEDED"
+	CodeUploadIntentNotFound     ErrorCode = "UPLOAD_INTENT_NOT_FOUND"
+	CodeInvalidUploadIntentKind  ErrorCode = "INVALID_UPLOAD_INTENT_KIND"
+	CodeInvalidObjectMetadata    ErrorCode = "INVALID_OBJECT_METADATA"
+	CodeObjectStorageFailed      ErrorCode = "OBJECT_STORAGE_FAILED"
+	CodeDocumentExtractionFailed ErrorCode = "DOCUMENT_EXTRACTION_FAILED"
+	CodeConfirmationStale        ErrorCode = "CONFIRMATION_STALE"
+)
 
 type FailureReason string
 
-const ReasonIdentityNumberMismatch FailureReason = "identity_number_mismatch"
+const (
+	ReasonIdentityNumberMismatch FailureReason = "identity_number_mismatch"
+	ReasonObjectEmpty            FailureReason = "empty"
+	ReasonObjectTooLarge         FailureReason = "too_large"
+	ReasonUnsupportedContentType FailureReason = "unsupported_content_type"
+)
 
 type Error struct {
 	Code   ErrorCode
@@ -121,6 +136,9 @@ func NewService(
 
 func (s *Service) Confirm(ctx context.Context, sessionID uuid.UUID, rawToken string, uploadIntentID uuid.UUID) (session.Summary, error) {
 	storedSession, err := s.reader.LoadSession(ctx, sessionID)
+	if errors.Is(err, session.ErrSessionNotFound) {
+		return session.Summary{}, &session.Error{Code: session.CodeSessionNotFound}
+	}
 	if err != nil {
 		return session.Summary{}, err
 	}
@@ -139,53 +157,63 @@ func (s *Service) Confirm(ctx context.Context, sessionID uuid.UUID, rawToken str
 	}
 
 	storedIntent, err := s.reader.LoadUploadIntent(ctx, sessionID, uploadIntentID)
+	if errors.Is(err, ErrUploadIntentNotFound) {
+		return session.Summary{}, &Error{Code: CodeUploadIntentNotFound}
+	}
 	if err != nil {
 		return session.Summary{}, err
+	}
+
+	if err := validatePendingIdentityIntent(storedIntent, startedAt); err != nil {
+		return session.Summary{}, err
+	}
+
+	if storedSession.Status != session.StatusPersonalDetailsSubmitted {
+		return session.Summary{}, &Error{Code: CodeConfirmationStale}
 	}
 
 	storedDetails, err := s.reader.LoadPersonalDetails(ctx, sessionID)
+	if errors.Is(err, ErrPersonalDetailsNotFound) {
+		return session.Summary{}, &Error{Code: CodeConfirmationStale}
+	}
 	if err != nil {
 		return session.Summary{}, err
-	}
-
-	if storedIntent.Status != "pending" {
-		return session.Summary{}, errors.New("upload intent is not pending")
-	}
-
-	if !startedAt.Before(storedIntent.ExpiresAt) {
-		return session.Summary{}, errors.New("upload intent expired")
-	}
-
-	if storedIntent.Kind != "identity_document" {
-		return session.Summary{}, errors.New("upload intent is not an identity document")
 	}
 
 	objectMetadata, err := s.objectStorage.HeadObject(ctx, storedIntent.StorageKey)
 	if err != nil {
-		return session.Summary{}, err
+		return session.Summary{}, &Error{Code: CodeObjectStorageFailed}
 	}
 
 	const maximumIdentityDocumentSize int64 = 10 * 1024 * 1024
 
 	if objectMetadata.SizeBytes <= 0 {
-		return session.Summary{}, errors.New("identity document is empty")
+		return session.Summary{}, &Error{
+			Code:   CodeInvalidObjectMetadata,
+			Reason: ReasonObjectEmpty,
+		}
 	}
 
 	if objectMetadata.SizeBytes > maximumIdentityDocumentSize {
-		return session.Summary{}, errors.New("identity document is too large")
+		return session.Summary{}, &Error{
+			Code:   CodeInvalidObjectMetadata,
+			Reason: ReasonObjectTooLarge,
+		}
 	}
 
 	switch objectMetadata.ContentType {
 	case "image/jpeg", "image/png", "application/pdf":
 		// valid
 	default:
-		return session.Summary{},
-			errors.New("unsupported identity document content type")
+		return session.Summary{}, &Error{
+			Code:   CodeInvalidObjectMetadata,
+			Reason: ReasonUnsupportedContentType,
+		}
 	}
 
 	extraction, err := s.extractor.Extract(ctx, storedIntent.StorageKey)
 	if err != nil {
-		return session.Summary{}, err
+		return session.Summary{}, &Error{Code: CodeDocumentExtractionFailed}
 	}
 
 	eventMetadata, err := sessionevent.NewMetadata(sessionevent.OutcomeAccepted)
@@ -197,16 +225,25 @@ func (s *Service) Confirm(ctx context.Context, sessionID uuid.UUID, rawToken str
 	var outcomeError error
 	err = s.transactions.WithinTransaction(ctx, func(tx Transaction) error {
 		lockedSession, err := tx.LockSession(ctx, sessionID)
+		if errors.Is(err, session.ErrSessionNotFound) {
+			return &session.Error{Code: session.CodeSessionNotFound}
+		}
 		if err != nil {
 			return err
 		}
 
 		lockedIntent, err := tx.LockUploadIntent(ctx, sessionID, uploadIntentID)
+		if errors.Is(err, ErrUploadIntentNotFound) {
+			return &Error{Code: CodeUploadIntentNotFound}
+		}
 		if err != nil {
 			return err
 		}
 
 		lockedDetails, err := tx.LoadPersonalDetails(ctx, sessionID)
+		if errors.Is(err, ErrPersonalDetailsNotFound) {
+			return &Error{Code: CodeConfirmationStale}
+		}
 		if err != nil {
 			return err
 		}
@@ -224,24 +261,25 @@ func (s *Service) Confirm(ctx context.Context, sessionID uuid.UUID, rawToken str
 			}
 		}
 
-		if lockedIntent.Status != "pending" {
-			return errors.New("upload intent is not pending")
+		if lockedSession.Status != storedSession.Status ||
+			!lockedSession.ExpiresAt.Equal(storedSession.ExpiresAt) {
+			return &Error{Code: CodeConfirmationStale}
 		}
 
-		if !confirmedAt.Before(lockedIntent.ExpiresAt) {
-			return errors.New("upload intent expired")
-		}
-
-		if lockedIntent.Kind != "identity_document" {
-			return errors.New("upload intent is not an identity document")
+		if err := validatePendingIdentityIntent(lockedIntent, confirmedAt); err != nil {
+			return err
 		}
 
 		if lockedIntent.StorageKey != storedIntent.StorageKey {
-			return errors.New("upload intent changed during confirmation")
+			return &Error{Code: CodeConfirmationStale}
+		}
+
+		if !lockedIntent.ExpiresAt.Equal(storedIntent.ExpiresAt) {
+			return &Error{Code: CodeConfirmationStale}
 		}
 
 		if lockedDetails.IdentityNumber != storedDetails.IdentityNumber {
-			return errors.New("personal details changed during confirmation")
+			return &Error{Code: CodeConfirmationStale}
 		}
 
 		lockedIdentityNumberMismatch := extraction.IdentityNumber != lockedDetails.IdentityNumber
@@ -339,4 +377,22 @@ func (s *Service) Confirm(ctx context.Context, sessionID uuid.UUID, rawToken str
 	return summary, nil
 }
 
+func validatePendingIdentityIntent(intent UploadIntent, now time.Time) error {
+	if intent.Status == "superseded" {
+		return &Error{Code: CodeUploadIntentSuperseded}
+	}
+	if intent.Status != "pending" {
+		return &Error{Code: CodeConfirmationStale}
+	}
+	if !now.Before(intent.ExpiresAt) {
+		return &Error{Code: CodeUploadIntentExpired}
+	}
+	if intent.Kind != "identity_document" {
+		return &Error{Code: CodeInvalidUploadIntentKind}
+	}
+	return nil
+}
+
 var ErrUploadIntentNotFound = errors.New("upload intent not found")
+
+var ErrPersonalDetailsNotFound = errors.New("personal details not found")

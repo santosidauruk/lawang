@@ -1,6 +1,7 @@
 package artifact_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"strings"
@@ -28,11 +29,102 @@ type memoryTransactions struct {
 	loadUploadIntentCalls int
 	loadDetailsCalls      int
 	appendEventErr        error
+	transactionActive     bool
 }
 
 type memoryTransaction struct {
 	state          *memoryState
 	appendEventErr error
+}
+
+type confirmFixture struct {
+	now            time.Time
+	sessionID      uuid.UUID
+	uploadIntentID uuid.UUID
+	identityNumber string
+	transactions   *memoryTransactions
+	storageCalls   int
+	extractorCalls int
+	storage        stubObjectStorage
+	extractor      stubDocumentExtractor
+	tokens         stubTokenIssuer
+}
+
+func newConfirmFixture() *confirmFixture {
+	now := time.Date(2026, 7, 16, 10, 0, 0, 0, time.UTC)
+	sessionID := uuid.MustParse("38807233-96a4-4ce2-81a3-48e23e3d3e6b")
+	uploadIntentID := uuid.MustParse("b902e282-229d-4a9b-8898-b8cb2082c399")
+	identityNumber := "3173000000000001"
+	f := &confirmFixture{
+		now:            now,
+		sessionID:      sessionID,
+		uploadIntentID: uploadIntentID,
+		identityNumber: identityNumber,
+		transactions: newMemoryTransactions(
+			session.VerificationSession{
+				ID:              sessionID,
+				Status:          session.StatusPersonalDetailsSubmitted,
+				ResumeTokenHash: []byte("stored-hash"),
+				ExpiresAt:       now.Add(time.Minute),
+			},
+			personaldetails.PersonalDetails{
+				SessionID: sessionID,
+				Input: personaldetails.Input{
+					IdentityNumber: identityNumber,
+				},
+			},
+			artifact.UploadIntent{
+				ID:                    uploadIntentID,
+				VerificationSessionID: sessionID,
+				Kind:                  "identity_document",
+				StorageKey:            "identity-document-key",
+				Status:                "pending",
+				ExpiresAt:             now.Add(5 * time.Minute),
+			},
+		),
+		tokens: stubTokenIssuer{hash: []byte("stored-hash"), equal: true},
+	}
+	f.storage = stubObjectStorage{
+		metadata: artifact.ObjectMetadata{
+			ContentType: "image/jpeg",
+			SizeBytes:   1024,
+			ETag:        "identity-document-etag",
+		},
+		calls: &f.storageCalls,
+	}
+	f.extractor = stubDocumentExtractor{
+		extraction: artifact.DocumentExtraction{IdentityNumber: identityNumber},
+		calls:      &f.extractorCalls,
+	}
+	return f
+}
+
+func (f *confirmFixture) service() *artifact.Service {
+	return artifact.NewService(
+		f.transactions,
+		f.transactions,
+		f.storage,
+		f.extractor,
+		f.tokens,
+		fixedClock{now: f.now},
+	)
+}
+
+func (f *confirmFixture) confirm() (session.Summary, error) {
+	return f.service().Confirm(
+		context.Background(),
+		f.sessionID,
+		"raw-resume-token",
+		f.uploadIntentID,
+	)
+}
+
+func requireArtifactError(t *testing.T, err error, code artifact.ErrorCode, reason artifact.FailureReason) {
+	t.Helper()
+	var serviceError *artifact.Error
+	if !errors.As(err, &serviceError) || serviceError.Code != code || serviceError.Reason != reason {
+		t.Fatalf("error = %#v, want code %s and reason %s", err, code, reason)
+	}
 }
 
 func newMemoryTransactions(storedSession session.VerificationSession, storedDetails personaldetails.PersonalDetails, storedUploadIntent artifact.UploadIntent) *memoryTransactions {
@@ -47,8 +139,9 @@ func newMemoryTransactions(storedSession session.VerificationSession, storedDeta
 	}
 }
 
-// Checkpoint 2 is intentionally one tracer-bullet test. Complete this test and make
-// it RED before adding sibling failure, replay, PostgreSQL, MinIO, or HTTP tests.
+// This was the Checkpoint 2 tracer bullet. Its sibling application behaviors were
+// added only after this public success path became GREEN. PostgreSQL, MinIO, HTTP,
+// replay, and concurrency remain separate checkpoints.
 func TestConfirmIdentityDocumentAcceptsValidatedUploadAtomically(t *testing.T) {
 
 	// ARRANGE 1 — fixed facts
@@ -382,6 +475,14 @@ func TestConfirmIdentityDocumentRecordsMismatchAtomically(t *testing.T) {
 		!event.OccurredAt.Equal(now) {
 		t.Errorf("stored event = %#v, want safe local-validation-failed confirmation event", event)
 	}
+	rawMetadata, err := event.Metadata.MarshalJSON()
+	if err != nil {
+		t.Fatalf("MarshalJSON() error = %#v", err)
+	}
+	if strings.Contains(string(rawMetadata), storedIdentityNumber) ||
+		strings.Contains(string(rawMetadata), extractedIdentityNumber) {
+		t.Fatalf("event metadata leaked identity data: %s", rawMetadata)
+	}
 
 }
 
@@ -450,6 +551,7 @@ func TestConfirmIdentityDocumentDiscardsExternalResultWhenStorageKeyChanges(t *t
 	if err == nil {
 		t.Fatal("Confirm() error = nil, want stale Upload Intent error")
 	}
+	requireArtifactError(t, err, artifact.CodeConfirmationStale, "")
 
 	storedIntent := transactions.state.uploadIntent
 	if storedIntent.StorageKey != changedStorageKey ||
@@ -468,6 +570,302 @@ func TestConfirmIdentityDocumentDiscardsExternalResultWhenStorageKeyChanges(t *t
 	if transactions.state.session.Status != session.StatusPersonalDetailsSubmitted ||
 		!transactions.state.session.UpdatedAt.Equal(previousUpdatedAt) {
 		t.Errorf("stored session = %#v, want unchanged", transactions.state.session)
+	}
+}
+
+func TestConfirmIdentityDocumentRejectsExpiredIntentBeforeExternalIO(t *testing.T) {
+	f := newConfirmFixture()
+	f.transactions.state.uploadIntent.ExpiresAt = f.now
+
+	_, err := f.confirm()
+
+	requireArtifactError(t, err, artifact.CodeUploadIntentExpired, "")
+	if f.storageCalls != 0 || f.extractorCalls != 0 {
+		t.Errorf("external calls = storage:%d extractor:%d, want 0", f.storageCalls, f.extractorCalls)
+	}
+}
+
+func TestConfirmIdentityDocumentRejectsSupersededIntentBeforeExternalIO(t *testing.T) {
+	f := newConfirmFixture()
+	f.transactions.state.uploadIntent.Status = "superseded"
+
+	_, err := f.confirm()
+
+	requireArtifactError(t, err, artifact.CodeUploadIntentSuperseded, "")
+	if f.storageCalls != 0 || f.extractorCalls != 0 {
+		t.Errorf("external calls = storage:%d extractor:%d, want 0", f.storageCalls, f.extractorCalls)
+	}
+}
+
+func TestConfirmIdentityDocumentReturnsBoundedErrorWhenIntentIsNotFound(t *testing.T) {
+	f := newConfirmFixture()
+	f.uploadIntentID = uuid.MustParse("60600965-b2af-4760-9728-87c0736c9ba9")
+
+	_, err := f.confirm()
+
+	requireArtifactError(t, err, artifact.CodeUploadIntentNotFound, "")
+	if f.storageCalls != 0 || f.extractorCalls != 0 {
+		t.Errorf("external calls = storage:%d extractor:%d, want 0", f.storageCalls, f.extractorCalls)
+	}
+}
+
+func TestConfirmIdentityDocumentReturnsBoundedErrorWhenSessionIsNotFound(t *testing.T) {
+	f := newConfirmFixture()
+	f.sessionID = uuid.MustParse("82470eb8-a69a-4af2-8ba7-1debbf927568")
+
+	_, err := f.confirm()
+
+	var serviceError *session.Error
+	if !errors.As(err, &serviceError) || serviceError.Code != session.CodeSessionNotFound {
+		t.Fatalf("Confirm() error = %#v, want %s", err, session.CodeSessionNotFound)
+	}
+	if f.storageCalls != 0 || f.extractorCalls != 0 {
+		t.Errorf("external calls = storage:%d extractor:%d, want 0", f.storageCalls, f.extractorCalls)
+	}
+}
+
+func TestConfirmIdentityDocumentRejectsWrongInitialSessionStatusBeforeExternalIO(t *testing.T) {
+	f := newConfirmFixture()
+	f.transactions.state.session.Status = session.StatusCreated
+
+	_, err := f.confirm()
+
+	requireArtifactError(t, err, artifact.CodeConfirmationStale, "")
+	if f.storageCalls != 0 || f.extractorCalls != 0 {
+		t.Errorf("external calls = storage:%d extractor:%d, want 0", f.storageCalls, f.extractorCalls)
+	}
+}
+
+func TestConfirmIdentityDocumentRejectsDifferentIntentKindBeforeExternalIO(t *testing.T) {
+	f := newConfirmFixture()
+	f.transactions.state.uploadIntent.Kind = "biometric_capture"
+
+	_, err := f.confirm()
+
+	requireArtifactError(t, err, artifact.CodeInvalidUploadIntentKind, "")
+	if f.storageCalls != 0 || f.extractorCalls != 0 {
+		t.Errorf("external calls = storage:%d extractor:%d, want 0", f.storageCalls, f.extractorCalls)
+	}
+}
+
+func TestConfirmIdentityDocumentRejectsEmptyObjectWithBoundedReason(t *testing.T) {
+	f := newConfirmFixture()
+	f.storage.metadata.SizeBytes = 0
+
+	_, err := f.confirm()
+
+	requireArtifactError(t, err, artifact.CodeInvalidObjectMetadata, artifact.ReasonObjectEmpty)
+	if f.storageCalls != 1 || f.extractorCalls != 0 {
+		t.Errorf("external calls = storage:%d extractor:%d, want storage:1 extractor:0", f.storageCalls, f.extractorCalls)
+	}
+}
+
+func TestConfirmIdentityDocumentRejectsObjectAboveTenMiBWithBoundedReason(t *testing.T) {
+	f := newConfirmFixture()
+	f.storage.metadata.SizeBytes = 10*1024*1024 + 1
+
+	_, err := f.confirm()
+
+	requireArtifactError(t, err, artifact.CodeInvalidObjectMetadata, artifact.ReasonObjectTooLarge)
+	if f.storageCalls != 1 || f.extractorCalls != 0 {
+		t.Errorf("external calls = storage:%d extractor:%d, want storage:1 extractor:0", f.storageCalls, f.extractorCalls)
+	}
+}
+
+func TestConfirmIdentityDocumentRejectsUnsupportedContentTypeWithBoundedReason(t *testing.T) {
+	f := newConfirmFixture()
+	f.storage.metadata.ContentType = "text/plain"
+
+	_, err := f.confirm()
+
+	requireArtifactError(t, err, artifact.CodeInvalidObjectMetadata, artifact.ReasonUnsupportedContentType)
+	if f.storageCalls != 1 || f.extractorCalls != 0 {
+		t.Errorf("external calls = storage:%d extractor:%d, want storage:1 extractor:0", f.storageCalls, f.extractorCalls)
+	}
+}
+
+func TestConfirmIdentityDocumentAcceptsPNGAndPDFAtMaximumSize(t *testing.T) {
+	for _, contentType := range []string{"image/png", "application/pdf"} {
+		t.Run(contentType, func(t *testing.T) {
+			f := newConfirmFixture()
+			f.storage.metadata.ContentType = contentType
+			f.storage.metadata.SizeBytes = 10 * 1024 * 1024
+
+			_, err := f.confirm()
+
+			if err != nil {
+				t.Fatalf("Confirm() error = %#v", err)
+			}
+			if len(f.transactions.state.artifacts) != 1 ||
+				f.transactions.state.artifacts[0].ContentType != contentType ||
+				f.transactions.state.artifacts[0].SizeBytes != 10*1024*1024 {
+				t.Errorf("stored artifacts = %#v, want accepted %s at 10 MiB", f.transactions.state.artifacts, contentType)
+			}
+		})
+	}
+}
+
+func TestConfirmIdentityDocumentBoundsObjectStorageFailure(t *testing.T) {
+	f := newConfirmFixture()
+	rawBoundaryError := errors.New("sdk secret: bucket=private-identity-documents")
+	f.storage.err = rawBoundaryError
+
+	_, err := f.confirm()
+
+	requireArtifactError(t, err, artifact.CodeObjectStorageFailed, "")
+	if strings.Contains(err.Error(), rawBoundaryError.Error()) {
+		t.Fatalf("Confirm() error leaked storage details: %q", err)
+	}
+	if f.storageCalls != 1 || f.extractorCalls != 0 {
+		t.Errorf("external calls = storage:%d extractor:%d, want storage:1 extractor:0", f.storageCalls, f.extractorCalls)
+	}
+}
+
+func TestConfirmIdentityDocumentBoundsExtractorFailure(t *testing.T) {
+	f := newConfirmFixture()
+	rawBoundaryError := errors.New("extractor secret: raw OCR payload")
+	f.extractor.err = rawBoundaryError
+
+	_, err := f.confirm()
+
+	requireArtifactError(t, err, artifact.CodeDocumentExtractionFailed, "")
+	if strings.Contains(err.Error(), rawBoundaryError.Error()) {
+		t.Fatalf("Confirm() error leaked extractor details: %q", err)
+	}
+	if f.storageCalls != 1 || f.extractorCalls != 1 {
+		t.Errorf("external calls = storage:%d extractor:%d, want storage:1 extractor:1", f.storageCalls, f.extractorCalls)
+	}
+}
+
+func TestConfirmIdentityDocumentPerformsExternalIOWithoutOpenTransaction(t *testing.T) {
+	f := newConfirmFixture()
+	f.storage.onHead = func(string) {
+		if f.transactions.transactionActive {
+			t.Error("HeadObject() called while transaction is active")
+		}
+	}
+	f.extractor.onExtract = func(string) {
+		if f.transactions.transactionActive {
+			t.Error("Extract() called while transaction is active")
+		}
+	}
+
+	_, err := f.confirm()
+
+	if err != nil {
+		t.Fatalf("Confirm() error = %#v", err)
+	}
+}
+
+func TestConfirmIdentityDocumentDiscardsExternalResultWhenSessionStatusChanges(t *testing.T) {
+	f := newConfirmFixture()
+	f.extractor.onExtract = func(string) {
+		f.transactions.state.session.Status = session.StatusCreated
+	}
+
+	_, err := f.confirm()
+
+	requireArtifactError(t, err, artifact.CodeConfirmationStale, "")
+	if len(f.transactions.state.artifacts) != 0 || len(f.transactions.state.events) != 0 ||
+		f.transactions.state.uploadIntent.Status != "pending" {
+		t.Errorf("state = %#v, want no confirmation writes", f.transactions.state)
+	}
+}
+
+func TestConfirmIdentityDocumentDiscardsExternalResultWhenSessionExpiryChanges(t *testing.T) {
+	f := newConfirmFixture()
+	f.extractor.onExtract = func(string) {
+		f.transactions.state.session.ExpiresAt = f.now.Add(2 * time.Minute)
+	}
+
+	_, err := f.confirm()
+
+	requireArtifactError(t, err, artifact.CodeConfirmationStale, "")
+	if len(f.transactions.state.artifacts) != 0 || len(f.transactions.state.events) != 0 ||
+		f.transactions.state.uploadIntent.Status != "pending" {
+		t.Errorf("state = %#v, want no confirmation writes", f.transactions.state)
+	}
+}
+
+func TestConfirmIdentityDocumentDiscardsExternalResultWhenResumeTokenHashChanges(t *testing.T) {
+	f := newConfirmFixture()
+	f.tokens.equalFn = bytes.Equal
+	f.extractor.onExtract = func(string) {
+		f.transactions.state.session.ResumeTokenHash = []byte("rotated-hash")
+	}
+
+	_, err := f.confirm()
+
+	var serviceError *session.Error
+	if !errors.As(err, &serviceError) || serviceError.Code != session.CodeInvalidResumeToken {
+		t.Fatalf("Confirm() error = %#v, want %s", err, session.CodeInvalidResumeToken)
+	}
+	if len(f.transactions.state.artifacts) != 0 || len(f.transactions.state.events) != 0 ||
+		f.transactions.state.uploadIntent.Status != "pending" {
+		t.Errorf("state = %#v, want no confirmation writes", f.transactions.state)
+	}
+}
+
+func TestConfirmIdentityDocumentDiscardsExternalResultWhenIntentExpiryChanges(t *testing.T) {
+	f := newConfirmFixture()
+	f.extractor.onExtract = func(string) {
+		f.transactions.state.uploadIntent.ExpiresAt = f.now.Add(6 * time.Minute)
+	}
+
+	_, err := f.confirm()
+
+	requireArtifactError(t, err, artifact.CodeConfirmationStale, "")
+	if len(f.transactions.state.artifacts) != 0 || len(f.transactions.state.events) != 0 ||
+		f.transactions.state.uploadIntent.Status != "pending" {
+		t.Errorf("state = %#v, want no confirmation writes", f.transactions.state)
+	}
+}
+
+func TestConfirmIdentityDocumentRejectsIntentSupersededDuringExternalIO(t *testing.T) {
+	f := newConfirmFixture()
+	f.extractor.onExtract = func(string) {
+		f.transactions.state.uploadIntent.Status = "superseded"
+	}
+
+	_, err := f.confirm()
+
+	requireArtifactError(t, err, artifact.CodeUploadIntentSuperseded, "")
+	if len(f.transactions.state.artifacts) != 0 || len(f.transactions.state.events) != 0 {
+		t.Errorf("state = %#v, want no confirmation writes", f.transactions.state)
+	}
+}
+
+func TestConfirmIdentityDocumentDiscardsExternalResultWhenPersonalDetailsChange(t *testing.T) {
+	f := newConfirmFixture()
+	rawChangedIdentityNumber := "3173000000000099"
+	f.extractor.onExtract = func(string) {
+		f.transactions.state.details.IdentityNumber = rawChangedIdentityNumber
+	}
+
+	_, err := f.confirm()
+
+	requireArtifactError(t, err, artifact.CodeConfirmationStale, "")
+	if strings.Contains(err.Error(), rawChangedIdentityNumber) {
+		t.Fatalf("Confirm() error leaked changed identity number: %q", err)
+	}
+	if len(f.transactions.state.artifacts) != 0 || len(f.transactions.state.events) != 0 ||
+		f.transactions.state.uploadIntent.Status != "pending" {
+		t.Errorf("state = %#v, want no confirmation writes", f.transactions.state)
+	}
+}
+
+func TestConfirmIdentityDocumentReturnsStaleWhenPersonalDetailsDisappear(t *testing.T) {
+	f := newConfirmFixture()
+	f.extractor.onExtract = func(string) {
+		f.transactions.state.details = nil
+	}
+
+	_, err := f.confirm()
+
+	requireArtifactError(t, err, artifact.CodeConfirmationStale, "")
+	if len(f.transactions.state.artifacts) != 0 || len(f.transactions.state.events) != 0 ||
+		f.transactions.state.uploadIntent.Status != "pending" {
+		t.Errorf("state = %#v, want no confirmation writes", f.transactions.state)
 	}
 }
 
@@ -655,10 +1053,12 @@ func (m *memoryTransactions) WithinTransaction(ctx context.Context, operation fu
 	next.artifacts = append([]artifact.VerificationArtifact(nil), m.state.artifacts...)
 
 	next.events = append([]session.AppendEventParams(nil), next.events...)
+	m.transactionActive = true
 	err := operation(&memoryTransaction{
 		state:          &next,
 		appendEventErr: m.appendEventErr,
 	})
+	m.transactionActive = false
 	if err != nil {
 		return err
 	}
@@ -671,6 +1071,7 @@ type stubObjectStorage struct {
 	metadata artifact.ObjectMetadata
 	err      error
 	calls    *int
+	onHead   func(string)
 }
 
 type stubDocumentExtractor struct {
@@ -680,9 +1081,12 @@ type stubDocumentExtractor struct {
 	calls      *int
 }
 
-func (s stubObjectStorage) HeadObject(_ context.Context, _ string) (artifact.ObjectMetadata, error) {
+func (s stubObjectStorage) HeadObject(_ context.Context, storageKey string) (artifact.ObjectMetadata, error) {
 	if s.calls != nil {
 		*s.calls++
+	}
+	if s.onHead != nil {
+		s.onHead(storageKey)
 	}
 	return s.metadata, s.err
 }
@@ -706,8 +1110,9 @@ func (c fixedClock) Now() time.Time {
 }
 
 type stubTokenIssuer struct {
-	hash  []byte
-	equal bool
+	hash    []byte
+	equal   bool
+	equalFn func([]byte, []byte) bool
 }
 
 func (s stubTokenIssuer) Issue() (string, []byte, error) {
@@ -718,7 +1123,10 @@ func (s stubTokenIssuer) Hash(string) []byte {
 	return s.hash
 }
 
-func (s stubTokenIssuer) Equal(_, _ []byte) bool {
+func (s stubTokenIssuer) Equal(left, right []byte) bool {
+	if s.equalFn != nil {
+		return s.equalFn(left, right)
+	}
 	return s.equal
 }
 
@@ -742,15 +1150,13 @@ func (m *memoryTransactions) LoadUploadIntent(_ context.Context, sessionID uuid.
 	return m.state.uploadIntent, nil
 }
 
-var errMemoryPersonalDetailsNotFound = errors.New("memory personal details not found")
-
 func loadPersonalDetails(state *memoryState, sessionID uuid.UUID) (personaldetails.PersonalDetails, error) {
 	if state.details == nil {
-		return personaldetails.PersonalDetails{}, errMemoryPersonalDetailsNotFound
+		return personaldetails.PersonalDetails{}, artifact.ErrPersonalDetailsNotFound
 	}
 
 	if state.details.SessionID != sessionID {
-		return personaldetails.PersonalDetails{}, errMemoryPersonalDetailsNotFound
+		return personaldetails.PersonalDetails{}, artifact.ErrPersonalDetailsNotFound
 	}
 
 	return *state.details, nil

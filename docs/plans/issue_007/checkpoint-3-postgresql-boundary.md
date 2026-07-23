@@ -1,6 +1,6 @@
 # Checkpoint 3 — PostgreSQL Transaction dan Adapter Boundary
 
-Status: belum dimulai. Mulai hanya setelah Checkpoint 2 application behavior GREEN.
+Status: aktif; scaffold tracer PostgreSQL siap untuk bagian user pertama.
 
 ## Tujuan
 
@@ -43,6 +43,26 @@ semuanya sekaligus.
 4. User melengkapi transaction wrapper dan operasi success path hingga integration
    test pertama GREEN. External fakes harus dipanggil di luar transaction yang
    disediakan PostgreSQL adapter.
+
+## Scaffold yang sudah disiapkan
+
+`tests/integration/artifact_postgres_test.go` berisi satu test yang masih di-skip,
+helper disposable PostgreSQL melalui migration 00001-00005, serta fake storage dan
+extractor. Belum ada migration 00006, query, generated code, atau adapter artifact.
+
+Bagian pertama user sekarang:
+
+1. lengkapi hanya Arrange dan assertion test sukses sesuai komentar;
+2. hapus `t.Skip` setelah test sudah utuh;
+3. jalankan command terfokus berikut dan simpan output RED pertama:
+
+```sh
+go test ./tests/integration \
+  -run '^TestPostgresArtifactConfirmPersistsAcceptedOutcomeAtomically$' -count=1
+```
+
+Compile error karena constructor/adapter PostgreSQL belum ada adalah RED yang valid.
+Stop dan minta review sebelum menulis migration Verification Artifact.
 
 User tidak perlu menulis seluruh query surface. Tujuannya adalah mengalami satu
 alur: SQL -> sqlc generated type -> PostgreSQL adapter -> application port.

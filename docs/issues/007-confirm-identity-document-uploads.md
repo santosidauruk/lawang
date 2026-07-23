@@ -41,10 +41,10 @@ Checkpoint 1 is complete and reviewed:
    `tests/integration/upload_intents_postgres_test.go`.
 
 The migration proof and the real two-connection PostgreSQL test prove the
-one-pending-intent invariant. Checkpoint 2 is now active in
-`internal/application/artifact/service_test.go`: the user authors the first
-successful-confirm application test before sibling implementation begins. The agreed
-later sequence is PostgreSQL adapter, HTTP path, MinIO boundary, then
+one-pending-intent invariant. Checkpoint 2 application behavior is GREEN. Checkpoint 3
+is now active with a scaffold in `tests/integration/artifact_postgres_test.go`: the
+user completes the first PostgreSQL-backed successful-confirm test until it produces
+the expected RED. The agreed later sequence is HTTP path, MinIO boundary, then
 replay/concurrency hardening.
 
 ## Scope boundaries

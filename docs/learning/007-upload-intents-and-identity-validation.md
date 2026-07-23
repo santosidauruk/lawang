@@ -39,63 +39,55 @@ Verification evidence on 2026-07-20:
   unresolved. After the winner commits, the partial unique index rejects the loser.
   The Go race detector also passed for this test.
 
+## Checkpoint 2: application confirmation
+
+Checkpoint 2 is complete. The user-authored success tracer and guarded memory
+transaction were retained, then sibling behavior was added one RED-GREEN cycle at a
+time.
+
+`HeadObject` and extraction execute before the transaction because their latency and
+failure modes are external to PostgreSQL. Holding row locks while waiting for them
+would lengthen contention and still would not make object storage atomic with the
+database. The short transaction therefore locks and re-reads the session, Upload
+Intent, and immutable Personal Details. It commits only when the external result still
+matches the guarded storage key and other authorization, lifecycle, and identity
+facts; otherwise it discards that result without database-like effects.
+
+The application tests now prove:
+
+- accepted confirmation commits the intent, Verification Artifact, state transition,
+  and safe event as one unit;
+- identity-number mismatch commits only `validation_failed` plus one bounded event and
+  returns `LOCAL_VALIDATION_FAILED` with `identity_number_mismatch`;
+- invalid token and exact session expiry stop before intent/details and external I/O;
+- missing, expired, superseded, or wrong-kind intents return bounded errors before
+  external I/O;
+- JPEG, PNG, and PDF are accepted when non-empty and no larger than 10 MiB, including
+  the exact maximum; empty, oversized, and unsupported objects return bounded reasons;
+- storage and extractor failures do not expose raw SDK or extraction details;
+- transactional re-read rejects changed session status/expiry/token, intent storage
+  key/expiry/status, and changed or missing Personal Details;
+- an injected failure at the final event write rolls back earlier intent, artifact,
+  and session-state writes; and
+- neither mismatch errors nor event metadata contain submitted or extracted identity
+  numbers.
+
+Verification evidence on 2026-07-22:
+
+```text
+GOCACHE=/tmp/lawang-go-build go test ./internal/application/artifact -count=1
+28 tests passed
+
+GOCACHE=/tmp/lawang-go-build go test -race ./internal/application/artifact -count=1
+28 tests passed
+```
+
+Replay of `confirmed`/`validation_failed` outcomes and concurrent-confirm coordination
+remain intentionally deferred to Checkpoint 6.
+
 ## Later checkpoints
 
-- Checkpoint 2 is active: the first user-authored successful-confirmation test through
-  the application public interface.
 - PostgreSQL transaction and adapter boundary.
 - Strict HTTP decoding, handler, route registration, and runtime wiring.
 - Public-host presigning and `HeadObject` through the MinIO boundary.
 - Replay and concurrent-confirm coordination without repeated external work.
-
-## Checkpoint 2 guide: successful Identity Document confirmation
-
-This checkpoint is one TDD tracer bullet, not a batch of imagined tests. The public
-behavior is already frozen by `docs/plan-go.md`: confirmation receives the
-Verification Session ID, raw resume token, and Upload Intent ID, then returns the
-current `session.Summary`. On success its status is `identity_document_uploaded`.
-
-### File 1 — `internal/application/artifact/service_test.go` (user writes now)
-
-1. Remove `t.Skip` only when you are ready to make the test RED.
-2. Translate each ARRANGE comment into concrete values, starting with fixed IDs/time.
-3. Write only the success scenario. Do not add mismatch, expiry, replay, concurrency,
-   PostgreSQL, HTTP, or MinIO cases yet.
-4. Add small handwritten fakes below the test. Fake only the system boundaries:
-   transaction state, object storage, extractor, token hashing, and clock.
-5. Call only the public `Confirm` method. Do not call future private helpers.
-6. Assert the returned summary and committed state listed in the scaffold.
-7. Run:
-
-   ```sh
-   go test ./internal/application/artifact -run \
-     '^TestConfirmIdentityDocumentAcceptsValidatedUploadAtomically$' -count=1
-   ```
-
-   The expected RED may initially be a compile error because the public service does
-   not exist. That is valid RED: retain the exact output for review.
-
-Stop after this RED result and request review. Do not create `service.go` merely to
-silence every compiler error at once; the reviewed test will determine its minimum
-public types and consumed ports.
-
-### File 2 — `internal/application/artifact/service.go` (after RED review)
-
-The user will add the public input/result and minimal consumed interfaces revealed by
-the test, then implement only enough successful-confirm behavior to make the single
-test GREEN. The application use case owns the short transaction, but `HeadObject` and
-document extraction must execute before it. The transaction must re-read the guarded
-state before committing.
-
-### Later files — not part of the current RED
-
-After the first application test is reviewed and green, work proceeds vertically:
-
-1. sibling application tests and minimal service behavior;
-2. Upload Intent/Verification Artifact SQL queries and PostgreSQL transaction adapter;
-3. strict HTTP decode, handler, route registration, and runtime wiring;
-4. AWS SDK v2/MinIO implementation of the narrow ObjectStorage port;
-5. replay and concurrent-confirm hardening.
-
-Each step begins with one observable failing test. Do not pre-create all ports,
-repository methods, DTOs, or adapters during Checkpoint 2.

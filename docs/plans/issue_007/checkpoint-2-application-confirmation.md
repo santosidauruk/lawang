@@ -1,6 +1,6 @@
 # Checkpoint 2 — Application Confirmation
 
-Status: aktif. Jalur sukses pertama sudah GREEN, tetapi checkpoint belum selesai.
+Status: selesai pada 2026-07-22. Focused suite dan race detector GREEN.
 
 ## Tujuan
 
@@ -36,24 +36,18 @@ Checkpoint 6.
 
 Focused test saat audit dokumen ini adalah GREEN.
 
-## Audit: yang masih kurang
+## Audit baseline yang diselesaikan
 
-### Sisa concept-bearing
+### Temuan concept-bearing yang telah ditutup
 
-1. **Local mismatch belum atomik.** Implementasi sekarang mengembalikan
-   `errors.New("identity number mismatch")` sebelum transaction. Kontrak meminta
-   intent menjadi `validation_failed`, `failure_code=identity_number_mismatch`, satu
-   event `confirm_identity_document` ber-outcome `local_validation_failed`, tanpa
-   artifact dan tanpa perubahan session state.
-2. **Guard sesudah external I/O belum lengkap.** Metadata/extraction diperoleh untuk
-   `storedIntent.StorageKey`, tetapi hasil itu dapat dipakai bersama
-   `lockedIntent.StorageKey` tanpa membuktikan keduanya sama. Semua state yang menjadi
-   dasar external I/O harus dibandingkan setelah lock; hasil stale harus dibuang.
-3. **Rollback pada failure belum dibuktikan.** Test sukses membuktikan commit sebagai
-   satu unit, tetapi belum ada injected write failure yang membuktikan intent,
-   artifact, state, dan event semuanya kembali ke state awal.
+1. Local mismatch sekarang meng-commit `validation_failed`, bounded failure code, dan
+   event `local_validation_failed` secara atomik tanpa artifact/state transition.
+2. Guard sesudah external I/O sekarang membandingkan ulang session, intent termasuk
+   storage key/expiry, resume-token hash, serta immutable Personal Details.
+3. Injected event-write failure membuktikan intent, artifact, state, dan event kembali
+   ke state awal.
 
-### Sibling behavior yang belum ada
+### Sibling behavior yang telah ditutup
 
 - invalid token berhenti sebelum intent/details/storage/extractor dibaca;
 - session expired pada `now >= expires_at`;
@@ -63,10 +57,10 @@ Focused test saat audit dokumen ini adalah GREEN.
 - transactional re-read mendeteksi session/status/intent/details yang stale;
 - test memastikan raw identity number dan raw extraction tidak masuk event/error.
 
-`errors.New` yang tersebar belum cukup sebagai kontrak aplikasi karena HTTP adapter
-tidak dapat memetakan expected failures secara stabil dan aman.
+Expected application failures sekarang memakai typed bounded errors agar HTTP adapter
+dapat memetakannya secara stabil dan aman pada checkpoint berikutnya.
 
-## Urutan penyelesaian
+## Riwayat urutan penyelesaian
 
 Setiap nomor adalah satu siklus RED -> GREEN. Jangan menulis semua test sekaligus.
 
@@ -76,7 +70,7 @@ Tracer sukses dan minimal GREEN merupakan learning-bearing deliverable user untu
 checkpoint ini. Bila review menemukan kesalahan pada konsep transaction/re-read yang
 ditulis user, user merevisinya setelah melihat failing test yang sempit.
 
-### Kelanjutan agent setelah user meminta implementasi
+### Kelanjutan yang telah diselesaikan
 
 1. Tambahkan satu test mismatch atomik. Pastikan RED karena state masih `pending`.
    Minta user memperbaiki jalur mismatch karena ini bagian inti transaction yang ia
@@ -116,3 +110,8 @@ go test -race ./internal/application/artifact -count=1
 
 Jika Go build cache tidak writable di environment agent, arahkan `GOCACHE` ke
 `/tmp/lawang-go-build`; itu masalah environment, bukan kegagalan test produk.
+
+Hasil aktual pada 2026-07-22: kedua command minimum lulus dengan 28 test. Typed error,
+file-constraint mapping, short-circuit, rollback, dan stale re-read dicatat di
+`docs/learning/007-upload-intents-and-identity-validation.md`. Replay serta koordinasi
+concurrent confirm tetap sengaja berada di Checkpoint 6.
