@@ -63,33 +63,3 @@ func (q *Queries) InsertPersonalDetails(ctx context.Context, arg InsertPersonalD
 	)
 	return err
 }
-
-const lockVerificationSessionForPersonalDetails = `-- name: LockVerificationSessionForPersonalDetails :one
-SELECT id, status, resume_token_hash, expires_at, created_at, updated_at
-FROM verification_sessions
-WHERE id = $1
-FOR UPDATE
-`
-
-type LockVerificationSessionForPersonalDetailsRow struct {
-	ID              uuid.UUID `json:"id"`
-	Status          string    `json:"status"`
-	ResumeTokenHash []byte    `json:"resume_token_hash"`
-	ExpiresAt       time.Time `json:"expires_at"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
-}
-
-func (q *Queries) LockVerificationSessionForPersonalDetails(ctx context.Context, id uuid.UUID) (LockVerificationSessionForPersonalDetailsRow, error) {
-	row := q.db.QueryRow(ctx, lockVerificationSessionForPersonalDetails, id)
-	var i LockVerificationSessionForPersonalDetailsRow
-	err := row.Scan(
-		&i.ID,
-		&i.Status,
-		&i.ResumeTokenHash,
-		&i.ExpiresAt,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}

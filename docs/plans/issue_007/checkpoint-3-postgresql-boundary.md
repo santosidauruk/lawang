@@ -1,6 +1,7 @@
 # Checkpoint 3 — PostgreSQL Transaction dan Adapter Boundary
 
-Status: aktif; scaffold tracer PostgreSQL siap untuk bagian user pertama.
+Status: aktif; bagian user 1–3 selesai, scaffold transaction tracer siap untuk
+bagian user 4.
 
 ## Tujuan
 
@@ -46,26 +47,77 @@ semuanya sekaligus.
 
 ## Scaffold yang sudah disiapkan
 
-`tests/integration/artifact_postgres_test.go` berisi satu test yang masih di-skip,
-helper disposable PostgreSQL melalui migration 00001-00005, serta fake storage dan
-extractor. Belum ada migration 00006, query, generated code, atau adapter artifact.
+`tests/integration/artifact_postgres_test.go` sekarang memiliki Arrange dan assertion
+lengkap untuk accepted outcome. RED pertama sudah berhenti pada constructor
+`postgresadapter.NewArtifactTransactions` yang belum ada.
 
-Bagian pertama user sekarang:
+Scaffold bagian schema berada di:
 
-1. lengkapi hanya Arrange dan assertion test sukses sesuai komentar;
-2. hapus `t.Skip` setelah test sudah utuh;
-3. jalankan command terfokus berikut dan simpan output RED pertama:
+- `sql/migrations/00006_create_verification_artifacts.sql`;
+- `sql/proofs/006_verification_artifact_constraints.sql`;
+- `tests/schema/verification_artifacts_postgres_test.go` sebagai runner agent-owned.
+
+Bagian schema user sudah selesai dan direview. Migration serta proof lulus pada
+PostgreSQL `18.4-alpine3.23` disposable pada 2026-07-23.
+
+Jalankan satu skenario proof pada satu waktu melalui PostgreSQL disposable:
 
 ```sh
-go test ./tests/integration \
-  -run '^TestPostgresArtifactConfirmPersistsAcceptedOutcomeAtomically$' -count=1
+docker desktop status
+go test ./tests/schema \
+  -run '^TestVerificationArtifactMigrationAndConstraintProof$' -count=1 -v
 ```
 
-Compile error karena constructor/adapter PostgreSQL belum ada adalah RED yang valid.
-Stop dan minta review sebelum menulis migration Verification Artifact.
+Runner gagal bila migration belum membuat tabel, psql menemukan violation yang tidak
+ditangani, atau proof belum mengeluarkan completion marker yang ditentukan scaffold.
 
-User tidak perlu menulis seluruh query surface. Tujuannya adalah mengalami satu
-alur: SQL -> sqlc generated type -> PostgreSQL adapter -> application port.
+Migration/proof harus membuktikan unique Upload Intent, satu artifact per
+`(session, kind)`, bounded kind, valid generic object metadata, foreign keys, serta
+kesesuaian ownership session/kind dengan Upload Intent. Mapping JPEG/PNG/PDF dan batas
+10 MiB tetap milik application code.
+
+`docs/plan-go.md` menyebut minimized extraction result, tetapi application type saat
+ini belum mendefinisikan field bounded tersebut. Jangan membuat kolom spekulatif;
+bawa gap ini ke review sebelum public application type diperluas.
+
+Bagian user langkah 3 sudah selesai dan direview: `LockUploadIntent :one` mengunci
+row yang dimiliki Verification Session yang diminta; generated params bernama jelas;
+adapter memetakan seluruh row, nullable pgtype, dan `pgx.ErrNoRows` tanpa membocorkan
+type sqlc ke application.
+
+Bagian user berikutnya adalah langkah 4: melengkapi adapter yang memenuhi
+`artifact.Reader` dan `artifact.Transactor`, lalu membuat tracer accepted outcome
+GREEN. Scaffold berada di:
+
+- `sql/queries/upload_intents.sql` untuk non-locking read serta expected-state
+  updates;
+- `sql/queries/verification_artifacts.sql` untuk insert accepted artifact;
+- `internal/adapter/postgres/artifact_transactions.go` untuk constructor, Reader,
+  transaction wrapper, dan transaction operations.
+
+Urutan kerja user:
+
+1. tulis `LoadUploadIntent :one`, jalankan `make sqlc-generate`, lalu implementasikan
+   tiga Reader methods;
+2. tulis `NewArtifactTransactions` dan `WithinTransaction` dengan satu
+   transaction-bound `generated.Queries`;
+3. reuse query session/personal-details/event yang sudah ada untuk `LockSession`,
+   `LoadPersonalDetails`, guarded state update, dan append event;
+4. tulis `ConfirmUploadIntent :execrows` dan `InsertVerificationArtifact :exec`,
+   generate, lalu map ke transaction operations;
+5. lengkapi `MarkUploadIntentValidationFailed :execrows` agar concrete transaction
+   memenuhi seluruh application interface;
+6. jalankan tracer saja:
+
+   ```sh
+   go test ./tests/integration \
+     -run '^TestPostgresArtifactConfirmPersistsAcceptedOutcomeAtomically$' \
+     -count=1 -v
+   ```
+
+Stop untuk review ketika tracer pertama GREEN. Jangan menambahkan mismatch, forced
+rollback, create/supersede intent, replay, concurrency, HTTP, atau MinIO pada siklus
+user ini.
 
 ## Review agent
 

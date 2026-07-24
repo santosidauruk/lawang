@@ -134,3 +134,33 @@ func (q *Queries) GuardVerificationSessionState(ctx context.Context, arg GuardVe
 	}
 	return result.RowsAffected(), nil
 }
+
+const lockVerificationSessionByID = `-- name: LockVerificationSessionByID :one
+SELECT id, status, resume_token_hash, expires_at, created_at, updated_at
+FROM verification_sessions
+WHERE id = $1
+FOR UPDATE
+`
+
+type LockVerificationSessionByIDRow struct {
+	ID              uuid.UUID `json:"id"`
+	Status          string    `json:"status"`
+	ResumeTokenHash []byte    `json:"resume_token_hash"`
+	ExpiresAt       time.Time `json:"expires_at"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
+}
+
+func (q *Queries) LockVerificationSessionByID(ctx context.Context, id uuid.UUID) (LockVerificationSessionByIDRow, error) {
+	row := q.db.QueryRow(ctx, lockVerificationSessionByID, id)
+	var i LockVerificationSessionByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.Status,
+		&i.ResumeTokenHash,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}

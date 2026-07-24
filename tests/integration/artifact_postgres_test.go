@@ -21,8 +21,6 @@ import (
 // compile/test failure as the RED result for review. Do not add mismatch, rollback,
 // create-intent, replay, concurrency, HTTP, or MinIO behavior to this test.
 func TestPostgresArtifactConfirmPersistsAcceptedOutcomeAtomically(t *testing.T) {
-	t.Skip("checkpoint 3 user exercise: complete Arrange and assertions, then remove this skip")
-
 	// ARRANGE 1 — fixed facts and disposable PostgreSQL
 	// Call openArtifactDatabase. Define a fixed clock, raw resume token, identity
 	// number, Upload Intent UUID, storage key, and future session/intent expiries.
@@ -34,7 +32,8 @@ func TestPostgresArtifactConfirmPersistsAcceptedOutcomeAtomically(t *testing.T) 
 	identityNumber := "127100000000009"
 	kind := "identity_document"
 	storageKey := "storage-key"
-	expiresAt := now.Add(5 * time.Minute)
+	sessionExpiresAt := now.Add(30 * time.Minute)
+	intentExpiresAt := now.Add(5 * time.Minute)
 	storedHash := session.NewProductionCryptoTokens().Hash(rawToken)
 
 	// ARRANGE 2 — pre-confirmation database state
@@ -47,7 +46,7 @@ func TestPostgresArtifactConfirmPersistsAcceptedOutcomeAtomically(t *testing.T) 
 		INSERT INTO verification_sessions (resume_token_hash, status, expires_at)
 		VALUES ($1, 'personal_details_submitted', $2)
 		RETURNING id
-	`, storedHash, expiresAt).Scan(&sessionID)
+	`, storedHash, sessionExpiresAt).Scan(&sessionID)
 	if err != nil {
 		t.Fatalf("insert Verification Session: %v", err)
 	}
@@ -64,16 +63,17 @@ func TestPostgresArtifactConfirmPersistsAcceptedOutcomeAtomically(t *testing.T) 
 		t.Fatalf("insert Personal Details: %v", err)
 	}
 
-	var uploadIntentStatus string
-	var uploadIntentLatestStatusChangeAt, uploadIntentConfirmedAt time.Time
-	var failureCode *string
+	var initialUploadIntentStatus string
 	err = database.QueryRow(ctx, `
 		INSERT INTO upload_intents (id, verification_session_id, kind, storage_key, expires_at)
 		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id, status, latest_status_change_at, confirmed_at, failureCode
-	`, uploadIntentID, sessionID, kind, storageKey, expiresAt).Scan(&uploadIntentID, &uploadIntentStatus, &uploadIntentLatestStatusChangeAt, uploadIntentConfirmedAt, failureCode)
+		RETURNING status
+	`, uploadIntentID, sessionID, kind, storageKey, intentExpiresAt).Scan(&initialUploadIntentStatus)
 	if err != nil {
-		t.Fatalf("insert Upload Intents: %#v", err)
+		t.Fatalf("insert Upload Intents: %v", err)
+	}
+	if initialUploadIntentStatus != "pending" {
+		t.Fatalf("initial Upload Intent status = %q, want pending", initialUploadIntentStatus)
 	}
 	// ARRANGE 3 — external boundaries
 	// Use artifactPostgresObjectStorage and artifactPostgresExtractor below. Return
@@ -114,6 +114,7 @@ func TestPostgresArtifactConfirmPersistsAcceptedOutcomeAtomically(t *testing.T) 
 	// ACT
 	// Call service.Confirm once through the public application interface.
 	got, err := service.Confirm(ctx, sessionID, rawToken, uploadIntentID)
+
 	// ASSERT — returned behavior and committed outcome
 	// First assert the returned session.Summary is identity_document_uploaded.
 	// Then prove PostgreSQL contains one atomic accepted outcome:
@@ -125,7 +126,7 @@ func TestPostgresArtifactConfirmPersistsAcceptedOutcomeAtomically(t *testing.T) 
 	// Querying committed rows is allowed here because persistence is the boundary
 	// under test. Never assert private adapter calls or generated sqlc row shapes.
 	if err != nil {
-		t.Fatalf("Confirm() error = %#v", err)
+		t.Fatalf("Confirm() error = %v", err)
 	}
 
 	if got.Status != session.StatusIdentityDocumentUploaded {
@@ -136,12 +137,34 @@ func TestPostgresArtifactConfirmPersistsAcceptedOutcomeAtomically(t *testing.T) 
 		t.Errorf("session summary id got = %v, want %v", got.ID, sessionID)
 	}
 
-	if !got.ExpiresAt.Equal(expiresAt) {
-		t.Errorf("session expiresAt got = %v, want %v", got.ExpiresAt, expiresAt)
+	if !got.ExpiresAt.Equal(sessionExpiresAt) {
+		t.Errorf("session expiresAt got = %v, want %v", got.ExpiresAt, sessionExpiresAt)
 	}
 
-	if err := database.QueryRow(ctx, `SELECT status, confirmed_at, latest_status_change_at, failure_code FROM upload_intents WHERE id = $1`, uploadIntentID).Scan(&uploadIntentStatus, &uploadIntentConfirmedAt, &uploadIntentLatestStatusChangeAt, &failureCode); err != nil {
-		t.Fatalf("get confirmation time from Upload Intent = %v", err)
+	var uploadIntentStatus string
+	var uploadIntentConfirmedAt, uploadIntentLatestStatusChangeAt time.Time
+	var storedIntentExpiresAt time.Time
+	var failureCode *string
+	var objectDeletedAt *time.Time
+	if err := database.QueryRow(ctx, `
+		SELECT
+			status,
+			confirmed_at,
+			latest_status_change_at,
+			expires_at,
+			failure_code,
+			object_deleted_at
+		FROM upload_intents
+		WHERE id = $1
+	`, uploadIntentID).Scan(
+		&uploadIntentStatus,
+		&uploadIntentConfirmedAt,
+		&uploadIntentLatestStatusChangeAt,
+		&storedIntentExpiresAt,
+		&failureCode,
+		&objectDeletedAt,
+	); err != nil {
+		t.Fatalf("read confirmed Upload Intent: %v", err)
 	}
 
 	if uploadIntentStatus != "confirmed" {
@@ -156,15 +179,146 @@ func TestPostgresArtifactConfirmPersistsAcceptedOutcomeAtomically(t *testing.T) 
 		t.Errorf("upload intent confirmed_at = %s, want %s", uploadIntentConfirmedAt, now)
 	}
 
-	if failureCode != nil {
-		t.Errorf("upload intent failureCode = %v", failureCode)
+	if !storedIntentExpiresAt.Equal(intentExpiresAt) {
+		t.Errorf("upload intent expires_at = %s, want unchanged %s", storedIntentExpiresAt, intentExpiresAt)
 	}
 
-	var eventType sessionevent.Type
+	if failureCode != nil {
+		t.Errorf("upload intent failure_code = %v, want nil", failureCode)
+	}
+
+	if objectDeletedAt != nil {
+		t.Errorf("upload intent object_deleted_at = %v, want nil", objectDeletedAt)
+	}
+
+	var artifactID, artifactSessionID, artifactUploadIntentID uuid.UUID
+	var artifactKind, artifactStorageKey, artifactContentType, artifactETag string
+	var artifactSizeBytes int64
+	var artifactCreatedAt time.Time
+	var artifactCount int
+	if err := database.QueryRow(ctx, `
+		SELECT
+			id,
+			verification_session_id,
+			upload_intent_id,
+			kind,
+			storage_key,
+			content_type,
+			size_bytes,
+			etag,
+			created_at,
+			count(*) OVER ()
+		FROM verification_artifacts
+		WHERE verification_session_id = $1
+		  AND kind = $2
+	`, sessionID, kind).Scan(
+		&artifactID,
+		&artifactSessionID,
+		&artifactUploadIntentID,
+		&artifactKind,
+		&artifactStorageKey,
+		&artifactContentType,
+		&artifactSizeBytes,
+		&artifactETag,
+		&artifactCreatedAt,
+		&artifactCount,
+	); err != nil {
+		t.Fatalf("read accepted Verification Artifact: %v", err)
+	}
+
+	if artifactCount != 1 {
+		t.Errorf("Verification Artifact count = %d, want 1", artifactCount)
+	}
+	if artifactID == uuid.Nil {
+		t.Error("Verification Artifact ID is nil")
+	}
+	if artifactSessionID != sessionID || artifactUploadIntentID != uploadIntentID {
+		t.Errorf(
+			"Verification Artifact references session/intent = %s/%s, want %s/%s",
+			artifactSessionID,
+			artifactUploadIntentID,
+			sessionID,
+			uploadIntentID,
+		)
+	}
+	if artifactKind != kind ||
+		artifactStorageKey != storageKey ||
+		artifactContentType != objectStorage.metadata.ContentType ||
+		artifactSizeBytes != objectStorage.metadata.SizeBytes ||
+		artifactETag != objectStorage.metadata.ETag {
+		t.Errorf(
+			"Verification Artifact metadata = %q/%q/%q/%d/%q, want %q/%q/%q/%d/%q",
+			artifactKind,
+			artifactStorageKey,
+			artifactContentType,
+			artifactSizeBytes,
+			artifactETag,
+			kind,
+			storageKey,
+			objectStorage.metadata.ContentType,
+			objectStorage.metadata.SizeBytes,
+			objectStorage.metadata.ETag,
+		)
+	}
+	if !artifactCreatedAt.Equal(now) {
+		t.Errorf("Verification Artifact created_at = %s, want %s", artifactCreatedAt, now)
+	}
+
+	var storedSessionStatus string
+	var storedSessionExpiresAt, storedSessionUpdatedAt time.Time
+	if err := database.QueryRow(ctx, `
+		SELECT status, expires_at, updated_at
+		FROM verification_sessions
+		WHERE id = $1
+	`, sessionID).Scan(
+		&storedSessionStatus,
+		&storedSessionExpiresAt,
+		&storedSessionUpdatedAt,
+	); err != nil {
+		t.Fatalf("read confirmed Verification Session: %v", err)
+	}
+	if storedSessionStatus != session.StatusIdentityDocumentUploaded.String() {
+		t.Errorf(
+			"stored Verification Session status = %q, want %q",
+			storedSessionStatus,
+			session.StatusIdentityDocumentUploaded,
+		)
+	}
+	if !storedSessionExpiresAt.Equal(sessionExpiresAt) {
+		t.Errorf(
+			"stored Verification Session expires_at = %s, want unchanged %s",
+			storedSessionExpiresAt,
+			sessionExpiresAt,
+		)
+	}
+	if !storedSessionUpdatedAt.Equal(now) {
+		t.Errorf("stored Verification Session updated_at = %s, want %s", storedSessionUpdatedAt, now)
+	}
+
+	var rawEventType string
 	var rawMetadata []byte
 	var occurredAt time.Time
-	if err := database.QueryRow(ctx, `SELECT event_type, metadata, occurred_at FROM session_events WHERE session_id = $1`, sessionID).Scan(&eventType, &rawMetadata, &occurredAt); err != nil {
-		t.Fatalf("count Session Events: %v", err)
+	var eventCount int
+	if err := database.QueryRow(ctx, `
+		SELECT event_type, metadata, occurred_at, count(*) OVER ()
+		FROM session_events
+		WHERE session_id = $1
+	`, sessionID).Scan(
+		&rawEventType,
+		&rawMetadata,
+		&occurredAt,
+		&eventCount,
+	); err != nil {
+		t.Fatalf("read confirm_identity_document Session Event: %v", err)
+	}
+
+	if eventCount != 1 {
+		t.Errorf("Session Event count = %d, want 1", eventCount)
+	}
+
+	eventType, err := sessionevent.ParseType(rawEventType)
+	if err != nil {
+		t.Fatalf("parse Session Event type: %v", err)
 	}
 
 	if eventType != sessionevent.ConfirmIdentityDocument {
@@ -173,14 +327,14 @@ func TestPostgresArtifactConfirmPersistsAcceptedOutcomeAtomically(t *testing.T) 
 
 	metadata, err := sessionevent.ParseMetadata(rawMetadata)
 	if err != nil {
-		t.Fatalf("failed to parse metadata = %#v", err)
+		t.Fatalf("parse Session Event metadata: %v", err)
 	}
 	outcome := metadata.Outcome()
 	if outcome != sessionevent.OutcomeAccepted {
 		t.Errorf("event metadata got = %s, want %s", outcome, sessionevent.OutcomeAccepted)
 	}
 	if !occurredAt.Equal(now) {
-		t.Errorf("event occured at got = %s, want %s", occurredAt, now)
+		t.Errorf("event occurred_at got = %s, want %s", occurredAt, now)
 	}
 }
 
@@ -190,7 +344,16 @@ func TestPostgresArtifactConfirmPersistsAcceptedOutcomeAtomically(t *testing.T) 
 // of the expected Checkpoint 3 RED.
 func openArtifactDatabase(t *testing.T) (context.Context, *pgx.Conn) {
 	t.Helper()
-	ctx, _, databaseURL := openUploadIntentDatabase(t)
+	ctx, container, databaseURL := openUploadIntentDatabase(t)
+
+	runPSQLFile(
+		t,
+		ctx,
+		container,
+		"../../sql/migrations/00006_create_verification_artifacts.sql",
+		"/tmp/00006.sql",
+	)
+
 	database, err := pgx.Connect(ctx, databaseURL)
 	if err != nil {
 		t.Fatalf("connect artifact PostgreSQL: %v", err)

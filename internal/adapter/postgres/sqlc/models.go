@@ -42,6 +42,18 @@ type UploadIntent struct {
 	FailureCode           pgtype.Text        `json:"failure_code"`
 }
 
+type VerificationArtifact struct {
+	ID                    uuid.UUID `json:"id"`
+	UploadIntentID        uuid.UUID `json:"upload_intent_id"`
+	VerificationSessionID uuid.UUID `json:"verification_session_id"`
+	Kind                  string    `json:"kind"`
+	StorageKey            string    `json:"storage_key"`
+	ContentType           string    `json:"content_type"`
+	SizeBytes             int64     `json:"size_bytes"`
+	Etag                  string    `json:"etag"`
+	CreatedAt             time.Time `json:"created_at"`
+}
+
 type VerificationSession struct {
 	ID              uuid.UUID `json:"id"`
 	Status          string    `json:"status"`

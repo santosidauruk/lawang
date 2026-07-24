@@ -54,7 +54,7 @@ func (t *personalDetailsTransaction) LockSession(
 	ctx context.Context,
 	id uuid.UUID,
 ) (session.VerificationSession, error) {
-	row, err := t.queries.LockVerificationSessionForPersonalDetails(ctx, id)
+	row, err := t.queries.LockVerificationSessionByID(ctx, id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return session.VerificationSession{}, session.ErrSessionNotFound
 	}
