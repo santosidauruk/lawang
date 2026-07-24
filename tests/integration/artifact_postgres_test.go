@@ -2,11 +2,14 @@ package integration_test
 
 import (
 	"context"
+	"errors"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	postgresadapter "github.com/santosidauruk/lawang-go/internal/adapter/postgres"
 	"github.com/santosidauruk/lawang-go/internal/application/artifact"
 	"github.com/santosidauruk/lawang-go/internal/application/session"
@@ -338,10 +341,611 @@ func TestPostgresArtifactConfirmPersistsAcceptedOutcomeAtomically(t *testing.T) 
 	}
 }
 
-// openArtifactDatabase deliberately applies migrations only through Upload Intent.
-// After the user-authored Verification Artifact migration is reviewed, add 00006 to
-// this setup before connecting. Until then, the missing persistence surface is part
-// of the expected Checkpoint 3 RED.
+func TestPostgresArtifactConfirmPersistsMismatchOutcomeAtomically(t *testing.T) {
+	now := time.Date(2026, 7, 24, 10, 0, 0, 0, time.UTC)
+	ctx, database := openArtifactDatabase(t)
+	fixture := seedArtifactConfirmationState(t, ctx, database, now)
+
+	postgresArtifacts := postgresadapter.NewArtifactTransactions(database)
+	service := artifact.NewService(
+		postgresArtifacts,
+		postgresArtifacts,
+		artifactPostgresObjectStorage{metadata: artifact.ObjectMetadata{
+			ContentType: "image/jpeg",
+			SizeBytes:   1024,
+			ETag:        "mismatch-etag",
+		}},
+		artifactPostgresExtractor{extraction: artifact.DocumentExtraction{
+			IdentityNumber: "different-identity-number",
+		}},
+		session.NewProductionCryptoTokens(),
+		fixedClock{now: now},
+	)
+
+	got, err := service.Confirm(
+		ctx,
+		fixture.sessionID,
+		fixture.rawToken,
+		fixture.uploadIntentID,
+	)
+
+	if got != (session.Summary{}) {
+		t.Errorf("Confirm() summary = %#v, want zero summary", got)
+	}
+	var artifactError *artifact.Error
+	if !errors.As(err, &artifactError) {
+		t.Fatalf("Confirm() error = %v, want artifact.Error", err)
+	}
+	if artifactError.Code != artifact.CodeLocalValidationFailed ||
+		artifactError.Reason != artifact.ReasonIdentityNumberMismatch {
+		t.Fatalf(
+			"Confirm() error = %s/%s, want %s/%s",
+			artifactError.Code,
+			artifactError.Reason,
+			artifact.CodeLocalValidationFailed,
+			artifact.ReasonIdentityNumberMismatch,
+		)
+	}
+
+	var intentStatus string
+	var failureCode string
+	var confirmedAt *time.Time
+	var latestStatusChangeAt time.Time
+	if err := database.QueryRow(ctx, `
+		SELECT status, failure_code, confirmed_at, latest_status_change_at
+		FROM upload_intents
+		WHERE id = $1
+	`, fixture.uploadIntentID).Scan(
+		&intentStatus,
+		&failureCode,
+		&confirmedAt,
+		&latestStatusChangeAt,
+	); err != nil {
+		t.Fatalf("read validation-failed Upload Intent: %v", err)
+	}
+	if intentStatus != "validation_failed" {
+		t.Errorf("Upload Intent status = %q, want validation_failed", intentStatus)
+	}
+	if failureCode != string(artifact.ReasonIdentityNumberMismatch) {
+		t.Errorf(
+			"Upload Intent failure_code = %q, want %q",
+			failureCode,
+			artifact.ReasonIdentityNumberMismatch,
+		)
+	}
+	if confirmedAt != nil {
+		t.Errorf("Upload Intent confirmed_at = %v, want nil", confirmedAt)
+	}
+	if !latestStatusChangeAt.Equal(now) {
+		t.Errorf(
+			"Upload Intent latest_status_change_at = %s, want %s",
+			latestStatusChangeAt,
+			now,
+		)
+	}
+
+	var artifactCount int
+	if err := database.QueryRow(ctx, `
+		SELECT count(*)
+		FROM verification_artifacts
+		WHERE upload_intent_id = $1
+	`, fixture.uploadIntentID).Scan(&artifactCount); err != nil {
+		t.Fatalf("count mismatch Verification Artifacts: %v", err)
+	}
+	if artifactCount != 0 {
+		t.Errorf("Verification Artifact count = %d, want 0", artifactCount)
+	}
+
+	var sessionStatus string
+	if err := database.QueryRow(ctx, `
+		SELECT status
+		FROM verification_sessions
+		WHERE id = $1
+	`, fixture.sessionID).Scan(&sessionStatus); err != nil {
+		t.Fatalf("read mismatch Verification Session: %v", err)
+	}
+	if sessionStatus != session.StatusPersonalDetailsSubmitted.String() {
+		t.Errorf(
+			"Verification Session status = %q, want %q",
+			sessionStatus,
+			session.StatusPersonalDetailsSubmitted,
+		)
+	}
+
+	var eventType string
+	var eventOutcome string
+	var eventOccurredAt time.Time
+	var eventCount int
+	if err := database.QueryRow(ctx, `
+		SELECT
+			event_type,
+			metadata ->> 'outcome',
+			occurred_at,
+			count(*) OVER ()
+		FROM session_events
+		WHERE session_id = $1
+	`, fixture.sessionID).Scan(
+		&eventType,
+		&eventOutcome,
+		&eventOccurredAt,
+		&eventCount,
+	); err != nil {
+		t.Fatalf("read mismatch Session Event: %v", err)
+	}
+	if eventCount != 1 {
+		t.Errorf("Session Event count = %d, want 1", eventCount)
+	}
+	if eventType != sessionevent.ConfirmIdentityDocument.String() {
+		t.Errorf(
+			"Session Event type = %q, want %q",
+			eventType,
+			sessionevent.ConfirmIdentityDocument,
+		)
+	}
+	if eventOutcome != string(sessionevent.OutcomeLocalValidationFailed) {
+		t.Errorf(
+			"Session Event outcome = %q, want %q",
+			eventOutcome,
+			sessionevent.OutcomeLocalValidationFailed,
+		)
+	}
+	if !eventOccurredAt.Equal(now) {
+		t.Errorf("Session Event occurred_at = %s, want %s", eventOccurredAt, now)
+	}
+}
+
+func TestPostgresArtifactConfirmRollsBackAcceptedOutcomeWhenEventWriteFails(t *testing.T) {
+	now := time.Date(2026, 7, 24, 11, 0, 0, 0, time.UTC)
+	ctx, database := openArtifactDatabase(t)
+	fixture := seedArtifactConfirmationState(t, ctx, database, now)
+
+	if _, err := database.Exec(ctx, `
+		CREATE FUNCTION reject_confirm_identity_document_event()
+		RETURNS trigger
+		LANGUAGE plpgsql
+		AS $$
+		BEGIN
+			IF NEW.event_type = 'confirm_identity_document' THEN
+				RAISE EXCEPTION 'forced confirm event failure';
+			END IF;
+			RETURN NEW;
+		END;
+		$$;
+
+		CREATE TRIGGER reject_confirm_identity_document_event
+		BEFORE INSERT ON session_events
+		FOR EACH ROW
+		EXECUTE FUNCTION reject_confirm_identity_document_event();
+	`); err != nil {
+		t.Fatalf("install forced event failure: %v", err)
+	}
+
+	postgresArtifacts := postgresadapter.NewArtifactTransactions(database)
+	service := artifact.NewService(
+		postgresArtifacts,
+		postgresArtifacts,
+		artifactPostgresObjectStorage{metadata: artifact.ObjectMetadata{
+			ContentType: "image/jpeg",
+			SizeBytes:   1024,
+			ETag:        "rollback-etag",
+		}},
+		artifactPostgresExtractor{extraction: artifact.DocumentExtraction{
+			IdentityNumber: fixture.identityNumber,
+		}},
+		session.NewProductionCryptoTokens(),
+		fixedClock{now: now},
+	)
+
+	got, err := service.Confirm(
+		ctx,
+		fixture.sessionID,
+		fixture.rawToken,
+		fixture.uploadIntentID,
+	)
+
+	if err == nil {
+		t.Fatal("Confirm() error = nil, want forced database error")
+	}
+	if got != (session.Summary{}) {
+		t.Errorf("Confirm() summary = %#v, want zero summary", got)
+	}
+
+	var intentStatus string
+	var confirmedAt *time.Time
+	var failureCode *string
+	if err := database.QueryRow(ctx, `
+		SELECT status, confirmed_at, failure_code
+		FROM upload_intents
+		WHERE id = $1
+	`, fixture.uploadIntentID).Scan(
+		&intentStatus,
+		&confirmedAt,
+		&failureCode,
+	); err != nil {
+		t.Fatalf("read rolled-back Upload Intent: %v", err)
+	}
+	if intentStatus != "pending" {
+		t.Errorf("Upload Intent status = %q, want pending", intentStatus)
+	}
+	if confirmedAt != nil {
+		t.Errorf("Upload Intent confirmed_at = %v, want nil", confirmedAt)
+	}
+	if failureCode != nil {
+		t.Errorf("Upload Intent failure_code = %v, want nil", failureCode)
+	}
+
+	var artifactCount int
+	if err := database.QueryRow(ctx, `
+		SELECT count(*)
+		FROM verification_artifacts
+		WHERE upload_intent_id = $1
+	`, fixture.uploadIntentID).Scan(&artifactCount); err != nil {
+		t.Fatalf("count rolled-back Verification Artifacts: %v", err)
+	}
+	if artifactCount != 0 {
+		t.Errorf("Verification Artifact count = %d, want 0", artifactCount)
+	}
+
+	var sessionStatus string
+	if err := database.QueryRow(ctx, `
+		SELECT status
+		FROM verification_sessions
+		WHERE id = $1
+	`, fixture.sessionID).Scan(&sessionStatus); err != nil {
+		t.Fatalf("read rolled-back Verification Session: %v", err)
+	}
+	if sessionStatus != session.StatusPersonalDetailsSubmitted.String() {
+		t.Errorf(
+			"Verification Session status = %q, want %q",
+			sessionStatus,
+			session.StatusPersonalDetailsSubmitted,
+		)
+	}
+
+	var eventCount int
+	if err := database.QueryRow(ctx, `
+		SELECT count(*)
+		FROM session_events
+		WHERE session_id = $1
+	`, fixture.sessionID).Scan(&eventCount); err != nil {
+		t.Fatalf("count rolled-back Session Events: %v", err)
+	}
+	if eventCount != 0 {
+		t.Errorf("Session Event count = %d, want 0", eventCount)
+	}
+}
+
+func TestPostgresCreateIdentityUploadIntentAtomicallySupersedesPendingIntent(t *testing.T) {
+	now := time.Date(2026, 7, 24, 15, 0, 0, 0, time.UTC)
+	ctx, database := openArtifactDatabase(t)
+	rawToken := "postgres-create-intent-token"
+	tokens := session.NewProductionCryptoTokens()
+
+	var sessionID uuid.UUID
+	if err := database.QueryRow(ctx, `
+		INSERT INTO verification_sessions (
+			resume_token_hash,
+			status,
+			expires_at
+		)
+		VALUES ($1, 'personal_details_submitted', $2)
+		RETURNING id
+	`, tokens.Hash(rawToken), now.Add(30*time.Minute)).Scan(&sessionID); err != nil {
+		t.Fatalf("insert create-intent Verification Session: %v", err)
+	}
+
+	oldIntentID := uuid.MustParse("25de40e1-6a1a-416d-9124-b28987c79431")
+	oldCreatedAt := now.Add(-time.Minute)
+	if _, err := database.Exec(ctx, `
+		INSERT INTO upload_intents (
+			id,
+			verification_session_id,
+			kind,
+			storage_key,
+			created_at,
+			latest_status_change_at,
+			expires_at
+		)
+		VALUES ($1, $2, 'identity_document', $3, $4, $4, $5)
+	`, oldIntentID, sessionID, "verification-sessions/old", oldCreatedAt, now.Add(4*time.Minute)); err != nil {
+		t.Fatalf("insert old pending Upload Intent: %v", err)
+	}
+
+	presigner := &artifactPostgresPresigner{
+		url: "https://uploads.example.test/postgres-signed",
+	}
+	postgresArtifacts := postgresadapter.NewArtifactTransactions(database)
+	service := artifact.NewUploadIntentService(
+		postgresArtifacts,
+		postgresArtifacts,
+		presigner,
+		tokens,
+		fixedClock{now: now},
+	)
+
+	created, err := service.Create(ctx, sessionID, rawToken, "identity_document")
+
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if created.ID == uuid.Nil {
+		t.Fatal("Create() ID is nil")
+	}
+	if created.UploadURL != presigner.url {
+		t.Errorf("Create() UploadURL = %q, want %q", created.UploadURL, presigner.url)
+	}
+	expectedKey := "verification-sessions/" + sessionID.String() +
+		"/identity_document/" + created.ID.String()
+	if presigner.storageKey != expectedKey {
+		t.Errorf("presigned storage key = %q, want %q", presigner.storageKey, expectedKey)
+	}
+	if presigner.ttl != 5*time.Minute {
+		t.Errorf("presign TTL = %s, want 5m", presigner.ttl)
+	}
+
+	rows, err := database.Query(ctx, `
+		SELECT
+			id,
+			status,
+			storage_key,
+			created_at,
+			latest_status_change_at,
+			expires_at
+		FROM upload_intents
+		WHERE verification_session_id = $1
+		  AND kind = 'identity_document'
+		ORDER BY created_at, id
+	`, sessionID)
+	if err != nil {
+		t.Fatalf("read replacement Upload Intents: %v", err)
+	}
+	defer rows.Close()
+
+	type storedIntent struct {
+		id                   uuid.UUID
+		status               string
+		storageKey           string
+		createdAt            time.Time
+		latestStatusChangeAt time.Time
+		expiresAt            time.Time
+	}
+	stored := make([]storedIntent, 0, 2)
+	for rows.Next() {
+		var intent storedIntent
+		if err := rows.Scan(
+			&intent.id,
+			&intent.status,
+			&intent.storageKey,
+			&intent.createdAt,
+			&intent.latestStatusChangeAt,
+			&intent.expiresAt,
+		); err != nil {
+			t.Fatalf("scan replacement Upload Intent: %v", err)
+		}
+		stored = append(stored, intent)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate replacement Upload Intents: %v", err)
+	}
+	if len(stored) != 2 {
+		t.Fatalf("stored Upload Intent count = %d, want 2", len(stored))
+	}
+
+	oldStored := stored[0]
+	if oldStored.id != oldIntentID ||
+		oldStored.status != "superseded" ||
+		oldStored.storageKey != "verification-sessions/old" ||
+		!oldStored.createdAt.Equal(oldCreatedAt) ||
+		!oldStored.latestStatusChangeAt.Equal(now) {
+		t.Errorf("old Upload Intent = %#v, want superseded historical row", oldStored)
+	}
+	newStored := stored[1]
+	if newStored.id != created.ID ||
+		newStored.status != "pending" ||
+		newStored.storageKey != expectedKey ||
+		!newStored.createdAt.Equal(now) ||
+		!newStored.latestStatusChangeAt.Equal(now) ||
+		!newStored.expiresAt.Equal(now.Add(5*time.Minute)) {
+		t.Errorf("new Upload Intent = %#v, want exact pending replacement", newStored)
+	}
+}
+
+func TestConcurrentPostgresCreateIdentityUploadIntentLeavesOnePendingIntent(t *testing.T) {
+	now := time.Date(2026, 7, 24, 16, 0, 0, 0, time.UTC)
+	ctx, database := openArtifactDatabase(t)
+	rawToken := "concurrent-create-intent-token"
+	tokens := session.NewProductionCryptoTokens()
+
+	var sessionID uuid.UUID
+	if err := database.QueryRow(ctx, `
+		INSERT INTO verification_sessions (
+			resume_token_hash,
+			status,
+			expires_at
+		)
+		VALUES ($1, 'personal_details_submitted', $2)
+		RETURNING id
+	`, tokens.Hash(rawToken), now.Add(30*time.Minute)).Scan(&sessionID); err != nil {
+		t.Fatalf("insert concurrent-create Verification Session: %v", err)
+	}
+
+	initialIntentID := uuid.MustParse("1a6d692f-ee5c-4cb8-841d-c74317f319a2")
+	if _, err := database.Exec(ctx, `
+		INSERT INTO upload_intents (
+			id,
+			verification_session_id,
+			kind,
+			storage_key,
+			expires_at
+		)
+		VALUES ($1, $2, 'identity_document', $3, $4)
+	`, initialIntentID, sessionID, "verification-sessions/concurrent-old", now.Add(4*time.Minute)); err != nil {
+		t.Fatalf("insert concurrent old Upload Intent: %v", err)
+	}
+
+	pool, err := pgxpool.New(ctx, database.Config().ConnString())
+	if err != nil {
+		t.Fatalf("open concurrent artifact pool: %v", err)
+	}
+	t.Cleanup(pool.Close)
+
+	presigner := &concurrentArtifactPresigner{}
+	postgresArtifacts := postgresadapter.NewArtifactTransactions(pool)
+	service := artifact.NewUploadIntentService(
+		postgresArtifacts,
+		postgresArtifacts,
+		presigner,
+		tokens,
+		fixedClock{now: now},
+	)
+
+	start := make(chan struct{})
+	results := make(chan artifact.CreatedUploadIntent, 2)
+	errs := make(chan error, 2)
+	var callers sync.WaitGroup
+	callers.Add(2)
+	for range 2 {
+		go func() {
+			defer callers.Done()
+			<-start
+			created, err := service.Create(
+				ctx,
+				sessionID,
+				rawToken,
+				"identity_document",
+			)
+			results <- created
+			errs <- err
+		}()
+	}
+	close(start)
+	callers.Wait()
+	close(results)
+	close(errs)
+
+	for err := range errs {
+		if err != nil {
+			t.Errorf("concurrent Create() error = %v", err)
+		}
+	}
+	createdIDs := make(map[uuid.UUID]struct{}, 2)
+	for created := range results {
+		if created.ID == uuid.Nil {
+			t.Error("concurrent Create() returned nil ID")
+		}
+		if created.UploadURL == "" {
+			t.Error("concurrent Create() returned empty UploadURL")
+		}
+		createdIDs[created.ID] = struct{}{}
+	}
+	if len(createdIDs) != 2 {
+		t.Errorf("unique created ID count = %d, want 2", len(createdIDs))
+	}
+	if presigner.uniqueKeyCount() != 2 {
+		t.Errorf("unique presigned key count = %d, want 2", presigner.uniqueKeyCount())
+	}
+
+	var totalCount int
+	var pendingCount int
+	var supersededCount int
+	var uniqueStorageKeyCount int
+	if err := database.QueryRow(ctx, `
+		SELECT
+			count(*),
+			count(*) FILTER (WHERE status = 'pending'),
+			count(*) FILTER (WHERE status = 'superseded'),
+			count(DISTINCT storage_key)
+		FROM upload_intents
+		WHERE verification_session_id = $1
+		  AND kind = 'identity_document'
+	`, sessionID).Scan(
+		&totalCount,
+		&pendingCount,
+		&supersededCount,
+		&uniqueStorageKeyCount,
+	); err != nil {
+		t.Fatalf("read concurrent Upload Intent outcome: %v", err)
+	}
+	if totalCount != 3 {
+		t.Errorf("Upload Intent count = %d, want 3", totalCount)
+	}
+	if pendingCount != 1 {
+		t.Errorf("pending Upload Intent count = %d, want 1", pendingCount)
+	}
+	if supersededCount != 2 {
+		t.Errorf("superseded Upload Intent count = %d, want 2", supersededCount)
+	}
+	if uniqueStorageKeyCount != 3 {
+		t.Errorf("unique storage key count = %d, want 3", uniqueStorageKeyCount)
+	}
+}
+
+type artifactConfirmationFixture struct {
+	sessionID      uuid.UUID
+	uploadIntentID uuid.UUID
+	rawToken       string
+	identityNumber string
+}
+
+func seedArtifactConfirmationState(
+	t *testing.T,
+	ctx context.Context,
+	database *pgx.Conn,
+	now time.Time,
+) artifactConfirmationFixture {
+	t.Helper()
+
+	rawToken := "artifact-confirmation-token"
+	storedHash := session.NewProductionCryptoTokens().Hash(rawToken)
+	var sessionID uuid.UUID
+	if err := database.QueryRow(ctx, `
+		INSERT INTO verification_sessions (
+			resume_token_hash,
+			status,
+			expires_at
+		)
+		VALUES ($1, 'personal_details_submitted', $2)
+		RETURNING id
+	`, storedHash, now.Add(30*time.Minute)).Scan(&sessionID); err != nil {
+		t.Fatalf("insert fixture Verification Session: %v", err)
+	}
+
+	const identityNumber = "127100000000009"
+	if _, err := database.Exec(ctx, `
+		INSERT INTO personal_details (
+			verification_session_id,
+			full_name,
+			date_of_birth,
+			identity_number,
+			address
+		)
+		VALUES ($1, '', DATE '2000-02-29', $2, '')
+	`, sessionID, identityNumber); err != nil {
+		t.Fatalf("insert fixture Personal Details: %v", err)
+	}
+
+	uploadIntentID := uuid.New()
+	if _, err := database.Exec(ctx, `
+		INSERT INTO upload_intents (
+			id,
+			verification_session_id,
+			kind,
+			storage_key,
+			expires_at
+		)
+		VALUES ($1, $2, 'identity_document', $3, $4)
+	`, uploadIntentID, sessionID, "artifact/"+uploadIntentID.String(), now.Add(5*time.Minute)); err != nil {
+		t.Fatalf("insert fixture Upload Intent: %v", err)
+	}
+
+	return artifactConfirmationFixture{
+		sessionID:      sessionID,
+		uploadIntentID: uploadIntentID,
+		rawToken:       rawToken,
+		identityNumber: identityNumber,
+	}
+}
+
 func openArtifactDatabase(t *testing.T) (context.Context, *pgx.Conn) {
 	t.Helper()
 	ctx, container, databaseURL := openUploadIntentDatabase(t)
@@ -384,6 +988,48 @@ func (s artifactPostgresExtractor) Extract(
 	string,
 ) (artifact.DocumentExtraction, error) {
 	return s.extraction, s.err
+}
+
+type artifactPostgresPresigner struct {
+	url        string
+	storageKey string
+	ttl        time.Duration
+	err        error
+}
+
+func (p *artifactPostgresPresigner) PresignUpload(
+	_ context.Context,
+	storageKey string,
+	ttl time.Duration,
+) (string, error) {
+	p.storageKey = storageKey
+	p.ttl = ttl
+	return p.url, p.err
+}
+
+type concurrentArtifactPresigner struct {
+	mu   sync.Mutex
+	keys map[string]struct{}
+}
+
+func (p *concurrentArtifactPresigner) PresignUpload(
+	_ context.Context,
+	storageKey string,
+	_ time.Duration,
+) (string, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.keys == nil {
+		p.keys = make(map[string]struct{})
+	}
+	p.keys[storageKey] = struct{}{}
+	return "https://uploads.example.test/" + storageKey, nil
+}
+
+func (p *concurrentArtifactPresigner) uniqueKeyCount() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return len(p.keys)
 }
 
 type fixedClock struct {

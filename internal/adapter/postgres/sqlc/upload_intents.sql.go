@@ -33,6 +33,51 @@ func (q *Queries) ConfirmUploadIntent(ctx context.Context, arg ConfirmUploadInte
 	return result.RowsAffected(), nil
 }
 
+const insertUploadIntent = `-- name: InsertUploadIntent :exec
+INSERT INTO upload_intents (
+    id,
+    verification_session_id,
+    kind,
+    storage_key,
+    status,
+    created_at,
+    latest_status_change_at,
+    expires_at
+) VALUES (
+    $1,
+    $2,
+    $3,
+    $4,
+    'pending',
+    $5,
+    $6,
+    $7
+)
+`
+
+type InsertUploadIntentParams struct {
+	UploadIntentID        uuid.UUID `json:"upload_intent_id"`
+	VerificationSessionID uuid.UUID `json:"verification_session_id"`
+	Kind                  string    `json:"kind"`
+	StorageKey            string    `json:"storage_key"`
+	CreatedAt             time.Time `json:"created_at"`
+	LatestStatusChangeAt  time.Time `json:"latest_status_change_at"`
+	ExpiresAt             time.Time `json:"expires_at"`
+}
+
+func (q *Queries) InsertUploadIntent(ctx context.Context, arg InsertUploadIntentParams) error {
+	_, err := q.db.Exec(ctx, insertUploadIntent,
+		arg.UploadIntentID,
+		arg.VerificationSessionID,
+		arg.Kind,
+		arg.StorageKey,
+		arg.CreatedAt,
+		arg.LatestStatusChangeAt,
+		arg.ExpiresAt,
+	)
+	return err
+}
+
 const loadUploadIntent = `-- name: LoadUploadIntent :one
 
 select id, verification_session_id, kind, storage_key, status, created_at, latest_status_change_at, expires_at, confirmed_at, object_deleted_at, failure_code
@@ -135,6 +180,30 @@ type MarkUploadIntentValidationFailedParams struct {
 
 func (q *Queries) MarkUploadIntentValidationFailed(ctx context.Context, arg MarkUploadIntentValidationFailedParams) (int64, error) {
 	result, err := q.db.Exec(ctx, markUploadIntentValidationFailed, arg.UploadIntentFailureCode, arg.UploadIntentLatestStatusChangeAt, arg.UploadIntentID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const supersedePendingUploadIntent = `-- name: SupersedePendingUploadIntent :execrows
+UPDATE upload_intents
+SET
+    status = 'superseded',
+    latest_status_change_at = $1
+WHERE verification_session_id = $2
+  AND kind = $3
+  AND status = 'pending'
+`
+
+type SupersedePendingUploadIntentParams struct {
+	SupersededAt          time.Time `json:"superseded_at"`
+	VerificationSessionID uuid.UUID `json:"verification_session_id"`
+	Kind                  string    `json:"kind"`
+}
+
+func (q *Queries) SupersedePendingUploadIntent(ctx context.Context, arg SupersedePendingUploadIntentParams) (int64, error) {
+	result, err := q.db.Exec(ctx, supersedePendingUploadIntent, arg.SupersededAt, arg.VerificationSessionID, arg.Kind)
 	if err != nil {
 		return 0, err
 	}

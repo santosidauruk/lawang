@@ -60,6 +60,7 @@ const (
 	CodeObjectStorageFailed      ErrorCode = "OBJECT_STORAGE_FAILED"
 	CodeDocumentExtractionFailed ErrorCode = "DOCUMENT_EXTRACTION_FAILED"
 	CodeConfirmationStale        ErrorCode = "CONFIRMATION_STALE"
+	CodeUploadIntentStale        ErrorCode = "UPLOAD_INTENT_STALE"
 )
 
 type FailureReason string

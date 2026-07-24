@@ -15,45 +15,11 @@ import (
 	"github.com/santosidauruk/lawang-go/internal/domain/verificationsession"
 )
 
-// CHECKPOINT 3 STEP 3 — USER-AUTHORED FIRST ADAPTER OPERATION (COMPLETE)
-//
-// Reviewed boundary:
-//   - the receiver owns transaction-bound generated.Queries;
-//   - input is context plus Verification Session ID and Upload Intent ID;
-//   - output is artifact.UploadIntent, never a generated sqlc row;
-//   - pgx.ErrNoRows maps to artifact.ErrUploadIntentNotFound;
-//   - every field is mapped explicitly, including nullable timestamps/failure code.
-
 type ArtifactTransactions struct {
 	database transactionBeginner
 	queries  *generated.Queries
 }
 
-// CHECKPOINT 3 STEP 4 — USER-AUTHORED TRANSACTION TRACER
-//
-// Complete this step in the following order, stopping at the first compile/test
-// failure after each item:
-//
-//  1. Add the non-transaction generated queries needed by artifact.Reader and write
-//     NewArtifactTransactions. The constructor must accept the real pool through the
-//     smallest interface that supports both Begin and generated.DBTX.
-//  2. Implement Reader.LoadSession, Reader.LoadUploadIntent, and
-//     Reader.LoadPersonalDetails. Reuse existing generated session/personal-details
-//     queries; do not make duplicate SQL solely to rename a method.
-//  3. Implement WithinTransaction using one pgx transaction and one shared
-//     generated.Queries value. Defer rollback, return the operation error unchanged,
-//     and return the commit error rather than hiding it.
-//  4. Construct artifactTransaction with that transaction-bound Queries value and an
-//     eventTransaction using the same value.
-//  5. Add the remaining artifact.Transaction methods needed by Service.Confirm:
-//     LockSession, LoadPersonalDetails, ConfirmUploadIntent,
-//     InsertVerificationArtifact, UpdateSessionState, AppendEvent, and
-//     MarkUploadIntentValidationFailed.
-//  6. For every :execrows query, require exactly one affected row. Map missing reads
-//     to the application errors expected by artifact.Service.
-//
-// External storage and extraction must remain outside WithinTransaction; the
-// application service already enforces that ordering.
 type artifactTransaction struct {
 	queries *generated.Queries
 	events  *eventTransaction
@@ -86,6 +52,29 @@ func (t *ArtifactTransactions) WithinTransaction(
 		return err
 	}
 
+	return tx.Commit(ctx)
+}
+
+func (t *ArtifactTransactions) WithinUploadIntentTransaction(
+	ctx context.Context,
+	operation func(artifact.UploadIntentTransaction) error,
+) error {
+	tx, err := t.database.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
+
+	queries := generated.New(tx)
+	transaction := &artifactTransaction{
+		queries: queries,
+		events:  &eventTransaction{queries: queries},
+	}
+	if err := operation(transaction); err != nil {
+		return err
+	}
 	return tx.Commit(ctx)
 }
 
@@ -122,31 +111,7 @@ func (t *artifactTransaction) LockUploadIntent(ctx context.Context, sessionID uu
 		return artifact.UploadIntent{}, err
 	}
 
-	confirmedAt, err := timestamptzToTimePtr(row.ConfirmedAt)
-	if err != nil {
-		return artifact.UploadIntent{}, err
-	}
-
-	objectDeletedAt, err := timestamptzToTimePtr(row.ObjectDeletedAt)
-	if err != nil {
-		return artifact.UploadIntent{}, err
-	}
-
-	failureCode := pgxTextToStringPtr(row.FailureCode)
-
-	return artifact.UploadIntent{
-		ID:                    row.ID,
-		VerificationSessionID: row.VerificationSessionID,
-		Kind:                  row.Kind,
-		StorageKey:            row.StorageKey,
-		Status:                row.Status,
-		CreatedAt:             row.CreatedAt,
-		LatestStatusChangeAt:  row.LatestStatusChangeAt,
-		ExpiresAt:             row.ExpiresAt,
-		ConfirmedAt:           confirmedAt,
-		ObjectDeletedAt:       objectDeletedAt,
-		FailureCode:           failureCode,
-	}, nil
+	return mapUploadIntent(row)
 }
 
 func (t *artifactTransaction) LoadPersonalDetails(ctx context.Context, sessionID uuid.UUID) (personaldetails.PersonalDetails, error) {
@@ -183,14 +148,14 @@ func (t *artifactTransaction) ConfirmUploadIntent(ctx context.Context, uploadInt
 	}
 
 	if rowsAffected != 1 {
-		return errors.New("confirm upload intent error")
+		return &artifact.Error{Code: artifact.CodeConfirmationStale}
 	}
 
 	return nil
 }
 
 func (t *artifactTransaction) InsertVerificationArtifact(ctx context.Context, insertedArtifact artifact.VerificationArtifact) error {
-	err := t.queries.InsertVerificationArtifact(ctx, generated.InsertVerificationArtifactParams{
+	return t.queries.InsertVerificationArtifact(ctx, generated.InsertVerificationArtifactParams{
 		VerificationArtifactID:          insertedArtifact.ID,
 		VerificationSessionID:           insertedArtifact.VerificationSessionID,
 		UploadIntentID:                  insertedArtifact.UploadIntentID,
@@ -201,15 +166,14 @@ func (t *artifactTransaction) InsertVerificationArtifact(ctx context.Context, in
 		VerificationArtifactEtag:        insertedArtifact.ETag,
 		VerificationArtifactCreatedAt:   insertedArtifact.CreatedAt,
 	})
-	if err != nil {
-		return err
-	}
-
-	return nil
 }
 
 func (t *artifactTransaction) UpdateSessionState(ctx context.Context, sessionID uuid.UUID, expected verificationsession.State, next verificationsession.State, updatedAt time.Time) error {
-	return t.events.UpdateState(ctx, sessionID, expected, next, updatedAt)
+	err := t.events.UpdateState(ctx, sessionID, expected, next, updatedAt)
+	if errors.Is(err, session.ErrSessionTransitionStale) {
+		return &artifact.Error{Code: artifact.CodeConfirmationStale}
+	}
+	return err
 }
 
 func (t *artifactTransaction) MarkUploadIntentValidationFailed(ctx context.Context, uploadIntentID uuid.UUID, failureCode string, updatedAt time.Time) error {
@@ -226,7 +190,7 @@ func (t *artifactTransaction) MarkUploadIntentValidationFailed(ctx context.Conte
 	}
 
 	if rowsAffected != 1 {
-		return errors.New("mark upload intent validation failed error")
+		return &artifact.Error{Code: artifact.CodeConfirmationStale}
 	}
 
 	return nil
@@ -234,6 +198,44 @@ func (t *artifactTransaction) MarkUploadIntentValidationFailed(ctx context.Conte
 
 func (t *artifactTransaction) AppendEvent(ctx context.Context, event session.AppendEventParams) error {
 	return t.events.AppendEvent(ctx, event)
+}
+
+func (t *artifactTransaction) SupersedePendingUploadIntent(
+	ctx context.Context,
+	sessionID uuid.UUID,
+	kind string,
+	supersededAt time.Time,
+) error {
+	rowsAffected, err := t.queries.SupersedePendingUploadIntent(
+		ctx,
+		generated.SupersedePendingUploadIntentParams{
+			SupersededAt:          supersededAt,
+			VerificationSessionID: sessionID,
+			Kind:                  kind,
+		},
+	)
+	if err != nil {
+		return err
+	}
+	if rowsAffected > 1 {
+		return errors.New("multiple pending Upload Intents superseded")
+	}
+	return nil
+}
+
+func (t *artifactTransaction) InsertUploadIntent(
+	ctx context.Context,
+	intent artifact.UploadIntent,
+) error {
+	return t.queries.InsertUploadIntent(ctx, generated.InsertUploadIntentParams{
+		UploadIntentID:        intent.ID,
+		VerificationSessionID: intent.VerificationSessionID,
+		Kind:                  intent.Kind,
+		StorageKey:            intent.StorageKey,
+		CreatedAt:             intent.CreatedAt,
+		LatestStatusChangeAt:  intent.LatestStatusChangeAt,
+		ExpiresAt:             intent.ExpiresAt,
+	})
 }
 
 func timestamptzToTimePtr(value pgtype.Timestamptz) (*time.Time, error) {
@@ -289,31 +291,7 @@ func (t *ArtifactTransactions) LoadUploadIntent(ctx context.Context, sessionID u
 		return artifact.UploadIntent{}, err
 	}
 
-	confirmedAt, err := timestamptzToTimePtr(row.ConfirmedAt)
-	if err != nil {
-		return artifact.UploadIntent{}, err
-	}
-
-	objectDeletedAt, err := timestamptzToTimePtr(row.ObjectDeletedAt)
-	if err != nil {
-		return artifact.UploadIntent{}, err
-	}
-
-	failureCode := pgxTextToStringPtr(row.FailureCode)
-
-	return artifact.UploadIntent{
-		ID:                    row.ID,
-		VerificationSessionID: row.VerificationSessionID,
-		Kind:                  row.Kind,
-		StorageKey:            row.StorageKey,
-		Status:                row.Status,
-		CreatedAt:             row.CreatedAt,
-		LatestStatusChangeAt:  row.LatestStatusChangeAt,
-		ExpiresAt:             row.ExpiresAt,
-		ConfirmedAt:           confirmedAt,
-		ObjectDeletedAt:       objectDeletedAt,
-		FailureCode:           failureCode,
-	}, nil
+	return mapUploadIntent(row)
 }
 
 func (t *ArtifactTransactions) LoadPersonalDetails(ctx context.Context, sessionID uuid.UUID) (personaldetails.PersonalDetails, error) {
@@ -331,5 +309,29 @@ func (t *ArtifactTransactions) LoadPersonalDetails(ctx context.Context, sessionI
 			IdentityNumber: detailsRow.IdentityNumber, Address: detailsRow.Address,
 		},
 		CreatedAt: detailsRow.CreatedAt,
+	}, nil
+}
+
+func mapUploadIntent(row generated.UploadIntent) (artifact.UploadIntent, error) {
+	confirmedAt, err := timestamptzToTimePtr(row.ConfirmedAt)
+	if err != nil {
+		return artifact.UploadIntent{}, err
+	}
+	objectDeletedAt, err := timestamptzToTimePtr(row.ObjectDeletedAt)
+	if err != nil {
+		return artifact.UploadIntent{}, err
+	}
+	return artifact.UploadIntent{
+		ID:                    row.ID,
+		VerificationSessionID: row.VerificationSessionID,
+		Kind:                  row.Kind,
+		StorageKey:            row.StorageKey,
+		Status:                row.Status,
+		CreatedAt:             row.CreatedAt,
+		LatestStatusChangeAt:  row.LatestStatusChangeAt,
+		ExpiresAt:             row.ExpiresAt,
+		ConfirmedAt:           confirmedAt,
+		ObjectDeletedAt:       objectDeletedAt,
+		FailureCode:           pgxTextToStringPtr(row.FailureCode),
 	}, nil
 }

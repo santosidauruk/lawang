@@ -60,8 +60,10 @@ replay/concurrency hardening.
 - One pending intent per `(session_id, identity_document)`; a new intent atomically
   supersedes the prior pending intent and uses a unique key.
 - The application generates the intent UUID and a fresh storage key before
-  persistence. Presign outside a transaction, then transactionally re-read guards,
-  supersede the previous pending intent, and insert the new one.
+  persistence. Identity Document uses
+  `verification-sessions/{sessionID}/identity_document/{intentID}`. Presign outside
+  a transaction, then transactionally re-read guards, supersede the previous
+  pending intent, and insert the new one.
 - File constraints are derived from the bounded kind in application code and are not
   copied into each intent row. Confirmation uses the currently deployed mapping.
 - If presigning fails, do not create or supersede an intent. If the transactional
@@ -83,13 +85,13 @@ replay/concurrency hardening.
 - [ ] `POST /verification-sessions/{id}/artifacts/upload-url` accepts only
       `identity_document` for this slice and returns a new intent ID and usable
       public-host presigned URL.
-- [ ] A new intent atomically supersedes the old pending intent; concurrency still
+- [x] A new intent atomically supersedes the old pending intent; concurrency still
       leaves exactly one pending intent and unique storage keys.
 - [ ] Real MinIO upload plus confirm enforces expiry, supersession, actual content
       type, non-zero size, and 10 MiB maximum.
 - [ ] Deterministic extraction proves success and at least
       `identity_number_mismatch` without storing raw extraction output.
-- [ ] Successful confirm creates exactly one accepted Verification Artifact, advances
+- [x] Successful confirm creates exactly one accepted Verification Artifact, advances
       to `identity_document_uploaded`, and appends one safe
       `confirm_identity_document` event atomically.
 - [ ] Mismatch returns exact `422 LOCAL_VALIDATION_FAILED`, records bounded failure,

@@ -1,7 +1,7 @@
 # Checkpoint 4 — Strict HTTP Path dan Runtime Wiring
 
-Status: belum dimulai. PostgreSQL-backed application behavior harus GREEN terlebih
-dahulu; MinIO adapter boleh masih berupa fake pada handler test.
+Status: aktif dan siap untuk bagian pertama user. PostgreSQL-backed application
+behavior sudah GREEN; MinIO adapter boleh masih berupa fake pada handler test.
 
 ## Tujuan
 

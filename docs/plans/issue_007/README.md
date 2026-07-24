@@ -36,8 +36,8 @@ publik harus menjadi GREEN sebelum berpindah ke perilaku berikutnya.
 | --- | --- | --- | --- |
 | 1 | Schema dan invariant Upload Intent | selesai dan telah direview | [checkpoint-1](checkpoint-1-schema-and-invariants.md) |
 | 2 | Konfirmasi sukses dan outcome aplikasi | selesai; focused suite dan race detector GREEN | [checkpoint-2](checkpoint-2-application-confirmation.md) |
-| 3 | PostgreSQL transaction dan adapter | aktif; tracer scaffold siap untuk user | [checkpoint-3](checkpoint-3-postgresql-boundary.md) |
-| 4 | Strict HTTP path dan runtime wiring | belum dimulai | [checkpoint-4](checkpoint-4-http-path.md) |
+| 3 | PostgreSQL transaction dan adapter | selesai; schema, confirm, rollback, create/supersede, dan concurrency GREEN | [checkpoint-3](checkpoint-3-postgresql-boundary.md) |
+| 4 | Strict HTTP path dan runtime wiring | aktif; siap untuk bagian pertama user | [checkpoint-4](checkpoint-4-http-path.md) |
 | 5 | Public-host presign dan MinIO `HeadObject` | belum dimulai | [checkpoint-5](checkpoint-5-minio-boundary.md) |
 | 6 | Replay dan concurrent-confirm coordination | belum dimulai | [checkpoint-6](checkpoint-6-replay-and-concurrency.md) |
 
@@ -63,6 +63,8 @@ checkpoint tersebut.
   `INVALID_UPLOAD_INTENT_KIND`, `INVALID_OBJECT_METADATA`,
   `OBJECT_STORAGE_FAILED`, `DOCUMENT_EXTRACTION_FAILED`, dan `CONFIRMATION_STALE`.
 - Replay `confirmed` dan `validation_failed` tidak mengulang external I/O atau event.
+- Identity Document storage key menggunakan
+  `verification-sessions/{sessionID}/identity_document/{intentID}`.
 - Strategi koordinasi yang dipilih untuk checkpoint 6 adalah PostgreSQL
   session-level advisory lock; kata *session* di sini berarti sesi koneksi PostgreSQL,
   bukan Verification Session.
@@ -75,7 +77,6 @@ thread aktif atau meminta user menjawabnya:
 - status HTTP dan nama field exact untuk response upload URL selain keputusan bahwa
   `expiresAt` tidak ada;
 - exact HTTP message/status mapping untuk bounded application errors selain mismatch;
-- bentuk storage key yang akan dipresign;
 - convention input untuk fake deterministic extractor;
 - key advisory lock: kandidat paling sempit adalah Upload Intent ID, tetapi pilihan
   ini harus dikonfirmasi sebelum SQL/Go lock dibuat.
@@ -95,10 +96,9 @@ GOCACHE=/tmp/lawang-go-build go test ./internal/application/artifact -count=1
 GOCACHE=/tmp/lawang-go-build go test -race ./internal/application/artifact -count=1
 ```
 
-Checkpoint 3 aktif. Scaffold tracer PostgreSQL berada di
-`tests/integration/artifact_postgres_test.go`; bagian user berikutnya adalah melengkapi
-Arrange dan assertion sampai menghasilkan RED pertama. Replay serta concurrent confirm
-sengaja tetap berada di Checkpoint 6.
+Checkpoint 3 selesai. Checkpoint 4 adalah checkpoint aktif; ikuti
+`checkpoint-4-http-path.md` untuk bagian user berikutnya. Replay serta concurrent
+confirm sengaja tetap berada di Checkpoint 6.
 
 ## Yang harus dilakukan agent ketika diminta melanjutkan
 

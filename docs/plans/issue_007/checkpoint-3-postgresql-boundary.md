@@ -1,7 +1,7 @@
 # Checkpoint 3 — PostgreSQL Transaction dan Adapter Boundary
 
-Status: aktif; bagian user 1–3 selesai, scaffold transaction tracer siap untuk
-bagian user 4.
+Status: selesai; seluruh bagian user dan agent continuation GREEN pada PostgreSQL
+disposable.
 
 ## Tujuan
 
@@ -47,9 +47,9 @@ semuanya sekaligus.
 
 ## Scaffold yang sudah disiapkan
 
-`tests/integration/artifact_postgres_test.go` sekarang memiliki Arrange dan assertion
-lengkap untuk accepted outcome. RED pertama sudah berhenti pada constructor
-`postgresadapter.NewArtifactTransactions` yang belum ada.
+`tests/integration/artifact_postgres_test.go` memiliki tracer accepted outcome yang
+ditulis user serta sibling mismatch dan forced-rollback yang ditulis agent. Ketiganya
+berjalan melalui public `artifact.Service.Confirm` dan PostgreSQL disposable.
 
 Scaffold bagian schema berada di:
 
@@ -85,9 +85,10 @@ row yang dimiliki Verification Session yang diminta; generated params bernama je
 adapter memetakan seluruh row, nullable pgtype, dan `pgx.ErrNoRows` tanpa membocorkan
 type sqlc ke application.
 
-Bagian user berikutnya adalah langkah 4: melengkapi adapter yang memenuhi
-`artifact.Reader` dan `artifact.Transactor`, lalu membuat tracer accepted outcome
-GREEN. Scaffold berada di:
+Bagian user langkah 4 sudah selesai dan direview. Adapter memenuhi
+`artifact.Reader`, `artifact.Transactor`, dan transaction-scoped
+`artifact.Transaction`; external fakes tetap dipanggil sebelum transaction dibuka.
+Implementasinya berada di:
 
 - `sql/queries/upload_intents.sql` untuk non-locking read serta expected-state
   updates;
@@ -95,29 +96,43 @@ GREEN. Scaffold berada di:
 - `internal/adapter/postgres/artifact_transactions.go` untuk constructor, Reader,
   transaction wrapper, dan transaction operations.
 
-Urutan kerja user:
+Review agent mengonfirmasi query lock memakai ownership session/intent yang tepat,
+non-transaction Reader memakai pool-bound queries, transaction memakai satu shared
+transaction-bound queries value, affected-row stale menjadi bounded application
+error, dan commit error tidak ditutupi deferred rollback.
 
-1. tulis `LoadUploadIntent :one`, jalankan `make sqlc-generate`, lalu implementasikan
-   tiga Reader methods;
-2. tulis `NewArtifactTransactions` dan `WithinTransaction` dengan satu
-   transaction-bound `generated.Queries`;
-3. reuse query session/personal-details/event yang sudah ada untuk `LockSession`,
-   `LoadPersonalDetails`, guarded state update, dan append event;
-4. tulis `ConfirmUploadIntent :execrows` dan `InsertVerificationArtifact :exec`,
-   generate, lalu map ke transaction operations;
-5. lengkapi `MarkUploadIntentValidationFailed :execrows` agar concrete transaction
-   memenuhi seluruh application interface;
-6. jalankan tracer saja:
+Agent continuation yang selesai:
 
-   ```sh
-   go test ./tests/integration \
-     -run '^TestPostgresArtifactConfirmPersistsAcceptedOutcomeAtomically$' \
-     -count=1 -v
-   ```
+1. mismatch nyata meng-commit `validation_failed`, bounded failure code, dan satu
+   safe event tanpa artifact atau state transition;
+2. trigger PostgreSQL yang memaksa event-write failure membuktikan intent confirmation,
+   artifact insert, state transition, dan event seluruhnya rollback.
 
-Stop untuk review ketika tracer pertama GREEN. Jangan menambahkan mismatch, forced
-rollback, create/supersede intent, replay, concurrency, HTTP, atau MinIO pada siklus
-user ini.
+Command focused yang GREEN:
+
+```sh
+go test ./tests/integration \
+  -run '^TestPostgresArtifactConfirm(PersistsAcceptedOutcomeAtomically|PersistsMismatchOutcomeAtomically|RollsBackAcceptedOutcomeWhenEventWriteFails)$' \
+  -count=1 -v
+```
+
+Create/supersede continuation selesai dengan storage key yang disetujui:
+`verification-sessions/{sessionID}/identity_document/{intentID}`. Application test
+membuktikan presign berjalan sebelum transaction, TTL lima menit, presign failure
+tidak menulis, dan stale transactional re-read tidak mengembalikan URL atau menulis.
+PostgreSQL integration test membuktikan replacement atomik serta tepat satu pending
+intent dan fresh unique key saat dua create berjalan concurrent.
+
+Final checkpoint verification yang GREEN pada 2026-07-24:
+
+```sh
+go test -race ./internal/application/artifact ./internal/adapter/postgres
+go vet ./internal/application/artifact ./internal/adapter/postgres ./tests/integration
+make sqlc-diff
+go test ./tests/integration -run 'Artifact|UploadIntent' -count=1 -v
+go test ./tests/schema \
+  -run '^TestVerificationArtifactMigrationAndConstraintProof$' -count=1 -v
+```
 
 ## Review agent
 

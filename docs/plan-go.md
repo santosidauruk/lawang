@@ -719,12 +719,14 @@ kind and confirmation applies the currently deployed mapping. Tests must freeze 
 Issue 007 Identity Document mapping as JPEG/PNG/PDF, non-zero, and at most 10 MiB.
 
 The application generates the Upload Intent UUID before persistence and uses it to
-construct a fresh unique storage key. After an initial authorization/state read, it
-presigns that key outside a database transaction. A short transaction then re-reads
-the relevant state, atomically supersedes the previous pending intent, and inserts
-the new intent with the application-supplied UUID and key. If signing fails, no intent
-is written. If the transactional re-read is stale, discard the unreturned URL. Never
-keep the supersede/insert transaction open while presigning.
+construct a fresh unique storage key. Identity Document keys use
+`verification-sessions/{sessionID}/identity_document/{intentID}`. After an initial
+authorization/state read, it presigns that key outside a database transaction. A
+short transaction then re-reads the relevant state, atomically supersedes the
+previous pending intent, and inserts the new intent with the application-supplied
+UUID and key. If signing fails, no intent is written. If the transactional re-read
+is stale, discard the unreturned URL. Never keep the supersede/insert transaction
+open while presigning.
 
 #### `verification_artifacts`
 

@@ -150,9 +150,11 @@ Event.
 - Upload constraints are code-owned by bounded evidence kind and are not snapshotted
   into Upload Intent rows. Confirmation uses the currently deployed kind mapping.
 - The application generates each Upload Intent ID and derives a fresh storage key
-  before persistence. Presigning happens outside the database transaction; only
-  after signing succeeds does a short guarded transaction supersede the previous
-  pending intent and insert the new one.
+  before persistence. Identity Document keys use
+  `verification-sessions/{sessionID}/identity_document/{intentID}`. Presigning
+  happens outside the database transaction; only after signing succeeds does a
+  short guarded transaction supersede the previous pending intent and insert the
+  new one.
 - One Upload Intent creates at most one Verification Artifact.
 - A Verification Artifact exists only after metadata checks and required local
   validation succeed.

@@ -46,3 +46,33 @@ where status = 'pending' and id = sqlc.arg(upload_intent_id);
 update upload_intents 
 set status = 'validation_failed', failure_code = sqlc.arg(upload_intent_failure_code), latest_status_change_at = sqlc.arg(upload_intent_latest_status_change_at)
 where status = 'pending' and id = sqlc.arg(upload_intent_id);
+
+-- name: SupersedePendingUploadIntent :execrows
+UPDATE upload_intents
+SET
+    status = 'superseded',
+    latest_status_change_at = sqlc.arg(superseded_at)
+WHERE verification_session_id = sqlc.arg(verification_session_id)
+  AND kind = sqlc.arg(kind)
+  AND status = 'pending';
+
+-- name: InsertUploadIntent :exec
+INSERT INTO upload_intents (
+    id,
+    verification_session_id,
+    kind,
+    storage_key,
+    status,
+    created_at,
+    latest_status_change_at,
+    expires_at
+) VALUES (
+    sqlc.arg(upload_intent_id),
+    sqlc.arg(verification_session_id),
+    sqlc.arg(kind),
+    sqlc.arg(storage_key),
+    'pending',
+    sqlc.arg(created_at),
+    sqlc.arg(latest_status_change_at),
+    sqlc.arg(expires_at)
+);
