@@ -12,6 +12,10 @@ import (
 	"github.com/santosidauruk/lawang-go/internal/domain/verificationsession"
 )
 
+type Input struct {
+	UploadIntentID string
+}
+
 type UploadIntent struct {
 	ID                    uuid.UUID
 	VerificationSessionID uuid.UUID

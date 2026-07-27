@@ -27,19 +27,65 @@ interface paling sempit yang dibutuhkan handler.
 
 ## Bagian user
 
-1. Sebelum menulis response assertion upload URL, verifikasi keputusan status dan
-   exact JSON field names dari thread. Yang sudah pasti hanya: berisi intent ID dan
-   usable URL, tanpa `expiresAt`.
-2. Tulis satu `httptest` untuk confirm success melalui `NewHandler`: Bearer token,
-   UUID path, JSON `uploadIntentId`, service fake, exact `200` session summary.
-3. Tambahkan minimal consumed interface, handler, strict decode, dan route
-   registration sampai test itu GREEN.
-4. Strict decode berarti `MaxBytesReader`, `DisallowUnknownFields`, tepat satu JSON
-   value, required UUID string, dan explicit conversion ke `uuid.UUID`.
-5. Stop untuk review sebelum menambah error cases atau upload-url route.
+Kerjakan bagian ini sebagai dua siklus RED -> GREEN. Jangan mengerjakan route
+`upload-url` dahulu; status dan exact field names response route itu belum dibekukan.
+
+### Siklus 1 — confirm success
+
+1. Buka scaffold `internal/adapter/httpapi/artifact_http_test.go`. Pakai ID, waktu,
+   session summary, dan fake service yang sudah disediakan agar test tetap
+   deterministic.
+2. Tambahkan `TestConfirmIdentityDocumentHTTPContract` di file tersebut. Buat
+   `POST /verification-sessions/{sessionID}/artifacts/confirm` dengan:
+   - header `Authorization: Bearer opaque-token`;
+   - header `Content-Type: application/json`;
+   - body `{"uploadIntentId":"<intentID>"}`.
+3. Panggil route melalui public entry point `httpapi.NewHandler`, bukan handler
+   function internal secara langsung. Agar test compile, perluas wiring handler
+   dengan dependency confirm yang optional; semua call site lama harus tetap bisa
+   mengirim `nil`.
+4. Bentuk interface sekecil kebutuhan handler:
+
+   ```go
+   type ArtifactConfirmService interface {
+       Confirm(context.Context, uuid.UUID, string, uuid.UUID) (session.Summary, error)
+   }
+   ```
+
+   Interface ini dimiliki HTTP adapter sebagai consumer. Jangan memasukkan
+   `HeadObject`, extractor, transaction, atau concrete `*artifact.Service` ke
+   interface.
+5. Assertion test harus membuktikan perilaku yang terlihat dari HTTP:
+   - status tepat `200`;
+   - `Content-Type` adalah `application/json`;
+   - body tepat session summary `id`, `status`, dan `expiresAt`, tanpa field ekstra;
+   - fake menerima `sessionID`, token mentah `opaque-token`, dan `uploadIntentID`
+     yang benar tepat satu kali.
+6. Jalankan hanya test baru. RED yang valid adalah compile failure karena dependency
+   belum diterima `NewHandler`, atau `404` karena route belum terdaftar. Jangan lanjut
+   jika RED berasal dari typo/setup test.
+7. Tambahkan implementasi minimum: parse Bearer token, parse UUID path, decode field
+   `uploadIntentId`, konversi ke `uuid.UUID`, panggil service, lalu tulis session
+   summary. Daftarkan route sebagai `POST` dengan `requireMethod`.
+8. Jalankan test yang sama sampai GREEN. Belum perlu menulis semua error mapping
+   pada siklus ini.
+
+### Siklus 2 — satu strict-decode behavior
+
+1. Tambahkan satu test yang mengirim body valid ditambah field tidak dikenal, misalnya
+   `{"uploadIntentId":"<intentID>","extra":"rejected"}`.
+2. Assertion: response `400 VALIDATION_ERROR` dan fake service tidak dipanggil.
+3. Jalankan sampai RED, lalu tambahkan `decoder.DisallowUnknownFields()` dan mapping
+   validation minimum sampai kedua test GREEN.
+4. Stop untuk review. `MaxBytesReader`, second JSON value, missing field, invalid
+   UUID, dan error application sengaja dikerjakan sebagai siklus sibling setelah
+   review; jangan mengimplementasikannya tanpa test yang lebih dulu RED.
 
 Ini memberi pengalaman langsung menulis handler, HTTP decode, service boundary, dan
-route registration tanpa harus sekaligus menangani seluruh matrix error.
+route registration tanpa sekaligus menangani seluruh matrix error.
+
+Scaffold sengaja belum mengubah signature `NewHandler` atau mendaftarkan route.
+Keputusan dan perubahan pertama itu tetap menjadi bagian concept-bearing milik user.
 
 ## Review agent
 

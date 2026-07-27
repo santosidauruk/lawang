@@ -57,7 +57,7 @@ func run() int {
 	clock := systemClock{}
 	sessions := session.NewService(store, tokens, clock)
 	details := personaldetails.NewService(postgresadapter.NewPersonalDetailsTransactions(database), tokens, clock)
-	handler := httpapi.WithRequestLogging(httpapi.NewHandler(sessions, details), logger)
+	handler := httpapi.WithRequestLogging(httpapi.NewHandler(sessions, details, nil), logger)
 	server := httpserver.New(cfg.HTTPAddress, handler)
 	logger.Info("API listening", "address", listener.Addr().String())
 	if err := httpserver.Run(ctx, server, listener, cfg.ShutdownTimeout); err != nil {

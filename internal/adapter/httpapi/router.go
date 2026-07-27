@@ -23,8 +23,12 @@ type PersonalDetailsService interface {
 	Submit(context.Context, uuid.UUID, string, personaldetails.Input) (session.Summary, error)
 }
 
+type ArtifactConfirmService interface {
+	Confirm(ctx context.Context, sessionID uuid.UUID, rawToken string, uploadIntentID uuid.UUID) (session.Summary, error)
+}
+
 // NewHandler builds the public HTTP routing surface.
-func NewHandler(sessionService SessionService, personalDetailsService PersonalDetailsService) http.Handler {
+func NewHandler(sessionService SessionService, personalDetailsService PersonalDetailsService, artifactService ArtifactConfirmService) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health/live", requireMethod(http.MethodGet, liveHealth))
 	if sessionService != nil {
@@ -35,6 +39,12 @@ func NewHandler(sessionService SessionService, personalDetailsService PersonalDe
 		mux.HandleFunc(
 			"/verification-sessions/{id}/personal-details",
 			requireMethod(http.MethodPost, submitPersonalDetails(personalDetailsService)),
+		)
+	}
+	if artifactService != nil {
+		mux.HandleFunc(
+			"/verification-sessions/{id}/artifacts/confirm",
+			requireMethod(http.MethodPost, confirmArtifact(artifactService)),
 		)
 	}
 	return mux
@@ -162,4 +172,69 @@ func createVerificationSession(service SessionService) http.HandlerFunc {
 			ExpiresAt: created.ExpiresAt.UTC().Format(time.RFC3339), ResumeToken: created.ResumeToken,
 		})
 	}
+}
+
+type artifactConfirmRequest struct {
+	UploadIntentID *string `json:"uploadIntentId"`
+}
+
+func confirmArtifact(service ArtifactConfirmService) http.HandlerFunc {
+	return func(response http.ResponseWriter, request *http.Request) {
+		token, authError := ParseBearer(request.Header.Get("Authorization"))
+		if authError != nil {
+			writeJSON(response, http.StatusUnauthorized, authError)
+			return
+		}
+		id, err := uuid.Parse(request.PathValue("id"))
+		if err != nil {
+			writeJSON(response, http.StatusBadRequest, APIError{Code: "VALIDATION_ERROR", Message: "id must be a UUID"})
+			return
+		}
+
+		var body artifactConfirmRequest
+		request.Body = http.MaxBytesReader(response, request.Body, 1<<20)
+		decoder := json.NewDecoder(request.Body)
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&body); err != nil {
+			var typeError *json.UnmarshalTypeError
+			if errors.As(err, &typeError) || strings.HasPrefix(err.Error(), "json: unknown field ") {
+				writeJSON(response, http.StatusBadRequest, APIError{Code: "VALIDATION_ERROR", Message: "invalid artifact confirmation request"})
+				return
+			}
+			writeJSON(response, http.StatusInternalServerError, APIError{Code: "INTERNAL", Message: "Internal server error"})
+			return
+		}
+
+		var extra any
+		if err := decoder.Decode(&extra); err != io.EOF {
+			writeJSON(response, http.StatusInternalServerError, APIError{Code: "INTERNAL", Message: "Internal server error"})
+			return
+		}
+
+		if body.UploadIntentID == nil {
+			writeJSON(response, http.StatusBadRequest, APIError{Code: "VALIDATION_ERROR", Message: "all Confirm fields are required"})
+			return
+		}
+
+		uploadIntentID, err := uuid.Parse(*body.UploadIntentID)
+		if err != nil {
+			writeJSON(response, http.StatusBadRequest, APIError{Code: "VALIDATION_ERROR", Message: "upload intent ID must be UUID"})
+			return
+		}
+		summary, err := service.Confirm(request.Context(), id, token, uploadIntentID)
+		if err != nil {
+			writeJSON(response, http.StatusInternalServerError, APIError{Code: "INTERNAL", Message: "Internal server error"})
+			return
+		}
+
+		writeJSON(response, http.StatusOK, struct {
+			ID        string         `json:"id"`
+			Status    session.Status `json:"status"`
+			ExpiresAt string         `json:"expiresAt"`
+		}{
+			ID: summary.ID.String(), Status: summary.Status,
+			ExpiresAt: summary.ExpiresAt.UTC().Format(time.RFC3339),
+		})
+	}
+
 }

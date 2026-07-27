@@ -53,7 +53,7 @@ func TestApplicantCreatesAndResumesSessionOverHTTPWithPostgreSQL(t *testing.T) {
 	now := time.Date(2026, 7, 15, 9, 0, 0, 0, time.UTC)
 	store := postgresadapter.NewSessionStore(database)
 	service := session.NewService(store, session.NewProductionCryptoTokens(), integrationClock{now: now})
-	server := httptest.NewServer(httpapi.NewHandler(service, nil))
+	server := httptest.NewServer(httpapi.NewHandler(service, nil, nil))
 	t.Cleanup(server.Close)
 
 	createResponse, err := http.Post(server.URL+"/verification-sessions", "", nil)
@@ -113,7 +113,7 @@ func TestCancelledHTTPRequestReachesPostgreSQLAndReturnsSafeError(t *testing.T) 
 	request.Header.Set("Authorization", "Bearer opaque-token")
 	response := httptest.NewRecorder()
 
-	httpapi.NewHandler(service, nil).ServeHTTP(response, request)
+	httpapi.NewHandler(service, nil, nil).ServeHTTP(response, request)
 
 	if response.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want %d; body=%s", response.Code, http.StatusInternalServerError, response.Body.String())

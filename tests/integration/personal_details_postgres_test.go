@@ -292,7 +292,7 @@ func TestApplicantSubmitsPersonalDetailsOverHTTPWithPostgreSQL(t *testing.T) {
 	clock := integrationClock{now: now}
 	sessions := session.NewService(postgresadapter.NewSessionStore(database), tokens, clock)
 	details := personaldetails.NewService(postgresadapter.NewPersonalDetailsTransactions(database), tokens, clock)
-	handler := httpapi.NewHandler(sessions, details)
+	handler := httpapi.NewHandler(sessions, details, nil)
 
 	createRequest := httptest.NewRequest(http.MethodPost, "/verification-sessions", nil)
 	createResponse := httptest.NewRecorder()
