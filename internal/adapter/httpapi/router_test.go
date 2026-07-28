@@ -23,7 +23,7 @@ func TestLiveHealthContract(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/health/live", nil)
 	response := httptest.NewRecorder()
 
-	httpapi.NewHandler(nil, nil, nil).ServeHTTP(response, request)
+	httpapi.NewHandler(nil, nil, nil, nil).ServeHTTP(response, request)
 
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
@@ -40,7 +40,7 @@ func TestLiveHealthRejectsUnsupportedMethod(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "/health/live", nil)
 	response := httptest.NewRecorder()
 
-	httpapi.NewHandler(nil, nil, nil).ServeHTTP(response, request)
+	httpapi.NewHandler(nil, nil, nil, nil).ServeHTTP(response, request)
 
 	if response.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("status = %d, want %d", response.Code, http.StatusMethodNotAllowed)
@@ -76,7 +76,7 @@ func TestSessionRoutesRejectUnsupportedMethods(t *testing.T) {
 			request := httptest.NewRequest(test.method, test.path, nil)
 			response := httptest.NewRecorder()
 
-			httpapi.NewHandler(&stubSessionService{}, nil, nil).ServeHTTP(response, request)
+			httpapi.NewHandler(&stubSessionService{}, nil, nil, nil).ServeHTTP(response, request)
 
 			if response.Code != http.StatusMethodNotAllowed {
 				t.Fatalf("status = %d, want %d", response.Code, http.StatusMethodNotAllowed)
@@ -106,7 +106,7 @@ func TestCreateVerificationSessionHTTPContract(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "/verification-sessions", nil)
 	response := httptest.NewRecorder()
 
-	httpapi.NewHandler(service, nil, nil).ServeHTTP(response, request)
+	httpapi.NewHandler(service, nil, nil, nil).ServeHTTP(response, request)
 
 	if response.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want %d", response.Code, http.StatusCreated)
@@ -141,7 +141,7 @@ func TestResumeVerificationSessionHTTPContract(t *testing.T) {
 	request.Header.Set("Authorization", "bEaReR opaque-token")
 	response := httptest.NewRecorder()
 
-	httpapi.NewHandler(service, nil, nil).ServeHTTP(response, request)
+	httpapi.NewHandler(service, nil, nil, nil).ServeHTTP(response, request)
 
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body=%s", response.Code, http.StatusOK, response.Body.String())
@@ -184,7 +184,7 @@ func TestSubmitPersonalDetailsHTTPContract(t *testing.T) {
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 
-	httpapi.NewHandler(&stubSessionService{}, service, nil).ServeHTTP(response, request)
+	httpapi.NewHandler(&stubSessionService{}, service, nil, nil).ServeHTTP(response, request)
 
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body=%s", response.Code, http.StatusOK, response.Body.String())
@@ -224,7 +224,7 @@ func TestSubmitPersonalDetailsRejectsMissingRequiredField(t *testing.T) {
 	request.Header.Set("Authorization", "Bearer opaque-token")
 	response := httptest.NewRecorder()
 
-	httpapi.NewHandler(&stubSessionService{}, service, nil).ServeHTTP(response, request)
+	httpapi.NewHandler(&stubSessionService{}, service, nil, nil).ServeHTTP(response, request)
 
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d; body=%s", response.Code, http.StatusBadRequest, response.Body.String())
@@ -254,7 +254,7 @@ func TestSubmitPersonalDetailsRejectsUnknownField(t *testing.T) {
 	request.Header.Set("Authorization", "Bearer opaque-token")
 	response := httptest.NewRecorder()
 
-	httpapi.NewHandler(&stubSessionService{}, service, nil).ServeHTTP(response, request)
+	httpapi.NewHandler(&stubSessionService{}, service, nil, nil).ServeHTTP(response, request)
 
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d; body=%s", response.Code, http.StatusBadRequest, response.Body.String())
@@ -294,7 +294,7 @@ func TestSubmitPersonalDetailsPreservesLegacyJSONFramingFailures(t *testing.T) {
 			request.Header.Set("Content-Type", "application/json")
 			response := httptest.NewRecorder()
 
-			httpapi.NewHandler(&stubSessionService{}, service, nil).ServeHTTP(response, request)
+			httpapi.NewHandler(&stubSessionService{}, service, nil, nil).ServeHTTP(response, request)
 
 			if response.Code != http.StatusInternalServerError {
 				t.Fatalf("status = %d, want %d; body=%s", response.Code, http.StatusInternalServerError, response.Body.String())
@@ -324,7 +324,7 @@ func TestSubmitPersonalDetailsMapsDifferentReplayToConflictEnvelope(t *testing.T
 	request := newPersonalDetailsRequest(id)
 	response := httptest.NewRecorder()
 
-	httpapi.NewHandler(&stubSessionService{}, service, nil).ServeHTTP(response, request)
+	httpapi.NewHandler(&stubSessionService{}, service, nil, nil).ServeHTTP(response, request)
 
 	if response.Code != http.StatusConflict {
 		t.Fatalf("status = %d, want %d; body=%s", response.Code, http.StatusConflict, response.Body.String())
@@ -349,7 +349,7 @@ func TestSubmitPersonalDetailsMapsWrongStateToIllegalTransitionEnvelope(t *testi
 	request := newPersonalDetailsRequest(id)
 	response := httptest.NewRecorder()
 
-	httpapi.NewHandler(&stubSessionService{}, service, nil).ServeHTTP(response, request)
+	httpapi.NewHandler(&stubSessionService{}, service, nil, nil).ServeHTTP(response, request)
 
 	if response.Code != http.StatusConflict {
 		t.Fatalf("status = %d, want %d; body=%s", response.Code, http.StatusConflict, response.Body.String())
@@ -391,7 +391,7 @@ func TestSubmitPersonalDetailsValidationCompatibility(t *testing.T) {
 			request.Header.Set("Authorization", "Bearer opaque-token")
 			response := httptest.NewRecorder()
 
-			httpapi.NewHandler(&stubSessionService{}, service, nil).ServeHTTP(response, request)
+			httpapi.NewHandler(&stubSessionService{}, service, nil, nil).ServeHTTP(response, request)
 
 			if response.Code != http.StatusBadRequest {
 				t.Fatalf("status = %d, want %d; body=%s", response.Code, http.StatusBadRequest, response.Body.String())
@@ -435,7 +435,7 @@ func TestSubmitPersonalDetailsAuthenticationAndSessionErrors(t *testing.T) {
 			}
 			response := httptest.NewRecorder()
 
-			httpapi.NewHandler(&stubSessionService{}, service, nil).ServeHTTP(response, request)
+			httpapi.NewHandler(&stubSessionService{}, service, nil, nil).ServeHTTP(response, request)
 
 			if response.Code != test.wantStatus {
 				t.Fatalf("status = %d, want %d; body=%s", response.Code, test.wantStatus, response.Body.String())
@@ -465,7 +465,7 @@ func TestSubmitPersonalDetailsLimitsRequestBody(t *testing.T) {
 	request.Header.Set("Authorization", "Bearer opaque-token")
 	response := httptest.NewRecorder()
 
-	httpapi.NewHandler(&stubSessionService{}, service, nil).ServeHTTP(response, request)
+	httpapi.NewHandler(&stubSessionService{}, service, nil, nil).ServeHTTP(response, request)
 
 	if response.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want %d; body=%s", response.Code, http.StatusInternalServerError, response.Body.String())
@@ -494,7 +494,7 @@ func TestPersonalDetailsRequestLoggingExcludesPIIAndCredentials(t *testing.T) {
 	}}
 	var logs bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&logs, nil))
-	handler := httpapi.WithRequestLogging(httpapi.NewHandler(&stubSessionService{}, service, nil), logger)
+	handler := httpapi.WithRequestLogging(httpapi.NewHandler(&stubSessionService{}, service, nil, nil), logger)
 	request := httptest.NewRequest(
 		http.MethodPost,
 		"/verification-sessions/"+id.String()+"/personal-details",
@@ -554,7 +554,7 @@ func TestPersonalDetailsRoutingErrors(t *testing.T) {
 			request.Header.Set("Authorization", "Bearer token")
 			response := httptest.NewRecorder()
 
-			httpapi.NewHandler(&stubSessionService{}, service, nil).ServeHTTP(response, request)
+			httpapi.NewHandler(&stubSessionService{}, service, nil, nil).ServeHTTP(response, request)
 
 			if response.Code != test.wantStatus {
 				t.Fatalf("status = %d, want %d; body=%s", response.Code, test.wantStatus, response.Body.String())
@@ -611,7 +611,7 @@ func TestResumeVerificationSessionErrorContract(t *testing.T) {
 			}
 			response := httptest.NewRecorder()
 
-			httpapi.NewHandler(service, nil, nil).ServeHTTP(response, request)
+			httpapi.NewHandler(service, nil, nil, nil).ServeHTTP(response, request)
 
 			if response.Code != test.wantStatus {
 				t.Fatalf("status = %d, want %d", response.Code, test.wantStatus)
@@ -665,7 +665,7 @@ func TestHTTPAdapterMapsMalformedAndInternalFailuresToSafeEnvelopes(t *testing.T
 			}
 			response := httptest.NewRecorder()
 
-			httpapi.NewHandler(test.service, nil, nil).ServeHTTP(response, request)
+			httpapi.NewHandler(test.service, nil, nil, nil).ServeHTTP(response, request)
 
 			if response.Code != test.wantStatus {
 				t.Fatalf("status = %d, want %d", response.Code, test.wantStatus)
@@ -692,7 +692,7 @@ func TestRequestLoggingRecordsSafeHTTPOutcomeWithoutCredentials(t *testing.T) {
 	service := &stubSessionService{resumeErr: errors.New("database password must stay private")}
 	var logs bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&logs, nil))
-	handler := httpapi.WithRequestLogging(httpapi.NewHandler(service, nil, nil), logger)
+	handler := httpapi.WithRequestLogging(httpapi.NewHandler(service, nil, nil, nil), logger)
 	request := httptest.NewRequest(http.MethodGet, "/verification-sessions/"+id.String(), nil)
 	request.Header.Set("Authorization", "Bearer "+rawToken)
 	response := httptest.NewRecorder()
@@ -740,7 +740,7 @@ func TestRequestLoggingRecordsAuthenticationErrorCode(t *testing.T) {
 	id := uuid.MustParse("4dbfda8d-f69e-453f-a1c4-2dba229fc73b")
 	var logs bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&logs, nil))
-	handler := httpapi.WithRequestLogging(httpapi.NewHandler(&stubSessionService{}, nil, nil), logger)
+	handler := httpapi.WithRequestLogging(httpapi.NewHandler(&stubSessionService{}, nil, nil, nil), logger)
 	request := httptest.NewRequest(http.MethodGet, "/verification-sessions/"+id.String(), nil)
 	response := httptest.NewRecorder()
 
@@ -764,7 +764,7 @@ func TestResumePropagatesRequestCancellationToApplication(t *testing.T) {
 	request.Header.Set("Authorization", "Bearer opaque-token")
 	response := httptest.NewRecorder()
 
-	httpapi.NewHandler(service, nil, nil).ServeHTTP(response, request)
+	httpapi.NewHandler(service, nil, nil, nil).ServeHTTP(response, request)
 
 	if !errors.Is(service.resumeContextError, context.Canceled) {
 		t.Fatalf("Resume() context error = %v, want context.Canceled", service.resumeContextError)

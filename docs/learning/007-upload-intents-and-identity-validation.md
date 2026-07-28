@@ -85,9 +85,47 @@ GOCACHE=/tmp/lawang-go-build go test -race ./internal/application/artifact -coun
 Replay of `confirmed`/`validation_failed` outcomes and concurrent-confirm coordination
 remain intentionally deferred to Checkpoint 6.
 
+## Checkpoint 4: strict HTTP path and PostgreSQL tracer
+
+Checkpoint 4 is complete. The user-authored confirm success and unknown-field cycles
+remain intact. Sibling tests now freeze strict request framing, one MiB request
+limits, UUID/auth/method validation, exact success DTOs, and bounded application
+errors for both confirm and upload-url.
+
+The HTTP adapter owns two narrow consumer interfaces: one for confirmation and one
+for creating Upload Intents. This keeps object storage, extraction, PostgreSQL, and
+transaction types outside HTTP contracts. Artifact routes are registered only when
+their dependency is non-nil, so `cmd/api` can compile with the routes deliberately
+disabled until the real MinIO boundary exists.
+
+The integration tracer calls upload-url through the public handler, configures fake
+object metadata and extraction by the exact presigned storage key, then confirms
+using the returned Upload Intent ID through the same public handler. Both application
+services and the PostgreSQL adapter are real. Missing fake storage/extraction entries
+return explicit errors rather than zero values.
+
+Verification evidence on 2026-07-28:
+
+```text
+GOCACHE=/tmp/lawang-go-build go test ./internal/adapter/httpapi ./cmd/api -count=1
+98 tests passed
+
+GOCACHE=/tmp/lawang-go-build go test ./tests/integration -run 'HTTP|Artifact' -count=1
+7 tests passed
+
+GOCACHE=/tmp/lawang-go-build go test -race ./internal/adapter/httpapi -count=1
+98 tests passed
+
+GOCACHE=/tmp/lawang-go-build go test -race ./tests/integration \
+  -run '^TestIdentityDocumentUploadAndConfirmOverHTTPWithPostgreSQL$' -count=1
+1 test passed
+```
+
+Usable public-host presigning and real MinIO `HeadObject` remain intentionally
+deferred to Checkpoint 5. Replay and concurrent-confirm coordination remain
+Checkpoint 6 work.
+
 ## Later checkpoints
 
-- PostgreSQL transaction and adapter boundary.
-- Strict HTTP decoding, handler, route registration, and runtime wiring.
 - Public-host presigning and `HeadObject` through the MinIO boundary.
 - Replay and concurrent-confirm coordination without repeated external work.

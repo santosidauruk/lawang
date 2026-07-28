@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/google/uuid"
+	"github.com/santosidauruk/lawang-go/internal/application/artifact"
 	"github.com/santosidauruk/lawang-go/internal/application/personaldetails"
 	"github.com/santosidauruk/lawang-go/internal/application/session"
 )
@@ -65,6 +66,98 @@ func writePersonalDetailsError(response http.ResponseWriter, id uuid.UUID, err e
 		}
 	}
 	writeSessionError(response, id, err)
+}
+
+func writeArtifactError(response http.ResponseWriter, id uuid.UUID, err error) {
+	var artifactError *artifact.Error
+	if !errors.As(err, &artifactError) {
+		writeSessionError(response, id, err)
+		return
+	}
+
+	switch artifactError.Code {
+	case artifact.CodeLocalValidationFailed:
+		writeJSON(response, http.StatusUnprocessableEntity, APIError{
+			Code:    string(artifactError.Code),
+			Message: "The uploaded identity document did not match the submitted details",
+			Details: boundedArtifactFailureDetails(artifactError),
+		})
+	case artifact.CodeUploadIntentNotFound:
+		writeJSON(response, http.StatusNotFound, APIError{
+			Code: string(artifactError.Code), Message: "upload intent not found",
+		})
+	case artifact.CodeUploadIntentExpired:
+		writeJSON(response, http.StatusConflict, APIError{
+			Code: string(artifactError.Code), Message: "upload intent expired",
+		})
+	case artifact.CodeUploadIntentSuperseded:
+		writeJSON(response, http.StatusConflict, APIError{
+			Code: string(artifactError.Code), Message: "upload intent was superseded",
+		})
+	case artifact.CodeInvalidUploadIntentKind:
+		writeJSON(response, http.StatusConflict, APIError{
+			Code:    string(artifactError.Code),
+			Message: "upload intent kind is not valid for identity document confirmation",
+		})
+	case artifact.CodeInvalidObjectMetadata:
+		writeJSON(response, http.StatusUnprocessableEntity, APIError{
+			Code:    string(artifactError.Code),
+			Message: "uploaded object metadata is invalid",
+			Details: boundedArtifactFailureDetails(artifactError),
+		})
+	case artifact.CodeConfirmationStale:
+		writeJSON(response, http.StatusConflict, APIError{
+			Code:    string(artifactError.Code),
+			Message: "artifact confirmation state changed; retry the request",
+		})
+	case artifact.CodeUploadIntentStale:
+		writeJSON(response, http.StatusConflict, APIError{
+			Code:    string(artifactError.Code),
+			Message: "upload intent state changed; retry the request",
+		})
+	case artifact.CodeObjectStorageFailed:
+		writeJSON(response, http.StatusServiceUnavailable, APIError{
+			Code:    string(artifactError.Code),
+			Message: "object storage is temporarily unavailable",
+		})
+	case artifact.CodeDocumentExtractionFailed:
+		writeJSON(response, http.StatusInternalServerError, APIError{
+			Code:    string(artifactError.Code),
+			Message: "identity document processing failed",
+		})
+	default:
+		writeJSON(response, http.StatusInternalServerError, APIError{
+			Code: "INTERNAL", Message: "internal server error",
+		})
+	}
+}
+
+func writeArtifactUploadIntentError(response http.ResponseWriter, id uuid.UUID, err error) {
+	var artifactError *artifact.Error
+	if errors.As(err, &artifactError) &&
+		artifactError.Code == artifact.CodeInvalidUploadIntentKind {
+		writeJSON(response, http.StatusBadRequest, APIError{
+			Code:    string(artifactError.Code),
+			Message: "only identity_document uploads are supported",
+		})
+		return
+	}
+	writeArtifactError(response, id, err)
+}
+
+func boundedArtifactFailureDetails(artifactError *artifact.Error) map[string]any {
+	switch {
+	case artifactError.Code == artifact.CodeLocalValidationFailed &&
+		artifactError.Reason == artifact.ReasonIdentityNumberMismatch:
+		return map[string]any{"reason": string(artifactError.Reason)}
+	case artifactError.Code == artifact.CodeInvalidObjectMetadata &&
+		(artifactError.Reason == artifact.ReasonObjectEmpty ||
+			artifactError.Reason == artifact.ReasonObjectTooLarge ||
+			artifactError.Reason == artifact.ReasonUnsupportedContentType):
+		return map[string]any{"reason": string(artifactError.Reason)}
+	default:
+		return nil
+	}
 }
 
 func writeJSON(response http.ResponseWriter, status int, body any) {

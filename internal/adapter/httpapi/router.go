@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/santosidauruk/lawang-go/internal/application/artifact"
 	"github.com/santosidauruk/lawang-go/internal/application/personaldetails"
 	"github.com/santosidauruk/lawang-go/internal/application/session"
 )
@@ -27,8 +28,17 @@ type ArtifactConfirmService interface {
 	Confirm(ctx context.Context, sessionID uuid.UUID, rawToken string, uploadIntentID uuid.UUID) (session.Summary, error)
 }
 
+type ArtifactUploadIntentService interface {
+	Create(ctx context.Context, sessionID uuid.UUID, rawToken string, kind string) (artifact.CreatedUploadIntent, error)
+}
+
 // NewHandler builds the public HTTP routing surface.
-func NewHandler(sessionService SessionService, personalDetailsService PersonalDetailsService, artifactService ArtifactConfirmService) http.Handler {
+func NewHandler(
+	sessionService SessionService,
+	personalDetailsService PersonalDetailsService,
+	artifactConfirmService ArtifactConfirmService,
+	artifactUploadIntentService ArtifactUploadIntentService,
+) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health/live", requireMethod(http.MethodGet, liveHealth))
 	if sessionService != nil {
@@ -41,10 +51,16 @@ func NewHandler(sessionService SessionService, personalDetailsService PersonalDe
 			requireMethod(http.MethodPost, submitPersonalDetails(personalDetailsService)),
 		)
 	}
-	if artifactService != nil {
+	if artifactConfirmService != nil {
 		mux.HandleFunc(
 			"/verification-sessions/{id}/artifacts/confirm",
-			requireMethod(http.MethodPost, confirmArtifact(artifactService)),
+			requireMethod(http.MethodPost, confirmArtifact(artifactConfirmService)),
+		)
+	}
+	if artifactUploadIntentService != nil {
+		mux.HandleFunc(
+			"/verification-sessions/{id}/artifacts/upload-url",
+			requireMethod(http.MethodPost, createArtifactUploadIntent(artifactUploadIntentService)),
 		)
 	}
 	return mux
@@ -178,6 +194,71 @@ type artifactConfirmRequest struct {
 	UploadIntentID *string `json:"uploadIntentId"`
 }
 
+type artifactUploadIntentRequest struct {
+	Kind *string `json:"kind"`
+}
+
+func createArtifactUploadIntent(service ArtifactUploadIntentService) http.HandlerFunc {
+	return func(response http.ResponseWriter, request *http.Request) {
+		token, authError := ParseBearer(request.Header.Get("Authorization"))
+		if authError != nil {
+			writeJSON(response, http.StatusUnauthorized, authError)
+			return
+		}
+		id, err := uuid.Parse(request.PathValue("id"))
+		if err != nil {
+			writeJSON(response, http.StatusBadRequest, APIError{
+				Code: "VALIDATION_ERROR", Message: "id must be a UUID",
+			})
+			return
+		}
+
+		var body artifactUploadIntentRequest
+		request.Body = http.MaxBytesReader(response, request.Body, 1<<20)
+		decoder := json.NewDecoder(request.Body)
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&body); err != nil {
+			var maxBytesError *http.MaxBytesError
+			if errors.As(err, &maxBytesError) {
+				writeJSON(response, http.StatusRequestEntityTooLarge, APIError{
+					Code: "PAYLOAD_TOO_LARGE", Message: "request body exceeds 1 MiB limit",
+				})
+				return
+			}
+			writeJSON(response, http.StatusBadRequest, APIError{
+				Code: "VALIDATION_ERROR", Message: "invalid artifact upload URL request",
+			})
+			return
+		}
+		var extra any
+		if err := decoder.Decode(&extra); err != io.EOF {
+			writeJSON(response, http.StatusBadRequest, APIError{
+				Code: "VALIDATION_ERROR", Message: "invalid artifact upload URL request",
+			})
+			return
+		}
+		if body.Kind == nil {
+			writeJSON(response, http.StatusBadRequest, APIError{
+				Code:    "INVALID_UPLOAD_INTENT_KIND",
+				Message: "only identity_document uploads are supported",
+			})
+			return
+		}
+		created, err := service.Create(request.Context(), id, token, *body.Kind)
+		if err != nil {
+			writeArtifactUploadIntentError(response, id, err)
+			return
+		}
+		writeJSON(response, http.StatusCreated, struct {
+			UploadIntentID string `json:"uploadIntentId"`
+			UploadURL      string `json:"uploadUrl"`
+		}{
+			UploadIntentID: created.ID.String(),
+			UploadURL:      created.UploadURL,
+		})
+	}
+}
+
 func confirmArtifact(service ArtifactConfirmService) http.HandlerFunc {
 	return func(response http.ResponseWriter, request *http.Request) {
 		token, authError := ParseBearer(request.Header.Get("Authorization"))
@@ -196,8 +277,19 @@ func confirmArtifact(service ArtifactConfirmService) http.HandlerFunc {
 		decoder := json.NewDecoder(request.Body)
 		decoder.DisallowUnknownFields()
 		if err := decoder.Decode(&body); err != nil {
+			var maxBytesError *http.MaxBytesError
+			if errors.As(err, &maxBytesError) {
+				writeJSON(response, http.StatusRequestEntityTooLarge, APIError{
+					Code: "PAYLOAD_TOO_LARGE", Message: "request body exceeds 1 MiB limit",
+				})
+				return
+			}
 			var typeError *json.UnmarshalTypeError
-			if errors.As(err, &typeError) || strings.HasPrefix(err.Error(), "json: unknown field ") {
+			var syntaxError *json.SyntaxError
+			if errors.Is(err, io.EOF) ||
+				errors.As(err, &typeError) ||
+				errors.As(err, &syntaxError) ||
+				strings.HasPrefix(err.Error(), "json: unknown field ") {
 				writeJSON(response, http.StatusBadRequest, APIError{Code: "VALIDATION_ERROR", Message: "invalid artifact confirmation request"})
 				return
 			}
@@ -207,23 +299,23 @@ func confirmArtifact(service ArtifactConfirmService) http.HandlerFunc {
 
 		var extra any
 		if err := decoder.Decode(&extra); err != io.EOF {
-			writeJSON(response, http.StatusInternalServerError, APIError{Code: "INTERNAL", Message: "Internal server error"})
+			writeJSON(response, http.StatusBadRequest, APIError{Code: "VALIDATION_ERROR", Message: "invalid artifact confirmation request"})
 			return
 		}
 
 		if body.UploadIntentID == nil {
-			writeJSON(response, http.StatusBadRequest, APIError{Code: "VALIDATION_ERROR", Message: "all Confirm fields are required"})
+			writeJSON(response, http.StatusBadRequest, APIError{Code: "VALIDATION_ERROR", Message: "uploadIntentId is required"})
 			return
 		}
 
 		uploadIntentID, err := uuid.Parse(*body.UploadIntentID)
 		if err != nil {
-			writeJSON(response, http.StatusBadRequest, APIError{Code: "VALIDATION_ERROR", Message: "upload intent ID must be UUID"})
+			writeJSON(response, http.StatusBadRequest, APIError{Code: "VALIDATION_ERROR", Message: "uploadIntentId must be a UUID"})
 			return
 		}
 		summary, err := service.Confirm(request.Context(), id, token, uploadIntentID)
 		if err != nil {
-			writeJSON(response, http.StatusInternalServerError, APIError{Code: "INTERNAL", Message: "Internal server error"})
+			writeArtifactError(response, id, err)
 			return
 		}
 

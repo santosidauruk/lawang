@@ -37,8 +37,8 @@ publik harus menjadi GREEN sebelum berpindah ke perilaku berikutnya.
 | 1 | Schema dan invariant Upload Intent | selesai dan telah direview | [checkpoint-1](checkpoint-1-schema-and-invariants.md) |
 | 2 | Konfirmasi sukses dan outcome aplikasi | selesai; focused suite dan race detector GREEN | [checkpoint-2](checkpoint-2-application-confirmation.md) |
 | 3 | PostgreSQL transaction dan adapter | selesai; schema, confirm, rollback, create/supersede, dan concurrency GREEN | [checkpoint-3](checkpoint-3-postgresql-boundary.md) |
-| 4 | Strict HTTP path dan runtime wiring | aktif; siap untuk bagian pertama user | [checkpoint-4](checkpoint-4-http-path.md) |
-| 5 | Public-host presign dan MinIO `HeadObject` | belum dimulai | [checkpoint-5](checkpoint-5-minio-boundary.md) |
+| 4 | Strict HTTP path dan runtime wiring | selesai; strict contracts, bounded errors, dan HTTP + PostgreSQL tracer GREEN | [checkpoint-4](checkpoint-4-http-path.md) |
+| 5 | Public-host presign dan MinIO `HeadObject` | aktif berikutnya; belum dimulai | [checkpoint-5](checkpoint-5-minio-boundary.md) |
 | 6 | Replay dan concurrent-confirm coordination | belum dimulai | [checkpoint-6](checkpoint-6-replay-and-concurrency.md) |
 
 Urutan ini adalah urutan belajar, bukan pemisahan horizontal layer. Pada setiap
@@ -65,6 +65,18 @@ checkpoint tersebut.
 - Replay `confirmed` dan `validation_failed` tidak mengulang external I/O atau event.
 - Identity Document storage key menggunakan
   `verification-sessions/{sessionID}/identity_document/{intentID}`.
+- Upload-url success adalah `201 Created` dengan exact fields `uploadIntentId` dan
+  `uploadUrl`, tanpa `expiresAt` atau `Location`.
+- Checkpoint 4 HTTP validation dan bounded artifact error mapping telah dibekukan di
+  `checkpoint-4-http-path.md`, termasuk mismatch `422`, object metadata `422`,
+  stale/superseded/expired `409`, storage `503`, extraction `500`, dan safe unknown
+  `500`.
+- Fake deterministic extractor untuk Checkpoint 4 dikontrol melalui explicit result
+  map berdasarkan storage key. Ia tidak membaca identity number dari filename atau
+  object metadata.
+- `cmd/api` sengaja tidak mengaktifkan artifact routes sampai real MinIO boundary
+  tersedia pada Checkpoint 5; Checkpoint 4 membuktikan handler dan HTTP + PostgreSQL
+  path dengan explicit fakes.
 - Strategi koordinasi yang dipilih untuk checkpoint 6 adalah PostgreSQL
   session-level advisory lock; kata *session* di sini berarti sesi koneksi PostgreSQL,
   bukan Verification Session.
@@ -74,10 +86,6 @@ checkpoint tersebut.
 Sebelum interface publik terkait ditulis, agent harus mencari keputusan ini dalam
 thread aktif atau meminta user menjawabnya:
 
-- status HTTP dan nama field exact untuk response upload URL selain keputusan bahwa
-  `expiresAt` tidak ada;
-- exact HTTP message/status mapping untuk bounded application errors selain mismatch;
-- convention input untuk fake deterministic extractor;
 - key advisory lock: kandidat paling sempit adalah Upload Intent ID, tetapi pilihan
   ini harus dikonfirmasi sebelum SQL/Go lock dibuat.
 
@@ -96,9 +104,12 @@ GOCACHE=/tmp/lawang-go-build go test ./internal/application/artifact -count=1
 GOCACHE=/tmp/lawang-go-build go test -race ./internal/application/artifact -count=1
 ```
 
-Checkpoint 3 selesai. Checkpoint 4 adalah checkpoint aktif; ikuti
-`checkpoint-4-http-path.md` untuk bagian user berikutnya. Replay serta concurrent
-confirm sengaja tetap berada di Checkpoint 6.
+Checkpoint 3 dan Checkpoint 4 selesai. Strict confirm/upload-url contracts, bounded
+error mapping, serta public HTTP upload-url -> confirm tracer dengan PostgreSQL
+disposable telah GREEN. `cmd/api` sengaja tetap mengirim dependency artifact `nil`;
+usable public-host presign dan real MinIO `HeadObject` belum terbukti. Checkpoint 5
+adalah checkpoint aktif berikutnya. Replay serta concurrent confirm tetap berada di
+Checkpoint 6.
 
 ## Yang harus dilakukan agent ketika diminta melanjutkan
 
@@ -116,8 +127,10 @@ confirm sengaja tetap berada di Checkpoint 6.
 8. Sesudah bagian fundamental benar, implementasikan kelanjutan yang berlabel
    **agent** dalam panduan, satu RED -> GREEN per perilaku.
 9. Akhiri checkpoint dengan focused tests, quality gate yang relevan, integration
-   proof, dan update learning note. Jangan menandai selesai jika dependency nyata
-   seperti PostgreSQL atau MinIO belum pernah diuji.
+   proof, dan update learning note. Sebuah checkpoint boleh ditutup hanya sesuai
+   Definition of Done panduannya dan harus mencatat dependency yang sengaja ditunda;
+   jangan menandai keseluruhan Issue 007 selesai sebelum PostgreSQL dan MinIO nyata
+   telah diuji pada checkpoint yang mensyaratkannya.
 
 Informasi minimum yang diperlukan agent untuk memandu adalah: checkpoint aktif,
 file yang terakhir diubah user, output command terakhir, apakah Docker tersedia, dan
