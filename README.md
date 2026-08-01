@@ -11,8 +11,7 @@ development, forward-only migrations, raw SQL exercises/proofs, and sqlc output.
 
 ## Requirements
 
-- Go `1.25.12` (the module declares a minimum language/tool dependency level of
-  `1.25.7` and pins toolchain `1.25.12`)
+- Go `1.26.5` (the module requires the latest stable patch)
 - Docker Engine/Desktop with Compose
 - PostgreSQL `psql`
 - GNU or BSD Make
@@ -25,8 +24,8 @@ Project tools are installed into the ignored `./bin` directory:
 | Goose | `v3.27.1` |
 | Staticcheck | `2026.1` (`v0.7.0`) |
 
-sqlc `v1.31.x` is intentionally not used because it requires Go 1.26, outside this
-project's approved Go 1.25 baseline.
+sqlc remains independently pinned to `v1.30.0`; upgrading project tools is outside
+the Go toolchain upgrade.
 
 ## First setup
 

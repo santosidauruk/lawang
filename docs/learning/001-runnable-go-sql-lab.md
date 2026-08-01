@@ -41,9 +41,9 @@ integration proof.
 
 ## Tooling decisions
 
-- Go language/tool dependency floor: `1.25.7`; pinned toolchain: `1.25.12`.
-- sqlc: `v1.30.0`. Versions `v1.31.x` require Go 1.26 and conflict with the approved
-  Go 1.25 baseline.
+- Go language/tool dependency floor: `1.26.5`.
+- sqlc: `v1.30.0`. Its version remains independently pinned; upgrading project tools
+  is outside the Go toolchain upgrade.
 - Goose: `v3.27.1`.
 - Staticcheck: `2026.1` (`v0.7.0`).
 - Testcontainers for Go: `v0.39.0`.
@@ -56,6 +56,9 @@ would falsely imply behavior the tool does not implement.
 ## Verification evidence
 
 Captured on 2026-07-14 (Asia/Jakarta).
+
+The Go output below records the original Issue 001 environment. The project baseline
+was later upgraded to Go `1.26.5` on 2026-07-28.
 
 ### Versions
 

@@ -38,7 +38,7 @@ publik harus menjadi GREEN sebelum berpindah ke perilaku berikutnya.
 | 2 | Konfirmasi sukses dan outcome aplikasi | selesai; focused suite dan race detector GREEN | [checkpoint-2](checkpoint-2-application-confirmation.md) |
 | 3 | PostgreSQL transaction dan adapter | selesai; schema, confirm, rollback, create/supersede, dan concurrency GREEN | [checkpoint-3](checkpoint-3-postgresql-boundary.md) |
 | 4 | Strict HTTP path dan runtime wiring | selesai; strict contracts, bounded errors, dan HTTP + PostgreSQL tracer GREEN | [checkpoint-4](checkpoint-4-http-path.md) |
-| 5 | Public-host presign dan MinIO `HeadObject` | aktif berikutnya; belum dimulai | [checkpoint-5](checkpoint-5-minio-boundary.md) |
+| 5 | Public-host presign dan MinIO `HeadObject` | aktif; scaffold dan executable handoff siap | [checkpoint-5](checkpoint-5-minio-boundary.md) |
 | 6 | Replay dan concurrent-confirm coordination | belum dimulai | [checkpoint-6](checkpoint-6-replay-and-concurrency.md) |
 
 Urutan ini adalah urutan belajar, bukan pemisahan horizontal layer. Pada setiap

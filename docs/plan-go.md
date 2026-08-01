@@ -26,9 +26,8 @@ defined in this document.
 - Determine the Go module path from the new repository's Git remote. If there is no
   remote, ask the user for the module path. Do not invent a GitHub account or module
   path.
-- Use Go `1.25` as the baseline. The planning environment was verified with Go
-  `1.25.4`; the new repository should pin the exact supported patch version in CI or
-  its toolchain file when the repository is created.
+- Use Go `1.26.5` as the baseline. Pin the exact supported patch version in the
+  module declaration.
 - Use a separate PostgreSQL database:
 
   ```dotenv
@@ -1330,7 +1329,7 @@ note for later evaluation, not a milestone.
 An agent beginning in another repository should execute this order:
 
 1. Confirm the repository path, Git remote, and derived module path.
-2. Confirm Go `1.25.x`, Docker, PostgreSQL client, sqlc, Goose, and staticcheck
+2. Confirm Go `1.26.5`, Docker, PostgreSQL client, sqlc, Goose, and staticcheck
    availability; pin tool versions in documented setup.
 3. Initialize the module and create the package tree without speculative interfaces.
 4. Add `.gitignore`, `.env.example`, typed config, slog, graceful shutdown, and

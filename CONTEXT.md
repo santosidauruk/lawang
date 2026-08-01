@@ -32,9 +32,8 @@ tighten the public API or infer a new domain rule.
 
 ## Fixed Boundaries
 
-- Go baseline: Go 1.25; the module requires at least 1.25.7 and pins toolchain 1.25.12
-  because the selected Goose release requires a newer patch than the planning
-  environment's 1.25.4.
+- Go baseline and minimum required version: Go 1.26.5, the latest stable release
+  verified when the project baseline was upgraded on 2026-07-28.
 - Module path: `github.com/santosidauruk/lawang-go`, explicitly approved by the user
   for this independent repository.
 - Local development database:

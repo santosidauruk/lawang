@@ -42,7 +42,7 @@ change that remote identity without another explicit decision.
 
 - [x] The user supplies or approves the Go module path; `go.mod` does not contain an
       invented remote identity.
-- [x] The supported Go 1.25 patch and required tool versions are pinned or documented.
+- [x] The supported Go 1.26.5 release and required tool versions are pinned or documented.
 - [x] `.env.example` contains safe local values and no real secrets.
 - [x] `compose.yaml` starts an isolated PostgreSQL service for `lawang_db_go` with an
       explicit health check and named development volume.
