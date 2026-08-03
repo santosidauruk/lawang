@@ -12,6 +12,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/santosidauruk/lawang-go/internal/adapter/httpapi"
 	postgresadapter "github.com/santosidauruk/lawang-go/internal/adapter/postgres"
+	"github.com/santosidauruk/lawang-go/internal/adapter/s3storage"
+	"github.com/santosidauruk/lawang-go/internal/application/artifact"
 	"github.com/santosidauruk/lawang-go/internal/application/personaldetails"
 	"github.com/santosidauruk/lawang-go/internal/application/session"
 	"github.com/santosidauruk/lawang-go/internal/platform/config"
@@ -57,6 +59,12 @@ func run() int {
 	clock := systemClock{}
 	sessions := session.NewService(store, tokens, clock)
 	details := personaldetails.NewService(postgresadapter.NewPersonalDetailsTransactions(database), tokens, clock)
+
+	artifactStore := postgresadapter.NewArtifactTransactions(database)
+
+	minio
+	objectStorage := s3storage.New()
+	artifactConfirm := artifact.NewService(artifactStore, artifactStore, objectStorage, extractor, tokens, clock)
 	handler := httpapi.WithRequestLogging(httpapi.NewHandler(sessions, details, nil, nil), logger)
 	server := httpserver.New(cfg.HTTPAddress, handler)
 	logger.Info("API listening", "address", listener.Addr().String())

@@ -4,16 +4,25 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
+	"strconv"
 	"time"
 )
 
 // Config contains values validated once at process startup.
 type Config struct {
-	DatabaseURL     string
-	HTTPAddress     string
-	ShutdownTimeout time.Duration
-	LogLevel        slog.Level
+	DatabaseURL        string
+	HTTPAddress        string
+	ShutdownTimeout    time.Duration
+	LogLevel           slog.Level
+	S3InternalEndpoint string
+	S3PublicEndpoint   string
+	S3Region           string
+	S3AccessKey        string
+	S3SecretKey        string
+	S3Bucket           string
+	S3UsePathStyle     bool
 }
 
 // Load reads and validates process configuration from the environment.
@@ -21,6 +30,54 @@ func Load() (Config, error) {
 	databaseURL, ok := os.LookupEnv("DATABASE_URL")
 	if !ok || databaseURL == "" {
 		return Config{}, errors.New("DATABASE_URL is required")
+	}
+
+	s3InternalEndpoint, ok := os.LookupEnv("S3_INTERNAL_ENDPOINT")
+	if !ok || s3InternalEndpoint == "" {
+		return Config{}, errors.New("S3_INTERNAL_ENDPOINT is required")
+	}
+
+	if err := ValidateURL(s3InternalEndpoint); err != nil {
+		return Config{}, err
+	}
+
+	s3Publicendpoint, ok := os.LookupEnv("S3_PUBLIC_ENDPOINT")
+	if !ok || s3Publicendpoint == "" {
+		return Config{}, errors.New("S3_PUBLIC_ENDPOINT is required")
+	}
+
+	if err := ValidateURL(s3Publicendpoint); err != nil {
+		return Config{}, err
+	}
+
+	s3Region, ok := os.LookupEnv("S3_REGION")
+	if !ok || s3Region == "" {
+		return Config{}, errors.New("S3_REGION is required")
+	}
+
+	s3AccessKey, ok := os.LookupEnv("S3_ACCESS_KEY")
+	if !ok || s3AccessKey == "" {
+		return Config{}, errors.New("S3_ACCESS_KEY is required")
+	}
+
+	s3SecretKey, ok := os.LookupEnv("S3_SECRET_KEY")
+	if !ok || s3SecretKey == "" {
+		return Config{}, errors.New("S3_SECRET_KEY is required")
+	}
+
+	s3Bucket, ok := os.LookupEnv("S3_BUCKET")
+	if !ok || s3Bucket == "" {
+		return Config{}, errors.New("S3_BUCKET is required")
+	}
+
+	s3UsePathStyle, ok := os.LookupEnv("S3_USE_PATH_STYLE")
+	if !ok || s3UsePathStyle == "" {
+		return Config{}, errors.New("S3_USE_PATH_STYLE is required")
+	}
+
+	s3BoolUsePathStyle, err := strconv.ParseBool(s3UsePathStyle)
+	if err != nil {
+		return Config{}, errors.New("S3_USE_PATH_STYLE must be true or false")
 	}
 
 	shutdownTimeout, err := positiveDuration("SHUTDOWN_TIMEOUT", 10*time.Second)
@@ -33,11 +90,20 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 
+	os.LookupEnv("S3_USE_PATH_STYLE")
+
 	return Config{
-		DatabaseURL:     databaseURL,
-		HTTPAddress:     lookupOrDefault("HTTP_ADDRESS", ":8080"),
-		ShutdownTimeout: shutdownTimeout,
-		LogLevel:        logLevel,
+		DatabaseURL:        databaseURL,
+		HTTPAddress:        lookupOrDefault("HTTP_ADDRESS", ":8080"),
+		ShutdownTimeout:    shutdownTimeout,
+		LogLevel:           logLevel,
+		S3InternalEndpoint: s3InternalEndpoint,
+		S3PublicEndpoint:   s3Publicendpoint,
+		S3Region:           s3Region,
+		S3AccessKey:        s3AccessKey,
+		S3SecretKey:        s3SecretKey,
+		S3Bucket:           s3Bucket,
+		S3UsePathStyle:     s3BoolUsePathStyle,
 	}, nil
 }
 
@@ -73,4 +139,21 @@ func parseLogLevel() (slog.Level, error) {
 		return 0, errors.New("LOG_LEVEL must be one of debug, info, warn, error")
 	}
 	return level, nil
+}
+
+func ValidateURL(rawURL string) error {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("invalid URL format: %w", err)
+	}
+
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return errors.New("URL must be an absolute HTTP or HTTPS")
+	}
+
+	if u.Host == "" {
+		return errors.New("host must not empty")
+	}
+
+	return nil
 }
