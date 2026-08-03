@@ -15,6 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/santosidauruk/lawang-go/internal/adapter/deterministicextractor"
 	"github.com/santosidauruk/lawang-go/internal/adapter/httpapi"
 	postgresadapter "github.com/santosidauruk/lawang-go/internal/adapter/postgres"
 	"github.com/santosidauruk/lawang-go/internal/adapter/s3storage"
@@ -80,24 +81,32 @@ func run() int {
 		return 1
 	}
 
-	s3Client := s3.NewFromConfig(awsConfig, func(options *s3.Options) {
+	publicS3Client := s3.NewFromConfig(awsConfig, func(options *s3.Options) {
 		options.BaseEndpoint = aws.String(cfg.S3PublicEndpoint)
 		options.UsePathStyle = *aws.Bool(cfg.S3UsePathStyle)
 	})
 
+	internalS3Client := s3.NewFromConfig(awsConfig, func(options *s3.Options) {
+		options.BaseEndpoint = aws.String(cfg.S3InternalEndpoint)
+		options.UsePathStyle = *aws.Bool(cfg.S3UsePathStyle)
+	})
+
 	bucketName := cfg.S3Bucket
-	_, err = s3Client.CreateBucket(ctx, &s3.CreateBucketInput{
+	_, err = publicS3Client.CreateBucket(ctx, &s3.CreateBucketInput{
 		Bucket: aws.String(bucketName),
 	})
 	if err != nil {
 		logger.Error("failed to create MinIO bucket %q: %v", bucketName, err)
 	}
 
-	presignClient := s3.NewPresignClient(s3Client)
-	objectStorage := s3storage.New(presignClient, bucketName, s3Client)
-	
+	presignClient := s3.NewPresignClient(publicS3Client)
+	objectStorage := s3storage.New(presignClient, bucketName, internalS3Client)
+
+	extractor := deterministicextractor.New(nil, nil)
 	artifactConfirm := artifact.NewService(artifactStore, artifactStore, objectStorage, extractor, tokens, clock)
-	handler := httpapi.WithRequestLogging(httpapi.NewHandler(sessions, details, nil, nil), logger)
+
+	uploadIntentService := artifact.NewUploadIntentService(artifactStore, artifactStore, objectStorage, tokens, clock)
+	handler := httpapi.WithRequestLogging(httpapi.NewHandler(sessions, details, artifactConfirm, uploadIntentService), logger)
 	server := httpserver.New(cfg.HTTPAddress, handler)
 	logger.Info("API listening", "address", listener.Addr().String())
 	if err := httpserver.Run(ctx, server, listener, cfg.ShutdownTimeout); err != nil {
