@@ -107,9 +107,9 @@ func TestMinIOPresignPutAndHeadObjectReturnsActualMetadata(t *testing.T) {
 	sessionID := uuid.MustParse("d01e1070-8d02-4b5e-825c-d25e9d4386c3")
 	uploadIntentID := uuid.MustParse("65bad214-8a57-4449-981d-16a16d862c2b")
 	storageKey := fmt.Sprintf("verification-sessions/%s/identity_document/%s", sessionID.String(), uploadIntentID.String())
-	storage := s3storageadapter.New(presignClient, bucketName, s3Client)
+	objectStorage := s3storageadapter.New(presignClient, bucketName, s3Client)
 
-	presignUrl, err := storage.PresignUpload(ctx, storageKey, 5*time.Minute)
+	presignUrl, err := objectStorage.PresignUpload(ctx, storageKey, 5*time.Minute)
 	if err != nil {
 		t.Fatalf("presign upload: %v", err)
 	}
@@ -163,7 +163,7 @@ func TestMinIOPresignPutAndHeadObjectReturnsActualMetadata(t *testing.T) {
 		t.Errorf("reponse ETag should not empty")
 	}
 
-	metadata, err := storage.HeadObject(ctx, storageKey)
+	metadata, err := objectStorage.HeadObject(ctx, storageKey)
 	if err != nil {
 		t.Fatalf("head object error %v", err)
 	}

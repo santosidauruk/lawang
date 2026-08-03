@@ -9,6 +9,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/santosidauruk/lawang-go/internal/adapter/httpapi"
 	postgresadapter "github.com/santosidauruk/lawang-go/internal/adapter/postgres"
@@ -62,8 +67,35 @@ func run() int {
 
 	artifactStore := postgresadapter.NewArtifactTransactions(database)
 
-	minio
-	objectStorage := s3storage.New()
+	awsConfig, err := awsconfig.LoadDefaultConfig(
+		ctx, awsconfig.WithRegion(cfg.S3Region), awsconfig.WithCredentialsProvider(
+			credentials.NewStaticCredentialsProvider(
+				cfg.S3AccessKey,
+				cfg.S3SecretKey,
+				"",
+			),
+		))
+	if err != nil {
+		logger.Error("load AWS configuration", err)
+		return 1
+	}
+
+	s3Client := s3.NewFromConfig(awsConfig, func(options *s3.Options) {
+		options.BaseEndpoint = aws.String(cfg.S3PublicEndpoint)
+		options.UsePathStyle = *aws.Bool(cfg.S3UsePathStyle)
+	})
+
+	bucketName := cfg.S3Bucket
+	_, err = s3Client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucketName),
+	})
+	if err != nil {
+		logger.Error("failed to create MinIO bucket %q: %v", bucketName, err)
+	}
+
+	presignClient := s3.NewPresignClient(s3Client)
+	objectStorage := s3storage.New(presignClient, bucketName, s3Client)
+	
 	artifactConfirm := artifact.NewService(artifactStore, artifactStore, objectStorage, extractor, tokens, clock)
 	handler := httpapi.WithRequestLogging(httpapi.NewHandler(sessions, details, nil, nil), logger)
 	server := httpserver.New(cfg.HTTPAddress, handler)
