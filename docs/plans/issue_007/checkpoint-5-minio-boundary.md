@@ -1,8 +1,9 @@
 # Checkpoint 5 — Public-host Presign dan MinIO HeadObject
 
-Status: aktif; scaffold test dan executable handoff sudah disiapkan. Saat ini
-`compose.yaml` baru menyediakan PostgreSQL, config belum memiliki S3 fields, dan
-dependency AWS SDK v2 serta Testcontainers MinIO module belum ditambahkan.
+Status: selesai pada 2026-08-03. Public-host presign, direct HTTP PUT, real MinIO
+`HeadObject`, bounded storage failures, runtime readiness, dan tracer lengkap
+HTTP -> PostgreSQL -> MinIO -> confirm telah terbukti. Replay/concurrency tetap
+milik Checkpoint 6.
 
 ## Tujuan
 
@@ -165,3 +166,19 @@ Setelah real upload tracer GREEN:
 Command final harus menunjuk nama real test yang dibuat. Jangan menulis command
 hipotetis sebagai bukti selesai. Selain focused MinIO tests, jalankan race detector
 untuk package yang tidak memerlukan shared unsafe fixture.
+
+## Completion evidence
+
+- Docker-unavailable path gagal melalui `t.Fatalf`, tanpa panic atau skip.
+- JPEG, PNG, dan PDF memakai public-host presigned URL yang dikirim langsung melalui
+  `net/http`, lalu metadata nyata dibaca melalui internal-client `HeadObject`.
+- Empty, lebih dari 10 MiB, dan unsupported content type ditolak berdasarkan metadata
+  MinIO nyata.
+- Missing object dan endpoint S3 yang tidak tersedia menjadi bounded
+  `503 OBJECT_STORAGE_FAILED` tanpa storage key, endpoint, atau bucket leakage.
+- Concrete deterministic extractor membuktikan configured success/error, missing key,
+  cancellation, dan PostgreSQL mismatch atomik.
+- Runtime memakai public client untuk presign, internal client untuk readiness serta
+  `HeadObject`, dan berhenti bila bucket tidak siap.
+- `TestIdentityDocumentUploadPutAndConfirmOverHTTPWithPostgreSQLAndMinIO` membuktikan
+  upload-url -> returned URL PUT -> confirm -> satu artifact/event yang durable.

@@ -12,8 +12,8 @@ import (
 	"github.com/santosidauruk/lawang-go/internal/application/session"
 	"github.com/santosidauruk/lawang-go/internal/domain/sessionevent"
 	"github.com/santosidauruk/lawang-go/internal/domain/verificationsession"
-
 )
+
 type transactionBeginner interface {
 	Begin(context.Context) (pgx.Tx, error)
 }

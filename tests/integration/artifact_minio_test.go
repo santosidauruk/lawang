@@ -3,6 +3,8 @@ package integration_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -10,7 +12,9 @@ import (
 	"image/png"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -19,7 +23,12 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/google/uuid"
+	"github.com/santosidauruk/lawang-go/internal/adapter/deterministicextractor"
+	"github.com/santosidauruk/lawang-go/internal/adapter/httpapi"
+	postgresadapter "github.com/santosidauruk/lawang-go/internal/adapter/postgres"
 	s3storageadapter "github.com/santosidauruk/lawang-go/internal/adapter/s3storage"
+	"github.com/santosidauruk/lawang-go/internal/application/artifact"
+	"github.com/santosidauruk/lawang-go/internal/application/session"
 	"github.com/testcontainers/testcontainers-go"
 	tcminio "github.com/testcontainers/testcontainers-go/modules/minio"
 )
@@ -58,19 +67,9 @@ const (
 func TestMinIOPresignPutAndHeadObjectReturnsActualMetadata(t *testing.T) {
 	ctx := context.Background()
 
-	minioContainer, err := tcminio.Run(
-		ctx,
-		minioImage,
-		tcminio.WithUsername(minioUsername),
-		tcminio.WithPassword(minioPassword),
-	)
-	testcontainers.CleanupContainer(t, minioContainer)
+	container := startDisposableMinIO(t, ctx)
 
-	if err != nil {
-		t.Fatalf("start disposable MinIO; ensure Docker is running: %v", err)
-	}
-
-	endpoint, err := minioContainer.PortEndpoint(ctx, "9000/tcp", "http")
+	endpoint, err := container.PortEndpoint(ctx, "9000/tcp", "http")
 	if err != nil {
 		t.Fatalf("get MinIO endpoint: %v", err)
 	}
@@ -227,9 +226,203 @@ func TestMinIOPresignPutAndHeadObjectReturnsSiblingMediaMetadata(t *testing.T) {
 	}
 }
 
-func newMinIOTestStorage(t *testing.T, ctx context.Context) *s3storageadapter.Adapter {
+func TestMinIOObjectMetadataDrivesIdentityDocumentRejection(t *testing.T) {
+	now := time.Date(2026, 8, 3, 13, 0, 0, 0, time.UTC)
+	ctx, database := openArtifactDatabase(t)
+	storage := newMinIOTestStorage(t, ctx)
+	postgresArtifacts := postgresadapter.NewArtifactTransactions(database)
+	service := artifact.NewService(
+		postgresArtifacts,
+		postgresArtifacts,
+		storage,
+		deterministicextractor.New(nil, nil),
+		session.NewProductionCryptoTokens(),
+		fixedClock{now: now},
+	)
+
+	tests := []struct {
+		name        string
+		contentType string
+		body        []byte
+		wantReason  artifact.FailureReason
+	}{
+		{
+			name:        "empty object",
+			contentType: "image/jpeg",
+			body:        nil,
+			wantReason:  artifact.ReasonObjectEmpty,
+		},
+		{
+			name:        "object above ten MiB",
+			contentType: "image/jpeg",
+			body:        make([]byte, 10*1024*1024+1),
+			wantReason:  artifact.ReasonObjectTooLarge,
+		},
+		{
+			name:        "unsupported content type",
+			contentType: "text/plain",
+			body:        []byte("not an identity document"),
+			wantReason:  artifact.ReasonUnsupportedContentType,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fixture := seedArtifactConfirmationState(t, ctx, database, now)
+			storageKey := "artifact/" + fixture.uploadIntentID.String()
+			putMinIOObject(t, ctx, storage, storageKey, tt.contentType, tt.body)
+
+			_, err := service.Confirm(
+				ctx,
+				fixture.sessionID,
+				fixture.rawToken,
+				fixture.uploadIntentID,
+			)
+			var artifactError *artifact.Error
+			if !errors.As(err, &artifactError) {
+				t.Fatalf("Confirm() error = %v, want artifact.Error", err)
+			}
+			if artifactError.Code != artifact.CodeInvalidObjectMetadata ||
+				artifactError.Reason != tt.wantReason {
+				t.Errorf(
+					"Confirm() error = %s/%s, want %s/%s",
+					artifactError.Code,
+					artifactError.Reason,
+					artifact.CodeInvalidObjectMetadata,
+					tt.wantReason,
+				)
+			}
+		})
+	}
+}
+
+func TestS3StorageFailuresRemainBoundedAtHTTPBoundary(t *testing.T) {
+	now := time.Date(2026, 8, 3, 13, 30, 0, 0, time.UTC)
+	ctx, database := openArtifactDatabase(t)
+	minioStorage := newMinIOTestStorage(t, ctx)
+	unavailableStorage := newUnavailableS3TestStorage(t, ctx)
+
+	tests := []struct {
+		name    string
+		storage *s3storageadapter.Adapter
+	}{
+		{name: "missing MinIO object", storage: minioStorage},
+		{name: "unavailable S3 endpoint", storage: unavailableStorage},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fixture := seedArtifactConfirmationState(t, ctx, database, now)
+			postgresArtifacts := postgresadapter.NewArtifactTransactions(database)
+			service := artifact.NewService(
+				postgresArtifacts,
+				postgresArtifacts,
+				tt.storage,
+				deterministicextractor.New(nil, nil),
+				session.NewProductionCryptoTokens(),
+				fixedClock{now: now},
+			)
+			handler := httpapi.NewHandler(nil, nil, service, nil)
+			request := httptest.NewRequest(
+				http.MethodPost,
+				"/verification-sessions/"+fixture.sessionID.String()+"/artifacts/confirm",
+				strings.NewReader(
+					`{"uploadIntentId":"`+fixture.uploadIntentID.String()+`"}`,
+				),
+			)
+			request.Header.Set("Authorization", "Bearer "+fixture.rawToken)
+			request.Header.Set("Content-Type", "application/json")
+			response := httptest.NewRecorder()
+
+			handler.ServeHTTP(response, request)
+
+			if response.Code != http.StatusServiceUnavailable {
+				t.Fatalf(
+					"confirm status = %d, want %d; body = %s",
+					response.Code,
+					http.StatusServiceUnavailable,
+					response.Body.String(),
+				)
+			}
+			var apiError httpapi.APIError
+			if err := json.Unmarshal(response.Body.Bytes(), &apiError); err != nil {
+				t.Fatalf("decode storage failure response: %v", err)
+			}
+			if apiError.Code != string(artifact.CodeObjectStorageFailed) ||
+				apiError.Message != "object storage is temporarily unavailable" {
+				t.Errorf("storage failure response = %#v", apiError)
+			}
+			storageKey := "artifact/" + fixture.uploadIntentID.String()
+			for _, forbidden := range []string{storageKey, "127.0.0.1:1", "lawang-unavailable"} {
+				if strings.Contains(response.Body.String(), forbidden) {
+					t.Errorf("storage failure response leaked %q", forbidden)
+				}
+			}
+		})
+	}
+}
+
+func TestMinIOEnsureBucketCreatesAndReusesConfiguredBucket(t *testing.T) {
+	ctx := context.Background()
+	container := startDisposableMinIO(t, ctx)
+	endpoint, err := container.PortEndpoint(ctx, "9000/tcp", "http")
+	if err != nil {
+		t.Fatalf("get MinIO endpoint: %v", err)
+	}
+	awsConfig, err := awsconfig.LoadDefaultConfig(
+		ctx,
+		awsconfig.WithRegion(minioRegion),
+		awsconfig.WithCredentialsProvider(
+			credentials.NewStaticCredentialsProvider(
+				minioUsername,
+				minioPassword,
+				"",
+			),
+		),
+	)
+	if err != nil {
+		t.Fatalf("load AWS configuration: %v", err)
+	}
+	client := s3.NewFromConfig(awsConfig, func(options *s3.Options) {
+		options.BaseEndpoint = aws.String(endpoint)
+		options.UsePathStyle = true
+	})
+	bucketName := "lawang-ready-" + uuid.NewString()
+	storage := s3storageadapter.New(s3.NewPresignClient(client), bucketName, client)
+
+	if err := storage.EnsureBucket(ctx); err != nil {
+		t.Fatalf("EnsureBucket() first call error = %v", err)
+	}
+	if err := storage.EnsureBucket(ctx); err != nil {
+		t.Fatalf("EnsureBucket() repeated call error = %v", err)
+	}
+	if _, err := client.HeadBucket(ctx, &s3.HeadBucketInput{
+		Bucket: aws.String(bucketName),
+	}); err != nil {
+		t.Fatalf("HeadBucket() after readiness error = %v", err)
+	}
+}
+
+func TestS3EnsureBucketFailsWhenInternalEndpointIsUnavailable(t *testing.T) {
+	ctx := context.Background()
+	storage := newUnavailableS3TestStorage(t, ctx)
+
+	if err := storage.EnsureBucket(ctx); err == nil {
+		t.Fatal("EnsureBucket() error = nil, want unavailable endpoint error")
+	}
+}
+
+func startDisposableMinIO(t *testing.T, ctx context.Context) *tcminio.MinioContainer {
 	t.Helper()
 
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			t.Fatalf(
+				"start disposable MinIO: Docker provider unavailable: %v",
+				recovered,
+			)
+		}
+	}()
 	minioContainer, err := tcminio.Run(
 		ctx,
 		minioImage,
@@ -237,9 +430,18 @@ func newMinIOTestStorage(t *testing.T, ctx context.Context) *s3storageadapter.Ad
 		tcminio.WithPassword(minioPassword),
 	)
 	testcontainers.CleanupContainer(t, minioContainer)
+
 	if err != nil {
 		t.Fatalf("start disposable MinIO; ensure Docker is running: %v", err)
 	}
+
+	return minioContainer
+}
+
+func newMinIOTestStorage(t *testing.T, ctx context.Context) *s3storageadapter.Adapter {
+	t.Helper()
+
+	minioContainer := startDisposableMinIO(t, ctx)
 
 	endpoint, err := minioContainer.PortEndpoint(ctx, "9000/tcp", "http")
 	if err != nil {
@@ -275,6 +477,38 @@ func newMinIOTestStorage(t *testing.T, ctx context.Context) *s3storageadapter.Ad
 	}
 
 	return s3storageadapter.New(s3.NewPresignClient(s3Client), bucketName, s3Client)
+}
+
+func newUnavailableS3TestStorage(
+	t *testing.T,
+	ctx context.Context,
+) *s3storageadapter.Adapter {
+	t.Helper()
+
+	awsConfig, err := awsconfig.LoadDefaultConfig(
+		ctx,
+		awsconfig.WithRegion(minioRegion),
+		awsconfig.WithRetryMaxAttempts(1),
+		awsconfig.WithCredentialsProvider(
+			credentials.NewStaticCredentialsProvider(
+				minioUsername,
+				minioPassword,
+				"",
+			),
+		),
+	)
+	if err != nil {
+		t.Fatalf("load unavailable S3 test configuration: %v", err)
+	}
+	client := s3.NewFromConfig(awsConfig, func(options *s3.Options) {
+		options.BaseEndpoint = aws.String("http://127.0.0.1:1")
+		options.UsePathStyle = true
+	})
+	return s3storageadapter.New(
+		s3.NewPresignClient(client),
+		"lawang-unavailable",
+		client,
+	)
 }
 
 func assertMinIOPresignedUploadMetadata(
@@ -335,6 +569,62 @@ func assertMinIOPresignedUploadMetadata(
 	}
 	if metadata.ETag == "" {
 		t.Error("metadata ETag should not be empty")
+	}
+}
+
+func putMinIOObject(
+	t *testing.T,
+	ctx context.Context,
+	storage *s3storageadapter.Adapter,
+	storageKey string,
+	contentType string,
+	body []byte,
+) {
+	t.Helper()
+
+	presignedURL, err := storage.PresignUpload(ctx, storageKey, 5*time.Minute)
+	if err != nil {
+		t.Fatalf("presign %s upload: %v", contentType, err)
+	}
+	putObjectToURL(t, ctx, presignedURL, contentType, body)
+}
+
+func putObjectToURL(
+	t *testing.T,
+	ctx context.Context,
+	uploadURL string,
+	contentType string,
+	body []byte,
+) {
+	t.Helper()
+
+	request, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodPut,
+		uploadURL,
+		bytes.NewReader(body),
+	)
+	if err != nil {
+		t.Fatalf("create %s upload request: %v", contentType, err)
+	}
+	request.Header.Set("Content-Type", contentType)
+
+	response, err := (&http.Client{Timeout: 10 * time.Second}).Do(request)
+	if err != nil {
+		t.Fatalf("upload %s object: %v", contentType, err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		responseBody, readErr := io.ReadAll(io.LimitReader(response.Body, 4*1024))
+		if readErr != nil {
+			t.Fatalf("read failed %s upload response: %v", contentType, readErr)
+		}
+		t.Fatalf(
+			"upload %s status = %d, want 2xx, body = %q",
+			contentType,
+			response.StatusCode,
+			responseBody,
+		)
 	}
 }
 

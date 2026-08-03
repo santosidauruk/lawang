@@ -3,6 +3,7 @@ package s3storage
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -14,6 +15,28 @@ type Adapter struct {
 	presigner *s3.PresignClient
 	bucket    string
 	client    *s3.Client
+}
+
+// EnsureBucket creates the configured bucket when needed and verifies that the
+// server-side client can reach it. It is safe to call again for an existing bucket.
+func (a *Adapter) EnsureBucket(ctx context.Context) error {
+	_, createErr := a.client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(a.bucket),
+	})
+	_, headErr := a.client.HeadBucket(ctx, &s3.HeadBucketInput{
+		Bucket: aws.String(a.bucket),
+	})
+	if headErr == nil {
+		return nil
+	}
+	if createErr != nil {
+		return fmt.Errorf(
+			"ensure object storage bucket: create: %v; readiness: %w",
+			createErr,
+			headErr,
+		)
+	}
+	return fmt.Errorf("ensure object storage bucket readiness: %w", headErr)
 }
 
 func New(presigner *s3.PresignClient, bucket string, s3Client *s3.Client) *Adapter {

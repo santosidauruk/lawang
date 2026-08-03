@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/santosidauruk/lawang-go/internal/adapter/deterministicextractor"
 	postgresadapter "github.com/santosidauruk/lawang-go/internal/adapter/postgres"
 	"github.com/santosidauruk/lawang-go/internal/application/artifact"
 	"github.com/santosidauruk/lawang-go/internal/application/session"
@@ -355,9 +356,14 @@ func TestPostgresArtifactConfirmPersistsMismatchOutcomeAtomically(t *testing.T) 
 			SizeBytes:   1024,
 			ETag:        "mismatch-etag",
 		}},
-		artifactPostgresExtractor{extraction: artifact.DocumentExtraction{
-			IdentityNumber: "different-identity-number",
-		}},
+		deterministicextractor.New(
+			map[string]artifact.DocumentExtraction{
+				"artifact/" + fixture.uploadIntentID.String(): {
+					IdentityNumber: "different-identity-number",
+				},
+			},
+			nil,
+		),
 		session.NewProductionCryptoTokens(),
 		fixedClock{now: now},
 	)
@@ -895,7 +901,7 @@ func seedArtifactConfirmationState(
 ) artifactConfirmationFixture {
 	t.Helper()
 
-	rawToken := "artifact-confirmation-token"
+	rawToken := "artifact-confirmation-token-" + uuid.NewString()
 	storedHash := session.NewProductionCryptoTokens().Hash(rawToken)
 	var sessionID uuid.UUID
 	if err := database.QueryRow(ctx, `

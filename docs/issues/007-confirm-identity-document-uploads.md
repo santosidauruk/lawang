@@ -42,10 +42,10 @@ Checkpoint 1 is complete and reviewed:
 
 The migration proof and the real two-connection PostgreSQL test prove the
 one-pending-intent invariant. Checkpoints 2-4 are GREEN, including the application,
-PostgreSQL, strict HTTP, and HTTP + PostgreSQL paths. Checkpoint 5 is now active with
-a workbench in `tests/integration/artifact_minio_test.go`: the user writes the first
-real MinIO public-presign -> HTTP PUT -> `HeadObject` tracer. Replay/concurrency
-hardening remains Checkpoint 6.
+PostgreSQL, strict HTTP, HTTP + PostgreSQL, and Checkpoint 5 MinIO paths are GREEN.
+The public route now proves upload-url -> direct HTTP PUT -> real `HeadObject` ->
+deterministic extraction -> atomic PostgreSQL confirm. Replay/concurrency hardening
+remains Checkpoint 6.
 
 ## Scope boundaries
 
@@ -82,24 +82,24 @@ hardening remains Checkpoint 6.
 ## Acceptance criteria
 
 - [x] User-authored migration/proof passes critical review before sibling work begins.
-- [ ] `POST /verification-sessions/{id}/artifacts/upload-url` accepts only
+- [x] `POST /verification-sessions/{id}/artifacts/upload-url` accepts only
       `identity_document` for this slice and returns a new intent ID and usable
       public-host presigned URL.
 - [x] A new intent atomically supersedes the old pending intent; concurrency still
       leaves exactly one pending intent and unique storage keys.
-- [ ] Real MinIO upload plus confirm enforces expiry, supersession, actual content
+- [x] Real MinIO upload plus confirm enforces expiry, supersession, actual content
       type, non-zero size, and 10 MiB maximum.
-- [ ] Deterministic extraction proves success and at least
+- [x] Deterministic extraction proves success and at least
       `identity_number_mismatch` without storing raw extraction output.
 - [x] Successful confirm creates exactly one accepted Verification Artifact, advances
       to `identity_document_uploaded`, and appends one safe
       `confirm_identity_document` event atomically.
-- [ ] Mismatch returns exact `422 LOCAL_VALIDATION_FAILED`, records bounded failure,
+- [x] Mismatch returns exact `422 LOCAL_VALIDATION_FAILED`, records bounded failure,
       appends one safe `confirm_identity_document` event with bounded outcome metadata,
       creates no artifact, and leaves session state unchanged.
 - [ ] Confirmed/failed replay and concurrent confirms are idempotent and do not repeat
       external work or database effects.
-- [ ] SDK/storage errors map to safe bounded application/HTTP failures.
+- [x] SDK/storage errors map to safe bounded application/HTTP failures.
 
 ## API examples
 

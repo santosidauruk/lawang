@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/santosidauruk/lawang-go/internal/adapter/deterministicextractor"
 	"github.com/santosidauruk/lawang-go/internal/adapter/httpapi"
 	postgresadapter "github.com/santosidauruk/lawang-go/internal/adapter/postgres"
 	"github.com/santosidauruk/lawang-go/internal/application/artifact"
@@ -171,6 +172,150 @@ func TestIdentityDocumentUploadAndConfirmOverHTTPWithPostgreSQL(t *testing.T) {
 			"confirmed expiresAt = %s, want %s",
 			confirmBody.ExpiresAt,
 			now.Add(30*time.Minute),
+		)
+	}
+}
+
+func TestIdentityDocumentUploadPutAndConfirmOverHTTPWithPostgreSQLAndMinIO(t *testing.T) {
+	now := time.Date(2026, 8, 3, 14, 0, 0, 0, time.UTC)
+	ctx, database := openArtifactDatabase(t)
+	rawToken := "http-postgres-minio-token"
+	identityNumber := "127100000000009"
+	tokens := session.NewProductionCryptoTokens()
+
+	var sessionID uuid.UUID
+	if err := database.QueryRow(ctx, `
+		INSERT INTO verification_sessions (
+			resume_token_hash,
+			status,
+			expires_at
+		)
+		VALUES ($1, 'personal_details_submitted', $2)
+		RETURNING id
+	`, tokens.Hash(rawToken), now.Add(30*time.Minute)).Scan(&sessionID); err != nil {
+		t.Fatalf("insert MinIO HTTP tracer Verification Session: %v", err)
+	}
+	if _, err := database.Exec(ctx, `
+		INSERT INTO personal_details (
+			verification_session_id,
+			full_name,
+			date_of_birth,
+			identity_number,
+			address
+		)
+		VALUES ($1, 'MinIO Applicant', DATE '2000-02-29', $2, 'MinIO Address')
+	`, sessionID, identityNumber); err != nil {
+		t.Fatalf("insert MinIO HTTP tracer Personal Details: %v", err)
+	}
+
+	objectStorage := newMinIOTestStorage(t, ctx)
+	extractionResults := make(map[string]artifact.DocumentExtraction)
+	extractor := deterministicextractor.New(extractionResults, nil)
+	postgresArtifacts := postgresadapter.NewArtifactTransactions(database)
+	uploadIntents := artifact.NewUploadIntentService(
+		postgresArtifacts,
+		postgresArtifacts,
+		objectStorage,
+		tokens,
+		fixedClock{now: now},
+	)
+	artifacts := artifact.NewService(
+		postgresArtifacts,
+		postgresArtifacts,
+		objectStorage,
+		extractor,
+		tokens,
+		fixedClock{now: now},
+	)
+	handler := httpapi.NewHandler(nil, nil, artifacts, uploadIntents)
+
+	uploadRequest := httptest.NewRequest(
+		http.MethodPost,
+		"/verification-sessions/"+sessionID.String()+"/artifacts/upload-url",
+		strings.NewReader(`{"kind":"identity_document"}`),
+	)
+	uploadRequest.Header.Set("Authorization", "Bearer "+rawToken)
+	uploadRequest.Header.Set("Content-Type", "application/json")
+	uploadResponse := httptest.NewRecorder()
+	handler.ServeHTTP(uploadResponse, uploadRequest)
+	if uploadResponse.Code != http.StatusCreated {
+		t.Fatalf(
+			"upload-url status = %d, want %d; body = %s",
+			uploadResponse.Code,
+			http.StatusCreated,
+			uploadResponse.Body.String(),
+		)
+	}
+	var uploadBody struct {
+		UploadIntentID uuid.UUID `json:"uploadIntentId"`
+		UploadURL      string    `json:"uploadUrl"`
+	}
+	if err := json.Unmarshal(uploadResponse.Body.Bytes(), &uploadBody); err != nil {
+		t.Fatalf("decode MinIO upload-url response: %v", err)
+	}
+	storageKey := "verification-sessions/" + sessionID.String() +
+		"/identity_document/" + uploadBody.UploadIntentID.String()
+	extractionResults[storageKey] = artifact.DocumentExtraction{
+		IdentityNumber: identityNumber,
+	}
+	putObjectToURL(
+		t,
+		ctx,
+		uploadBody.UploadURL,
+		"image/jpeg",
+		smallJPEG(t),
+	)
+
+	confirmRequest := httptest.NewRequest(
+		http.MethodPost,
+		"/verification-sessions/"+sessionID.String()+"/artifacts/confirm",
+		strings.NewReader(
+			`{"uploadIntentId":"`+uploadBody.UploadIntentID.String()+`"}`,
+		),
+	)
+	confirmRequest.Header.Set("Authorization", "Bearer "+rawToken)
+	confirmRequest.Header.Set("Content-Type", "application/json")
+	confirmResponse := httptest.NewRecorder()
+	handler.ServeHTTP(confirmResponse, confirmRequest)
+	if confirmResponse.Code != http.StatusOK {
+		t.Fatalf(
+			"confirm status = %d, want %d; body = %s",
+			confirmResponse.Code,
+			http.StatusOK,
+			confirmResponse.Body.String(),
+		)
+	}
+
+	var sessionStatus string
+	var intentStatus string
+	var artifactCount int
+	var eventCount int
+	if err := database.QueryRow(ctx, `
+		SELECT
+			vs.status,
+			ui.status,
+			(SELECT count(*) FROM verification_artifacts va WHERE va.upload_intent_id = ui.id),
+			(SELECT count(*) FROM session_events se
+			 WHERE se.session_id = vs.id AND se.event_type = 'confirm_identity_document')
+		FROM verification_sessions vs
+		JOIN upload_intents ui ON ui.verification_session_id = vs.id
+		WHERE vs.id = $1 AND ui.id = $2
+	`, sessionID, uploadBody.UploadIntentID).Scan(
+		&sessionStatus,
+		&intentStatus,
+		&artifactCount,
+		&eventCount,
+	); err != nil {
+		t.Fatalf("read MinIO HTTP tracer durable outcome: %v", err)
+	}
+	if sessionStatus != session.StatusIdentityDocumentUploaded.String() ||
+		intentStatus != "confirmed" || artifactCount != 1 || eventCount != 1 {
+		t.Errorf(
+			"durable outcome = session:%s intent:%s artifacts:%d events:%d",
+			sessionStatus,
+			intentStatus,
+			artifactCount,
+			eventCount,
 		)
 	}
 }

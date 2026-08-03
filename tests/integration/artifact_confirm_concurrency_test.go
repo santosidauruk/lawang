@@ -55,6 +55,8 @@ import "testing"
 // RED first, then implement only enough dedicated-connection advisory coordination
 // and confirmed replay behavior to make this tracer GREEN. Stop for agent review
 // before adding mismatch, expiry, cancellation, external-failure, or MinIO siblings.
+//
+//lint:ignore U1000 This Checkpoint 6 user workbench intentionally remains dormant.
 func checkpoint6ConcurrentConfirmReturnsRecordedSuccessOnce(t *testing.T) {
 	t.Fatal("Checkpoint 6 workbench: confirm the lock key, rename this function, then complete one numbered section at a time")
 }

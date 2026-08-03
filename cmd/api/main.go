@@ -77,7 +77,7 @@ func run() int {
 			),
 		))
 	if err != nil {
-		logger.Error("load AWS configuration", err)
+		logger.Error("load AWS configuration", "error", err)
 		return 1
 	}
 
@@ -91,16 +91,12 @@ func run() int {
 		options.UsePathStyle = *aws.Bool(cfg.S3UsePathStyle)
 	})
 
-	bucketName := cfg.S3Bucket
-	_, err = publicS3Client.CreateBucket(ctx, &s3.CreateBucketInput{
-		Bucket: aws.String(bucketName),
-	})
-	if err != nil {
-		logger.Error("failed to create MinIO bucket %q: %v", bucketName, err)
-	}
-
 	presignClient := s3.NewPresignClient(publicS3Client)
-	objectStorage := s3storage.New(presignClient, bucketName, internalS3Client)
+	objectStorage := s3storage.New(presignClient, cfg.S3Bucket, internalS3Client)
+	if err := objectStorage.EnsureBucket(ctx); err != nil {
+		logger.Error("object storage unavailable", "error", err)
+		return 1
+	}
 
 	extractor := deterministicextractor.New(nil, nil)
 	artifactConfirm := artifact.NewService(artifactStore, artifactStore, objectStorage, extractor, tokens, clock)

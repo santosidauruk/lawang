@@ -221,7 +221,8 @@ cmd composition -> adapters -> application -> domain
 - Migrations: Goose, sequential Up-only SQL, forward repair only.
 - Validation: strict JSON decoder, adapter-level validator, and explicit semantic
   parsing.
-- Object storage: MinIO locally through AWS SDK for Go v2.
+- Object storage: MinIO locally through AWS SDK for Go v2; public endpoint signs
+  browser-facing uploads, while the internal endpoint owns readiness and metadata I/O.
 - Async jobs: Redis and pinned Asynq behind an adapter.
 - Reliability: PostgreSQL transactional outbox.
 - Logging: JSON `log/slog` with sensitive-data minimization.

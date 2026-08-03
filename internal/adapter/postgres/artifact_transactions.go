@@ -52,7 +52,6 @@ func (t *ArtifactTransactions) WithinTransaction(
 		return err
 	}
 
-
 	return tx.Commit(ctx)
 }
 

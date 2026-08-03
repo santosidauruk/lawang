@@ -95,8 +95,9 @@ errors for both confirm and upload-url.
 The HTTP adapter owns two narrow consumer interfaces: one for confirmation and one
 for creating Upload Intents. This keeps object storage, extraction, PostgreSQL, and
 transaction types outside HTTP contracts. Artifact routes are registered only when
-their dependency is non-nil, so `cmd/api` can compile with the routes deliberately
-disabled until the real MinIO boundary exists.
+their dependency is non-nil. Checkpoint 5 now wires both artifact services with
+public-host presigning, internal MinIO readiness/`HeadObject`, and a fail-closed
+deterministic extractor.
 
 The integration tracer calls upload-url through the public handler, configures fake
 object metadata and extraction by the exact presigned storage key, then confirms
@@ -121,11 +122,19 @@ GOCACHE=/tmp/lawang-go-build go test -race ./tests/integration \
 1 test passed
 ```
 
-Usable public-host presigning and real MinIO `HeadObject` remain intentionally
-deferred to Checkpoint 5. Replay and concurrent-confirm coordination remain
+## Checkpoint 5: real MinIO boundary and runtime wiring
+
+Checkpoint 5 proves usable public-host presigning, direct HTTP PUT without host
+rewriting, real MinIO `HeadObject`, actual-metadata validation, bounded storage
+failures, and a full HTTP -> PostgreSQL -> MinIO -> confirm path. The public S3
+client only signs upload URLs; the internal client owns bucket readiness and
+`HeadObject`. Runtime startup stops when the configured bucket cannot be reached.
+
+The deterministic extractor remains explicit test logic rather than OCR. Unknown
+storage keys fail closed, and configured match/mismatch results are keyed by the
+exact Upload Intent storage key. Replay and concurrent-confirm coordination remain
 Checkpoint 6 work.
 
 ## Later checkpoints
 
-- Public-host presigning and `HeadObject` through the MinIO boundary.
 - Replay and concurrent-confirm coordination without repeated external work.
