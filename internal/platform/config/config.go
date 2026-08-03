@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"net/url"
 	"os"
-	"strconv"
 	"time"
 )
 
@@ -37,16 +36,16 @@ func Load() (Config, error) {
 		return Config{}, errors.New("S3_INTERNAL_ENDPOINT is required")
 	}
 
-	if err := ValidateURL(s3InternalEndpoint); err != nil {
+	if err := validateS3Endpoint("S3_INTERNAL_ENDPOINT", s3InternalEndpoint); err != nil {
 		return Config{}, err
 	}
 
-	s3Publicendpoint, ok := os.LookupEnv("S3_PUBLIC_ENDPOINT")
-	if !ok || s3Publicendpoint == "" {
+	s3PublicEndpoint, ok := os.LookupEnv("S3_PUBLIC_ENDPOINT")
+	if !ok || s3PublicEndpoint == "" {
 		return Config{}, errors.New("S3_PUBLIC_ENDPOINT is required")
 	}
 
-	if err := ValidateURL(s3Publicendpoint); err != nil {
+	if err := validateS3Endpoint("S3_PUBLIC_ENDPOINT", s3PublicEndpoint); err != nil {
 		return Config{}, err
 	}
 
@@ -75,8 +74,13 @@ func Load() (Config, error) {
 		return Config{}, errors.New("S3_USE_PATH_STYLE is required")
 	}
 
-	s3BoolUsePathStyle, err := strconv.ParseBool(s3UsePathStyle)
-	if err != nil {
+	var s3BoolUsePathStyle bool
+	switch s3UsePathStyle {
+	case "true":
+		s3BoolUsePathStyle = true
+	case "false":
+		s3BoolUsePathStyle = false
+	default:
 		return Config{}, errors.New("S3_USE_PATH_STYLE must be true or false")
 	}
 
@@ -90,15 +94,13 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 
-	os.LookupEnv("S3_USE_PATH_STYLE")
-
 	return Config{
 		DatabaseURL:        databaseURL,
 		HTTPAddress:        lookupOrDefault("HTTP_ADDRESS", ":8080"),
 		ShutdownTimeout:    shutdownTimeout,
 		LogLevel:           logLevel,
 		S3InternalEndpoint: s3InternalEndpoint,
-		S3PublicEndpoint:   s3Publicendpoint,
+		S3PublicEndpoint:   s3PublicEndpoint,
 		S3Region:           s3Region,
 		S3AccessKey:        s3AccessKey,
 		S3SecretKey:        s3SecretKey,
@@ -141,18 +143,10 @@ func parseLogLevel() (slog.Level, error) {
 	return level, nil
 }
 
-func ValidateURL(rawURL string) error {
+func validateS3Endpoint(key, rawURL string) error {
 	u, err := url.Parse(rawURL)
-	if err != nil {
-		return fmt.Errorf("invalid URL format: %w", err)
-	}
-
-	if u.Scheme != "http" && u.Scheme != "https" {
-		return errors.New("URL must be an absolute HTTP or HTTPS")
-	}
-
-	if u.Host == "" {
-		return errors.New("host must not empty")
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return fmt.Errorf("%s must be an absolute HTTP or HTTPS URL", key)
 	}
 
 	return nil
