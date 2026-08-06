@@ -1,6 +1,16 @@
 package integration_test
 
-import "testing"
+import (
+	"context"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+	postgresadapter "github.com/santosidauruk/lawang-go/internal/adapter/postgres"
+	"github.com/santosidauruk/lawang-go/internal/application/artifact"
+	"github.com/santosidauruk/lawang-go/internal/application/session"
+)
 
 // checkpoint6ConcurrentConfirmReturnsRecordedSuccessOnce is the Checkpoint 6 user
 // workbench. Rename it to
@@ -57,6 +67,145 @@ import "testing"
 // before adding mismatch, expiry, cancellation, external-failure, or MinIO siblings.
 //
 //lint:ignore U1000 This Checkpoint 6 user workbench intentionally remains dormant.
-func checkpoint6ConcurrentConfirmReturnsRecordedSuccessOnce(t *testing.T) {
-	t.Fatal("Checkpoint 6 workbench: confirm the lock key, rename this function, then complete one numbered section at a time")
+
+type confirmResult struct {
+	summary session.Summary
+	err     error
+}
+
+func TestConcurrentPostgresConfirmReturnsRecordedSuccessAndRunsExternalWorkOnce(t *testing.T) {
+	now := time.Date(2026, 8, 4, 11, 0, 0, 0, time.UTC)
+	ctx, database := openArtifactDatabase(t)
+
+	f := seedArtifactConfirmationState(t, ctx, database, now)
+
+	connString := database.Config().ConnString()
+	cfg, err := pgxpool.ParseConfig(connString)
+
+	if err != nil {
+		t.Fatalf("ParseConfig error: %v", err)
+	}
+	cfg.MaxConns = 2
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		t.Fatalf("new pool error: %v", err)
+	}
+
+	t.Cleanup(func() {
+		pool.Close()
+	})
+
+	postgresArtifacts := postgresadapter.NewArtifactTransactions(pool)
+	tokens := session.NewProductionCryptoTokens()
+
+	objectStorage := &concurrentObjectStorage{
+		metadata: artifact.ObjectMetadata{
+			ContentType: "image/jpeg",
+			SizeBytes:   1064,
+			ETag:        "image-etag",
+		},
+	}
+
+	extraction := &concurrentDocumentExtractor{
+		extraction: artifact.DocumentExtraction{
+			IdentityNumber: f.identityNumber,
+		},
+	}
+
+	service := artifact.NewService(postgresArtifacts, postgresArtifacts, objectStorage, extraction, tokens, fixedClock{now: now})
+
+	var ready sync.WaitGroup
+	var callers sync.WaitGroup
+	ready.Add(2)
+	callers.Add(2)
+
+	start := make(chan struct{})
+	summaries := make(chan confirmResult, 2)
+
+	for range 2 {
+		go func() {
+			defer callers.Done()
+
+			ready.Done()
+			<-start
+
+			summary, err := service.Confirm(ctx, f.sessionID, f.rawToken, f.uploadIntentID)
+			summaries <- confirmResult{
+				summary: summary,
+				err:     err,
+			}
+		}()
+	}
+
+	ready.Wait()
+	close(start)
+
+	callers.Wait()
+	close(summaries)
+
+	collectedSummaries := make([]confirmResult, 0, 2)
+	for r := range summaries {
+		collectedSummaries = append(collectedSummaries, r)
+	}
+
+	if len(collectedSummaries) != 2 {
+		t.Fatalf("must have 2 summaries, got %d", len(collectedSummaries))
+	}
+
+	if objectStorage.calls != 1 || extraction.calls != 1 {
+		t.Errorf("objectStorage call and extraction call must be 1, objectStorage got %d, extraction got %d", objectStorage.calls, extraction.calls)
+	}
+
+	first := collectedSummaries[0]
+	second := collectedSummaries[1]
+
+	if first.err != nil || second.err != nil {
+		t.Errorf("both error should be nil, got %v and %v", first.err, second.err)
+	}
+
+	firstSum := first.summary
+	secondSum := second.summary
+
+	if !firstSum.ExpiresAt.Equal(secondSum.ExpiresAt) || firstSum.ID != secondSum.ID || firstSum.Status != secondSum.Status {
+		t.Errorf("both summary must be identic, got firstSummary %v, secondSummary %v", firstSum, secondSum)
+	}
+
+	if firstSum.ID != f.sessionID || firstSum.Status != "identity_document_uploaded" || !firstSum.ExpiresAt.Equal(now.Add(30*time.Minute)) {
+		t.Errorf("data from first summary wrong, got %v", firstSum)
+	}
+
+	if secondSum.ID != f.sessionID || secondSum.Status != "identity_document_uploaded" || !secondSum.ExpiresAt.Equal(now.Add(30*time.Minute)) {
+		t.Errorf("data from second summary wrong, got %v", secondSum)
+	}
+
+}
+
+type concurrentObjectStorage struct {
+	metadata artifact.ObjectMetadata
+	calls    int
+	mu       sync.Mutex
+	err      error
+}
+
+func (o *concurrentObjectStorage) HeadObject(ctx context.Context, storageKey string) (artifact.ObjectMetadata, error) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.calls++
+
+	return o.metadata, o.err
+}
+
+type concurrentDocumentExtractor struct {
+	extraction artifact.DocumentExtraction
+	calls      int
+	mu         sync.Mutex
+	err        error
+}
+
+func (d *concurrentDocumentExtractor) Extract(ctx context.Context, storageKey string) (artifact.DocumentExtraction, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.calls++
+
+	return d.extraction, d.err
 }

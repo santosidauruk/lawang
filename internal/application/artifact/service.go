@@ -2,6 +2,8 @@ package artifact
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/binary"
 	"errors"
 	"time"
 
@@ -396,6 +398,14 @@ func validatePendingIdentityIntent(intent UploadIntent, now time.Time) error {
 		return &Error{Code: CodeInvalidUploadIntentKind}
 	}
 	return nil
+}
+
+func ConfirmLockKey(uploadIntentID uuid.UUID) int64 {
+	sum := sha256.Sum256([]byte(uploadIntentID[:]))
+
+	key := binary.BigEndian.Uint64(sum[:8])
+	return int64(key)
+
 }
 
 var ErrUploadIntentNotFound = errors.New("upload intent not found")

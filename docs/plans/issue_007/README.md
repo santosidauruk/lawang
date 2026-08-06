@@ -80,14 +80,15 @@ checkpoint tersebut.
 - Strategi koordinasi yang dipilih untuk checkpoint 6 adalah PostgreSQL
   session-level advisory lock; kata *session* di sini berarti sesi koneksi PostgreSQL,
   bukan Verification Session.
+- Advisory lock Checkpoint 6 memakai Upload Intent ID sebagai isolation scope. UUID
+  dipetakan di PostgreSQL adapter dengan SHA-256 atas 16 raw UUID bytes, lalu delapan
+  byte pertama dibaca big-endian dan dipertahankan sebagai signed `int64`.
 
-## Keputusan yang masih harus diverifikasi, bukan diasumsikan
+## Keputusan implementasi yang belum dibekukan
 
-Sebelum interface publik terkait ditulis, agent harus mencari keputusan ini dalam
-thread aktif atau meminta user menjawabnya:
-
-- key advisory lock: kandidat paling sempit adalah Upload Intent ID, tetapi pilihan
-  ini harus dikonfirmasi sebelum SQL/Go lock dibuat.
+Tidak ada keputusan public-contract atau advisory-lock key yang masih terbuka untuk
+Checkpoint 6. Nama interface/constructor coordinator tetap boleh tumbuh dari tracer
+dan direview sebelum sibling behavior.
 
 Kontrak mismatch sudah exact: HTTP `422`, code `LOCAL_VALIDATION_FAILED`, message dan
 `details.reason=identity_number_mismatch` mengikuti issue document.

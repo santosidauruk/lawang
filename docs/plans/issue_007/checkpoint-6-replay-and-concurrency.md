@@ -51,9 +51,10 @@ Kondisi kode saat workbench disiapkan:
 4. Database sudah memiliki unique constraint satu artifact per Upload Intent dan satu
    artifact per `(Verification Session, kind)`. Constraint ini adalah defense terakhir,
    bukan pengganti replay outcome dan single external validation.
-5. Real MinIO presign -> HTTP PUT -> `HeadObject` tracer dan sibling JPEG/PNG/PDF
-   code sudah ada. Checkpoint 5 belum boleh dianggap selesai hanya dari keberadaan
-   code; Definition of Done dan Docker-backed output aktual tetap harus ditutup.
+5. Checkpoint 5 sudah selesai. Public-host presign, direct HTTP PUT, real MinIO
+   `HeadObject`, sibling JPEG/PNG/PDF, runtime wiring, dan full
+   HTTP -> PostgreSQL -> MinIO -> confirm tracer telah GREEN. Pekerjaan yang tersisa
+   untuk Issue 007 adalah replay dan concurrent-confirm hardening di checkpoint ini.
 
 Implikasi RED: implementation sekarang dapat menghasilkan satu sukses dan satu
 `CONFIRMATION_STALE`; bila kedua caller overlap sebelum transaction, external counter
@@ -61,19 +62,30 @@ juga dapat menjadi dua. Jangan mengunci test pada bentuk RED tertentu karena sch
 boleh menghasilkan interleaving berbeda. Yang harus RED adalah kontrak publik akhir:
 dua recorded success yang sama dan external work tepat sekali.
 
-## Decision gate sebelum lock code
+## Keputusan lock yang dibekukan
 
-Belum ada lock key yang dibekukan. Rekomendasi paling sempit adalah Upload Intent ID:
+Session-level advisory lock memakai **Upload Intent ID** sebagai isolation scope.
+Artinya, dua confirm untuk Upload Intent yang sama harus antre, sedangkan intent yang
+berbeda tetap boleh diproses bersamaan. Create/supersede tidak memakai lock ini;
+transactional re-read yang sudah ada tetap bertugas membuang hasil external I/O bila
+intent berubah selama confirm berlangsung.
 
-- dua confirm untuk intent yang sama wajib serialize;
-- intent berbeda tidak saling menunggu;
-- UUID harus dipetakan secara deterministic ke bentuk advisory-lock PostgreSQL;
-- mapping harus menjelaskan collision risk karena advisory lock tidak menerima UUID
-  secara langsung.
+PostgreSQL advisory lock menerima key 64-bit, bukan UUID 128-bit. Mapping yang dipilih
+dan harus tinggal di PostgreSQL adapter adalah:
 
-User harus menulis keputusan eksplisit di checkpoint ini sebelum menambah SQL atau Go
-untuk acquire/unlock. Scaffold test boleh diaktifkan lebih dahulu karena behavior yang
-diuji tidak bergantung pada representasi key.
+1. ambil 16 raw bytes dari Upload Intent UUID;
+2. hitung SHA-256 dari bytes tersebut;
+3. ambil delapan byte pertama hasil hash dalam urutan big-endian;
+4. pertahankan bit pattern itu sebagai signed `int64`;
+5. pakai nilai yang sama untuk `pg_advisory_lock(bigint)` dan
+   `pg_advisory_unlock(bigint)`.
+
+Mapping ini deterministic di semua process, memakai seluruh UUID, tidak bergantung
+pada versi fungsi hash internal PostgreSQL, dan tidak mengekspos detail PostgreSQL ke
+application package. Karena 128 bit dipetakan menjadi 64 bit, collision tetap mungkin,
+tetapi sangat kecil untuk UUID yang dibuat aplikasi. Collision hanya membuat dua
+intent yang tidak berkaitan ikut antre; database ownership guard dan unique constraint
+tetap menjadi penjaga correctness.
 
 ## Seam arsitektur yang perlu muncul dari tracer
 
@@ -88,11 +100,12 @@ minimum yang dibutuhkan secara perilaku adalah coordinator yang:
    dipegang tetapi transaction belum dibuka;
 6. unlock lalu release connection pada semua exit path.
 
-Nama interface/constructor belum dibekukan; biarkan compile failure tracer menunjukkan
-seam terkecil. Preflight session lookup dan resume-token authorization harus tetap
-terjadi sebelum request boleh menunggu advisory lock. Setelah lock diperoleh,
-authorization, expiry, intent outcome, dan guard lain tetap dibaca ulang; preflight
-tidak boleh dipercaya sebagai commit authority.
+Nama interface/constructor belum dibekukan. Aktifkan tracer lebih dahulu dan gunakan
+RED dari behavior publik untuk menunjukkan seam terkecil yang dibutuhkan; RED pertama
+tidak harus berupa compile failure. Preflight session lookup dan resume-token
+authorization harus tetap terjadi sebelum request boleh menunggu advisory lock.
+Setelah lock diperoleh, authorization, expiry, intent outcome, dan guard lain tetap
+dibaca ulang; preflight tidak boleh dipercaya sebagai commit authority.
 
 Untuk cleanup, `defer conn.Release()` saja belum cukup bila unlock gagal: session-level
 lock hidup bersama connection. Adapter harus memastikan connection yang mungkin masih
@@ -105,55 +118,71 @@ File user disiapkan di
 `tests/integration/artifact_confirm_concurrency_test.go`. Fungsinya sengaja bernama
 `checkpoint6ConcurrentConfirmReturnsRecordedSuccessOnce`, bukan `Test...`, dan berisi
 fatal marker. Karena itu existing suite tetap GREEN dan belum ada klaim concurrency
-proof.
+proof. Menjalankan command terfokus sebelum fungsi diubah menjadi `Test...` akan
+menghasilkan `[no tests to run]`; itu hanya membuktikan package dapat dikompilasi.
 
 ## Bagian user
 
-1. **Bekukan key lock.** Tulis keputusan eksplisit apakah Upload Intent ID dipakai.
-   Jelaskan isolation scope dan mapping UUID -> advisory key; jangan mulai adapter
-   sebelum ini diputuskan.
-2. **Aktifkan hanya satu tracer.** Rename
+Target bagian ini sederhana: dua caller mengonfirmasi Upload Intent yang sama. Keduanya
+mendapat success yang sama, tetapi database hanya menyimpan satu outcome dan pekerjaan
+external hanya berjalan sekali.
+
+Kerjakan urutan berikut satu per satu:
+
+1. **Pakai keputusan lock di atas.** Lock selalu berdasarkan Upload Intent ID dan
+   mapping SHA-256 -> `int64` yang sudah dibekukan. Jangan memilih key atau algoritma
+   lain di tengah implementasi.
+2. **Aktifkan satu test saja.** Rename
    `checkpoint6ConcurrentConfirmReturnsRecordedSuccessOnce` menjadi
    `TestConcurrentPostgresConfirmReturnsRecordedSuccessAndRunsExternalWorkOnce`, lalu
    hapus fatal marker. Jangan menambah replay/mismatch/cancellation tests dulu.
-3. **Arrange PostgreSQL nyata.** Pakai disposable PostgreSQL dan migration artifact,
-   seed satu session `personal_details_submitted`, immutable Personal Details, dan satu
-   pending `identity_document` intent. Service harus memakai pool, bukan satu
-   `*pgx.Conn` yang dipakai bersamaan oleh dua goroutine.
-4. **Buat boundary fake concurrency-safe.** `HeadObject` mengembalikan JPEG non-zero
-   dengan ETag; extractor mengembalikan identity number yang sama. Counter harus
-   dilindungi mutex/atomic dan dibaca setelah kedua caller selesai. Fake tidak boleh
-   memalsukan database outcome atau advisory lock.
-5. **Mulai dua public calls bersama.** Siapkan dua goroutine sampai keduanya ready,
-   lalu `close(start)` sekali. Masing-masing memanggil public `service.Confirm` untuk
-   session/intent/token yang sama dan mengirim tepat satu result ke buffered channel.
-   Gunakan `WaitGroup`; jangan memakai `time.Sleep` untuk memilih winner.
-6. **Assert caller outcome.** Kedua error harus nil. Kedua `session.Summary` harus
-   identik: ID sama, status `identity_document_uploaded`, expiry sama. Caller kedua
-   menerima recorded success, bukan `CONFIRMATION_STALE`.
-7. **Assert durable outcome dari PostgreSQL.** Query committed state dan buktikan
-   Upload Intent `confirmed`, tepat satu Verification Artifact untuk intent itu,
-   tepat satu `confirm_identity_document` event, dan session berada di
-   `identity_document_uploaded`. Jangan hanya mengandalkan unique-violation error.
-8. **Assert external behavior.** Sesudah goroutine selesai, `HeadObject` count = 1 dan
-   extractor count = 1. Counter adalah observasi boundary publik “external work tidak
-   diulang”, bukan assertion terhadap private helper.
-9. **Tangkap RED yang bermakna.** Jalankan test terfokus terhadap implementation
-   sekarang. Assertion final harus gagal tanpa panic/data race/deadlock. Catat output;
-   jangan mengubah expected result menjadi satu sukses/satu stale hanya agar test hijau.
-10. **Tambahkan coordinator minimum.** Refactor application seam secukupnya agar
-    PostgreSQL adapter meminjam dedicated connection, acquire lock, re-read recorded
-    outcome, menjalankan external work tanpa open transaction, lalu memakai transaction
-    singkat pada connection yang sama.
-11. **Implement replay success minimum.** Di bawah lock, status `confirmed` harus
-    membentuk summary tersimpan tanpa `HeadObject`, extraction, write, atau event baru.
-    Jangan mengerjakan validation-failed replay pada siklus ini.
-12. **Cleanup semua exit.** Unlock harus didaftarkan segera setelah acquire sukses;
-    connection release terjadi setelah unlock. Acquire error/cancellation tidak boleh
-    menjalankan unlock palsu. Bila unlock gagal, jangan mengembalikan connection yang
-    mungkin masih memegang lock ke pool.
-13. **GREEN lalu stop.** Jalankan focused test dan race variant. Setelah keduanya GREEN,
-    berhenti untuk review sebelum sibling behavior di bagian agent.
+3. **Siapkan data PostgreSQL nyata.** Gunakan `openArtifactDatabase`, lalu seed satu
+   session `personal_details_submitted`, Personal Details, dan satu pending
+   `identity_document` Upload Intent. Buat `pgxpool.Pool` dari connection string dan
+   set kapasitasnya minimal dua koneksi. Jangan berbagi satu raw `*pgx.Conn` kepada
+   dua goroutine.
+4. **Buat fake untuk pekerjaan external.** Fake `HeadObject` mengembalikan JPEG
+   non-zero dengan ETag. Fake extractor mengembalikan identity number yang sama dengan
+   Personal Details. Hitung pemanggilan keduanya dengan mutex atau atomic agar aman
+   dipakai bersamaan. Fake tidak boleh melakukan lock atau menulis database.
+5. **Mulai dua confirm bersama.** Siapkan dua goroutine sampai keduanya ready, lalu
+   `close(start)` sekali. Keduanya memanggil public `service.Confirm` dengan session,
+   token, dan Upload Intent yang sama. Masing-masing harus mengirim tepat satu
+   `{summary, err}` ke buffered channel. Tunggu keduanya selesai dengan `WaitGroup`;
+   jangan memakai `time.Sleep` untuk memilih winner.
+6. **Periksa hasil caller.** Kedua error harus nil. Kedua summary harus memiliki ID,
+   status `identity_document_uploaded`, dan expiry yang sama. Caller kedua harus
+   menerima success yang dibaca dari database, bukan `CONFIRMATION_STALE`.
+7. **Periksa hasil database.** Buktikan Upload Intent menjadi `confirmed`, hanya ada
+   satu Verification Artifact, hanya ada satu event `confirm_identity_document`, dan
+   session menjadi `identity_document_uploaded`. Jangan menganggap unique constraint
+   saja sudah cukup membuktikan behavior.
+8. **Periksa jumlah pekerjaan external.** Setelah kedua caller selesai, assert
+   `HeadObject` dipanggil sekali dan extractor dipanggil sekali. Start gate dan counter
+   ini adalah tracer behavior awal, bukan bukti final bahwa caller kedua benar-benar
+   sempat menunggu advisory lock; agent akan menambahkan proof lock yang deterministic
+   setelah tracer ini GREEN.
+9. **Simpan RED yang benar.** Jalankan focused test pada implementation sekarang.
+   Test harus gagal pada kontrak akhirnya tanpa panic, data race, atau deadlock.
+   Implementasi sekarang kemungkinan menghasilkan satu success dan satu
+   `CONFIRMATION_STALE`; jangan mengubah expected result agar mengikuti behavior lama.
+10. **Tambahkan coordinator minimum.** Application meminta satu confirm dijalankan
+    secara eksklusif untuk Upload Intent tersebut. PostgreSQL adapter yang meminjam
+    dedicated connection, mengambil advisory lock, memberi reader/transaction dari
+    connection yang sama, dan melepas semuanya. `pgxpool.Conn` dan SQL lock tidak boleh
+    masuk ke application package. `HeadObject` dan extraction tetap berjalan ketika
+    lock dipegang tetapi tanpa transaction terbuka.
+11. **Tambahkan confirmed replay saja.** Setelah lock diperoleh, baca ulang database.
+    Jika intent sudah `confirmed`, bentuk `session.Summary` dari outcome tersimpan dan
+    langsung kembalikan success. Jangan memanggil `HeadObject`, extractor, write, atau
+    event lagi. Validation-failed replay belum dikerjakan pada siklus user ini.
+12. **Bersihkan lock dengan aman.** Setelah acquire sukses, segera daftarkan cleanup.
+    Unlock harus terjadi sebelum release connection. Cleanup memakai context terpisah
+    yang berbatas waktu agar request context yang sudah canceled tidak menggagalkan
+    unlock. Jika unlock gagal, keluarkan connection dari pool dan tutup; jangan
+    kembalikan connection yang mungkin masih memegang session-level lock.
+13. **Buat GREEN lalu berhenti.** Jalankan focused test dan race variant. Setelah
+    keduanya GREEN, berhenti untuk review sebelum agent mengerjakan sibling behavior.
 
 Urutan command user:
 
@@ -169,30 +198,36 @@ GOCACHE=/tmp/lawang-go-build go test -race ./tests/integration \
 
 ## Review agent
 
-Agent memeriksa lock ownership/lifetime, deterministic key mapping, collision risk,
-pool connection release, cancellation, unlock on every exit, tidak adanya open
-transaction saat external I/O, dan apakah test benar-benar memakai dua concurrent
-connections/calls.
+Agent memeriksa lock ownership/lifetime, implementasi mapping SHA-256 -> `int64`,
+collision risk, pool berkapasitas minimal dua koneksi, cancellation, unlock pada semua
+exit, connection disposal bila unlock gagal, tidak adanya open transaction saat
+external I/O, dan apakah test benar-benar menjalankan dua public calls.
 
 ## Kelanjutan agent
 
 Setelah concurrent-success tracer GREEN:
 
-1. confirmed replay mengembalikan recorded success tanpa external work/event;
-2. validation-failed replay mengembalikan exact bounded failure tanpa external work;
-3. concurrent mismatch menghasilkan satu failure event dan zero artifacts;
-4. supersede/expiry saat request menunggu lock menghasilkan conflict yang tepat;
-5. stale result setelah external I/O dibuang tanpa partial writes;
-6. external failure melepaskan lock sehingga retry dapat berjalan;
-7. context cancellation ketika menunggu lock tidak membocorkan connection/lock;
-8. race tests untuk create intent dan confirm;
-9. full PostgreSQL + MinIO path membuktikan external work tidak terulang.
+1. proof lock yang deterministic menahan caller pertama pada external boundary dan
+   mengamati caller kedua menunggu advisory lock yang sama melalui PostgreSQL, tanpa
+   `time.Sleep`; proof ini juga memastikan test tidak hijau hanya karena scheduler
+   menjalankan kedua caller secara berurutan;
+2. confirmed replay mengembalikan recorded success tanpa external work/event;
+3. validation-failed replay mengembalikan exact bounded failure tanpa external work;
+4. concurrent mismatch menghasilkan satu failure event dan zero artifacts;
+5. supersede/expiry saat request menunggu lock menghasilkan conflict yang tepat;
+6. stale result setelah external I/O dibuang tanpa partial writes;
+7. external failure melepaskan lock sehingga retry dapat berjalan;
+8. context cancellation ketika menunggu lock tidak membocorkan connection/lock;
+9. race tests untuk create intent dan confirm;
+10. full PostgreSQL + MinIO path membuktikan external work tidak terulang.
 
 ## Definition of done
 
 - confirmed dan validation-failed replay exact serta side-effect free;
 - concurrent success/mismatch hanya melakukan satu external validation dan satu
   durable outcome;
+- PostgreSQL proof secara deterministic menunjukkan caller kedua menunggu advisory
+  lock yang dipegang caller pertama; start gate atau fake counter saja tidak cukup;
 - unique constraints tetap menjadi defense terakhir;
 - tidak ada transaction terbuka selama MinIO/extractor I/O;
 - advisory lock selalu dilepas dan pool connection dikembalikan;
