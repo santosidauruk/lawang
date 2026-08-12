@@ -12,6 +12,15 @@ import (
 	"github.com/google/uuid"
 )
 
+const acquireArtifactConfirmLock = `-- name: AcquireArtifactConfirmLock :exec
+SELECT pg_advisory_lock($1::bigint)
+`
+
+func (q *Queries) AcquireArtifactConfirmLock(ctx context.Context, lockKey int64) error {
+	_, err := q.db.Exec(ctx, acquireArtifactConfirmLock, lockKey)
+	return err
+}
+
 const insertVerificationArtifact = `-- name: InsertVerificationArtifact :exec
 insert into verification_artifacts(id, upload_intent_id, verification_session_id, kind, storage_key, content_type, size_bytes, etag, created_at)
 values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
@@ -32,6 +41,15 @@ type InsertVerificationArtifactParams struct {
 // CHECKPOINT 3 STEP 4 — USER-AUTHORED SUCCESS-PATH QUERY
 //
 // Write exactly one query for the accepted confirmation tracer:
+//
+// Insert every field of artifact.VerificationArtifact explicitly:
+//
+//	id, upload_intent_id, verification_session_id, kind, storage_key,
+//	content_type, size_bytes, etag, created_at.
+//
+// Do not use database-generated ID/time values. The application service already
+// supplies the artifact ID and confirmation time whose exact values are asserted by
+// the public integration tracer.
 func (q *Queries) InsertVerificationArtifact(ctx context.Context, arg InsertVerificationArtifactParams) error {
 	_, err := q.db.Exec(ctx, insertVerificationArtifact,
 		arg.VerificationArtifactID,
@@ -45,4 +63,15 @@ func (q *Queries) InsertVerificationArtifact(ctx context.Context, arg InsertVeri
 		arg.VerificationArtifactCreatedAt,
 	)
 	return err
+}
+
+const releaseArtifactConfirmLock = `-- name: ReleaseArtifactConfirmLock :one
+SELECT pg_advisory_unlock($1::bigint)
+`
+
+func (q *Queries) ReleaseArtifactConfirmLock(ctx context.Context, lockKey int64) (bool, error) {
+	row := q.db.QueryRow(ctx, releaseArtifactConfirmLock, lockKey)
+	var pg_advisory_unlock bool
+	err := row.Scan(&pg_advisory_unlock)
+	return pg_advisory_unlock, err
 }

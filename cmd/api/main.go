@@ -98,8 +98,10 @@ func run() int {
 		return 1
 	}
 
+	acquireFunc := newAcquireFunc(database)
+	confirmCoordinator := postgresadapter.NewArtifactConfirmCoordinator(acquireFunc)
 	extractor := deterministicextractor.New(nil, nil)
-	artifactConfirm := artifact.NewService(artifactStore, artifactStore, objectStorage, extractor, tokens, clock)
+	artifactConfirm := artifact.NewService(artifactStore, confirmCoordinator, objectStorage, extractor, tokens, clock)
 
 	uploadIntentService := artifact.NewUploadIntentService(artifactStore, artifactStore, objectStorage, tokens, clock)
 	handler := httpapi.WithRequestLogging(httpapi.NewHandler(sessions, details, artifactConfirm, uploadIntentService), logger)
@@ -116,3 +118,26 @@ func run() int {
 type systemClock struct{}
 
 func (systemClock) Now() time.Time { return time.Now() }
+
+type pgxConfirmConnLease struct {
+	*pgxpool.Conn
+}
+
+func (l *pgxConfirmConnLease) Discard(ctx context.Context) error {
+	conn := l.Hijack()
+	return conn.Close(ctx)
+}
+
+func newAcquireFunc(pool *pgxpool.Pool) postgresadapter.AcquireFunc {
+	return func(ctx context.Context) (postgresadapter.ConnLease, error) {
+		conn, err := pool.Acquire(ctx)
+
+		if err != nil {
+			return nil, err
+		}
+
+		return &pgxConfirmConnLease{
+			Conn: conn,
+		}, nil
+	}
+}

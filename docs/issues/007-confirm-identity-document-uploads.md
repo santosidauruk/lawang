@@ -1,8 +1,8 @@
 # Confirm Identity Document Uploads
 
-Status: ready-for-human
+Status: done
 Type: HITL
-Labels: ready-for-human
+Labels: done
 Source: `docs/plan-go.md` sections 4-5, 6.4, 8-9, 12, 14, 16 Issue 7, and 17.2
 
 ## User stories covered
@@ -44,8 +44,9 @@ The migration proof and the real two-connection PostgreSQL test prove the
 one-pending-intent invariant. Checkpoints 2-4 are GREEN, including the application,
 PostgreSQL, strict HTTP, HTTP + PostgreSQL, and Checkpoint 5 MinIO paths are GREEN.
 The public route now proves upload-url -> direct HTTP PUT -> real `HeadObject` ->
-deterministic extraction -> atomic PostgreSQL confirm. Replay/concurrency hardening
-remains Checkpoint 6.
+deterministic extraction -> atomic PostgreSQL confirm. Checkpoint 6 is also complete:
+recorded replay, concurrent confirm, advisory-lock cleanup, stale-result rejection,
+and create-vs-confirm races are GREEN under the race detector.
 
 ## Scope boundaries
 
@@ -97,7 +98,7 @@ remains Checkpoint 6.
 - [x] Mismatch returns exact `422 LOCAL_VALIDATION_FAILED`, records bounded failure,
       appends one safe `confirm_identity_document` event with bounded outcome metadata,
       creates no artifact, and leaves session state unchanged.
-- [ ] Confirmed/failed replay and concurrent confirms are idempotent and do not repeat
+- [x] Confirmed/failed replay and concurrent confirms are idempotent and do not repeat
       external work or database effects.
 - [x] SDK/storage errors map to safe bounded application/HTTP failures.
 
@@ -157,6 +158,12 @@ commands. Verify no test uses `lawang_db_go` and no test silently skips Docker.
 Retain reviewed user-authored files, SQL concurrency output, real MinIO upload proof,
 all replay/race test output, and safe error examples. Add
 `docs/learning/007-upload-intents-and-identity-validation.md`.
+
+Checkpoint 6 evidence is recorded in the learning note and
+`docs/plans/issue_007/checkpoint-6-replay-and-concurrency.md`. On 2026-08-11 the
+focused Checkpoint 6 race suite and full `make quality` passed, including real
+PostgreSQL advisory-lock waiting and an HTTP -> PostgreSQL -> MinIO replay whose
+external call counters remained exactly one.
 
 ## Blocked by
 

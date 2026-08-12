@@ -135,6 +135,48 @@ storage keys fail closed, and configured match/mismatch results are keyed by the
 exact Upload Intent storage key. Replay and concurrent-confirm coordination remain
 Checkpoint 6 work.
 
-## Later checkpoints
+## Checkpoint 6: replay and concurrent confirmation
 
-- Replay and concurrent-confirm coordination without repeated external work.
+Checkpoint 6 uses a session-level PostgreSQL advisory lock as a cross-process mutex.
+Here, PostgreSQL “session” means one pinned database connection, not a Verification
+Session row. The lock key is derived from all raw Upload Intent UUID bytes with
+SHA-256 and the first eight bytes interpreted as a signed big-endian `int64`.
+Therefore callers for the same intent queue, while unrelated intents normally remain
+independent.
+
+The application owns the behavior through a small `ConfirmCoordinator` port. The
+PostgreSQL adapter acquires one connection, obtains the advisory lock, and supplies a
+reader plus transactor scoped to that connection. `HeadObject` and extraction happen
+while the advisory lock is held but before the short database transaction begins.
+After the operation, the adapter unlocks before returning the connection to the pool.
+Cleanup uses a bounded context independent of a canceled request; if lock acquisition
+or unlock is uncertain, the connection is hijacked and closed instead of being
+returned to the pool with a possible live session-level lock.
+
+After obtaining the lock, confirm re-reads authorization, expiry, intent state, and
+Personal Details. A `confirmed` intent returns the stored session outcome; a
+`validation_failed` identity mismatch returns the same bounded failure. Neither path
+calls object storage/extraction or appends another event. A pending intent may perform
+external validation, but the short transaction locks and re-reads state again, so a
+concurrent supersede, expiry change, or create-intent operation discards stale external
+results without partial writes.
+
+The deterministic PostgreSQL proof blocks the first caller inside `HeadObject`, starts
+the second caller, and queries `pg_locks` until it observes one granted advisory lock
+and one waiter. It uses no timing sleep. Sibling tests cover accepted and mismatch
+concurrency, both replay outcomes, external failure followed by retry, cancellation
+while waiting, supersede/expiry during external work, and create-versus-confirm.
+The real HTTP -> PostgreSQL -> MinIO tracer then confirms twice and proves the replay
+response is identical while real `HeadObject` and deterministic extraction each run
+once.
+
+Verification evidence on 2026-08-11:
+
+```text
+GOCACHE=/tmp/lawang-go-build go test -race ./tests/integration -run <Checkpoint-6 tests> -count=1
+ok github.com/santosidauruk/lawang-go/tests/integration 12.583s
+
+GOCACHE=/tmp/lawang-go-build make quality
+ok github.com/santosidauruk/lawang-go/tests/integration 167.299s
+format, vet, staticcheck, all race tests, sqlc diff, migrations, and compose passed
+```

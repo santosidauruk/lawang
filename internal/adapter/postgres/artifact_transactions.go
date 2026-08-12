@@ -2,6 +2,8 @@ package postgres
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/binary"
 	"errors"
 	"time"
 
@@ -334,4 +336,12 @@ func mapUploadIntent(row generated.UploadIntent) (artifact.UploadIntent, error) 
 		ObjectDeletedAt:       objectDeletedAt,
 		FailureCode:           pgxTextToStringPtr(row.FailureCode),
 	}, nil
+}
+
+func confirmLockKey(uploadIntentID uuid.UUID) int64 {
+	sum := sha256.Sum256([]byte(uploadIntentID[:]))
+
+	key := binary.BigEndian.Uint64(sum[:8])
+	return int64(key)
+
 }

@@ -48,6 +48,7 @@ type confirmFixture struct {
 	storage        stubObjectStorage
 	extractor      stubDocumentExtractor
 	tokens         stubTokenIssuer
+	coordinator    stubConfirmCoordinator
 }
 
 func newConfirmFixture() *confirmFixture {
@@ -96,13 +97,17 @@ func newConfirmFixture() *confirmFixture {
 		extraction: artifact.DocumentExtraction{IdentityNumber: identityNumber},
 		calls:      &f.extractorCalls,
 	}
+	f.coordinator = stubConfirmCoordinator{
+		reader:     f.transactions,
+		transactor: f.transactions,
+	}
 	return f
 }
 
 func (f *confirmFixture) service() *artifact.Service {
 	return artifact.NewService(
 		f.transactions,
-		f.transactions,
+		f.coordinator,
 		f.storage,
 		f.extractor,
 		f.tokens,
@@ -155,6 +160,7 @@ func TestConfirmIdentityDocumentAcceptsValidatedUploadAtomically(t *testing.T) {
 	storageKey := "storage-key"
 	identityNumber := "81eab50d3a3bd91c"
 	rawToken := "raw-resume-token"
+
 	transactions := newMemoryTransactions(session.VerificationSession{
 		ID:              id,
 		Status:          session.StatusPersonalDetailsSubmitted,
@@ -219,9 +225,14 @@ func TestConfirmIdentityDocumentAcceptsValidatedUploadAtomically(t *testing.T) {
 		equal: true,
 	}
 
+	coordinator := stubConfirmCoordinator{
+		reader:     transactions,
+		transactor: transactions,
+	}
+
 	service := artifact.NewService(
 		transactions,
-		transactions,
+		coordinator,
 		objectStorage,
 		extractor,
 		tokens,
@@ -383,9 +394,14 @@ func TestConfirmIdentityDocumentRecordsMismatchAtomically(t *testing.T) {
 		equal: true,
 	}
 
+	coordinator := stubConfirmCoordinator{
+		reader:     transactions,
+		transactor: transactions,
+	}
+
 	service := artifact.NewService(
 		transactions,
-		transactions,
+		coordinator,
 		objectStorage,
 		extractor,
 		tokens,
@@ -494,7 +510,6 @@ func TestConfirmIdentityDocumentDiscardsExternalResultWhenStorageKeyChanges(t *t
 	identityNumber := "3173000000000001"
 	originalStorageKey := "identity-document-original"
 	changedStorageKey := "identity-document-changed"
-
 	transactions := newMemoryTransactions(
 		session.VerificationSession{
 			ID:              sessionID,
@@ -523,7 +538,10 @@ func TestConfirmIdentityDocumentDiscardsExternalResultWhenStorageKeyChanges(t *t
 
 	service := artifact.NewService(
 		transactions,
-		transactions,
+		stubConfirmCoordinator{
+			reader:     transactions,
+			transactor: transactions,
+		},
 		stubObjectStorage{metadata: artifact.ObjectMetadata{
 			ContentType: "image/jpeg",
 			SizeBytes:   1024,
@@ -894,7 +912,10 @@ func TestConfirmIdentityDocumentRejectsInvalidTokenBeforeReadingIntentOrExternal
 	extractorCalls := 0
 	service := artifact.NewService(
 		transactions,
-		transactions,
+		stubConfirmCoordinator{
+			reader:     transactions,
+			transactor: transactions,
+		},
 		stubObjectStorage{
 			metadata: artifact.ObjectMetadata{ContentType: "image/jpeg", SizeBytes: 1},
 			calls:    &storageCalls,
@@ -950,7 +971,10 @@ func TestConfirmIdentityDocumentRejectsSessionAtExactExpiryBeforeExternalIO(t *t
 	extractorCalls := 0
 	service := artifact.NewService(
 		transactions,
-		transactions,
+		stubConfirmCoordinator{
+			reader:     transactions,
+			transactor: transactions,
+		},
 		stubObjectStorage{calls: &storageCalls},
 		stubDocumentExtractor{calls: &extractorCalls},
 		stubTokenIssuer{hash: []byte("stored-hash"), equal: true},
@@ -1005,11 +1029,15 @@ func TestConfirmIdentityDocumentRollsBackAllWritesWhenEventAppendFails(t *testin
 			ExpiresAt:             now.Add(5 * time.Minute),
 		},
 	)
+
 	injectedErr := errors.New("injected append event failure")
 	transactions.appendEventErr = injectedErr
 	service := artifact.NewService(
 		transactions,
-		transactions,
+		stubConfirmCoordinator{
+			reader:     transactions,
+			transactor: transactions,
+		},
 		stubObjectStorage{metadata: artifact.ObjectMetadata{
 			ContentType: "image/jpeg",
 			SizeBytes:   1024,
@@ -1248,5 +1276,18 @@ func (m *memoryTransaction) MarkUploadIntentValidationFailed(_ context.Context, 
 	m.state.uploadIntent.ConfirmedAt = nil
 	m.state.uploadIntent.LatestStatusChangeAt = failedAt
 
+	return nil
+}
+
+type stubConfirmCoordinator struct {
+	reader     artifact.Reader
+	transactor artifact.Transactor
+}
+
+func (c stubConfirmCoordinator) WithinConfirm(ctx context.Context, intentID uuid.UUID, operation func(artifact.Reader, artifact.Transactor) error) error {
+	err := operation(c.reader, c.transactor)
+	if err != nil {
+		return err
+	}
 	return nil
 }

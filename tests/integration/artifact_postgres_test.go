@@ -31,6 +31,12 @@ func TestPostgresArtifactConfirmPersistsAcceptedOutcomeAtomically(t *testing.T) 
 	// Use session.NewProductionCryptoTokens().Hash(rawToken) for the stored hash.
 	now := time.Date(2026, 7, 22, 10, 0, 0, 0, time.UTC)
 	ctx, database := openArtifactDatabase(t)
+	pool, err := pgxpool.New(ctx, database.Config().ConnString())
+	if err != nil {
+		t.Fatalf("create postgresql pool: %v", err)
+	}
+	t.Cleanup(pool.Close)
+
 	rawToken := "raw-token"
 	uploadIntentID := uuid.MustParse("bd4518e0-45e2-4a42-ac42-8d3b9f247f02")
 	identityNumber := "127100000000009"
@@ -46,7 +52,7 @@ func TestPostgresArtifactConfirmPersistsAcceptedOutcomeAtomically(t *testing.T) 
 	// Keep setup explicit enough that each stored guard can be read from this test.
 	// There must be no Verification Artifact before ACT.
 	var sessionID uuid.UUID
-	err := database.QueryRow(ctx, `
+	err = database.QueryRow(ctx, `
 		INSERT INTO verification_sessions (resume_token_hash, status, expires_at)
 		VALUES ($1, 'personal_details_submitted', $2)
 		RETURNING id
@@ -99,6 +105,7 @@ func TestPostgresArtifactConfirmPersistsAcceptedOutcomeAtomically(t *testing.T) 
 	}
 
 	postgresArtifacts := postgresadapter.NewArtifactTransactions(database)
+	confirmCoordinator := postgresadapter.NewArtifactConfirmCoordinator(newArtifactConfirmAcquireFunc(pool))
 	tokens := session.NewProductionCryptoTokens()
 
 	// ARRANGE 4 — PostgreSQL adapter and public service
@@ -108,7 +115,7 @@ func TestPostgresArtifactConfirmPersistsAcceptedOutcomeAtomically(t *testing.T) 
 	// artifact.NewService. Do not expose pgx or generated sqlc types from the adapter.
 	service := artifact.NewService(
 		postgresArtifacts,
-		postgresArtifacts,
+		confirmCoordinator,
 		objectStorage,
 		extraction,
 		tokens,
@@ -345,12 +352,20 @@ func TestPostgresArtifactConfirmPersistsAcceptedOutcomeAtomically(t *testing.T) 
 func TestPostgresArtifactConfirmPersistsMismatchOutcomeAtomically(t *testing.T) {
 	now := time.Date(2026, 7, 24, 10, 0, 0, 0, time.UTC)
 	ctx, database := openArtifactDatabase(t)
+	pool, err := pgxpool.New(ctx, database.Config().ConnString())
+	if err != nil {
+		t.Fatalf("create postgresql pool: %v", err)
+	}
+	t.Cleanup(pool.Close)
+
 	fixture := seedArtifactConfirmationState(t, ctx, database, now)
 
 	postgresArtifacts := postgresadapter.NewArtifactTransactions(database)
+	confirmCoordinator := postgresadapter.NewArtifactConfirmCoordinator(newArtifactConfirmAcquireFunc(pool))
+
 	service := artifact.NewService(
 		postgresArtifacts,
-		postgresArtifacts,
+		confirmCoordinator,
 		artifactPostgresObjectStorage{metadata: artifact.ObjectMetadata{
 			ContentType: "image/jpeg",
 			SizeBytes:   1024,
@@ -503,6 +518,12 @@ func TestPostgresArtifactConfirmPersistsMismatchOutcomeAtomically(t *testing.T) 
 func TestPostgresArtifactConfirmRollsBackAcceptedOutcomeWhenEventWriteFails(t *testing.T) {
 	now := time.Date(2026, 7, 24, 11, 0, 0, 0, time.UTC)
 	ctx, database := openArtifactDatabase(t)
+	pool, err := pgxpool.New(ctx, database.Config().ConnString())
+	if err != nil {
+		t.Fatalf("create postgresql pool: %v", err)
+	}
+	t.Cleanup(pool.Close)
+
 	fixture := seedArtifactConfirmationState(t, ctx, database, now)
 
 	if _, err := database.Exec(ctx, `
@@ -527,9 +548,11 @@ func TestPostgresArtifactConfirmRollsBackAcceptedOutcomeWhenEventWriteFails(t *t
 	}
 
 	postgresArtifacts := postgresadapter.NewArtifactTransactions(database)
+	confirmCoordinator := postgresadapter.NewArtifactConfirmCoordinator(newArtifactConfirmAcquireFunc(pool))
+
 	service := artifact.NewService(
 		postgresArtifacts,
-		postgresArtifacts,
+		confirmCoordinator,
 		artifactPostgresObjectStorage{metadata: artifact.ObjectMetadata{
 			ContentType: "image/jpeg",
 			SizeBytes:   1024,

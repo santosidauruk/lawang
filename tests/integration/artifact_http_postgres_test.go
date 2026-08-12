@@ -7,10 +7,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/santosidauruk/lawang-go/internal/adapter/deterministicextractor"
 	"github.com/santosidauruk/lawang-go/internal/adapter/httpapi"
 	postgresadapter "github.com/santosidauruk/lawang-go/internal/adapter/postgres"
@@ -24,6 +26,12 @@ func TestIdentityDocumentUploadAndConfirmOverHTTPWithPostgreSQL(t *testing.T) {
 	rawToken := "http-artifact-token"
 	identityNumber := "127100000000009"
 	tokens := session.NewProductionCryptoTokens()
+
+	pool, err := pgxpool.New(ctx, database.Config().ConnString())
+	if err != nil {
+		t.Fatalf("create postgresql pool: %v", err)
+	}
+	t.Cleanup(pool.Close)
 
 	var sessionID uuid.UUID
 	if err := database.QueryRow(ctx, `
@@ -62,6 +70,8 @@ func TestIdentityDocumentUploadAndConfirmOverHTTPWithPostgreSQL(t *testing.T) {
 		errors:  make(map[string]error),
 	}
 	postgresArtifacts := postgresadapter.NewArtifactTransactions(database)
+
+	confirmCoordinator := postgresadapter.NewArtifactConfirmCoordinator(newArtifactConfirmAcquireFunc(pool))
 	uploadIntents := artifact.NewUploadIntentService(
 		postgresArtifacts,
 		postgresArtifacts,
@@ -71,7 +81,7 @@ func TestIdentityDocumentUploadAndConfirmOverHTTPWithPostgreSQL(t *testing.T) {
 	)
 	artifacts := artifact.NewService(
 		postgresArtifacts,
-		postgresArtifacts,
+		confirmCoordinator,
 		objectStorage,
 		extractor,
 		tokens,
@@ -183,6 +193,12 @@ func TestIdentityDocumentUploadPutAndConfirmOverHTTPWithPostgreSQLAndMinIO(t *te
 	identityNumber := "127100000000009"
 	tokens := session.NewProductionCryptoTokens()
 
+	pool, err := pgxpool.New(ctx, database.Config().ConnString())
+	if err != nil {
+		t.Fatalf("create postgresql pool: %v", err)
+	}
+	t.Cleanup(pool.Close)
+
 	var sessionID uuid.UUID
 	if err := database.QueryRow(ctx, `
 		INSERT INTO verification_sessions (
@@ -208,9 +224,12 @@ func TestIdentityDocumentUploadPutAndConfirmOverHTTPWithPostgreSQLAndMinIO(t *te
 		t.Fatalf("insert MinIO HTTP tracer Personal Details: %v", err)
 	}
 
-	objectStorage := newMinIOTestStorage(t, ctx)
+	realObjectStorage := newMinIOTestStorage(t, ctx)
+	objectStorage := &countingHTTPObjectStorage{delegate: realObjectStorage}
 	extractionResults := make(map[string]artifact.DocumentExtraction)
-	extractor := deterministicextractor.New(extractionResults, nil)
+	extractor := &countingHTTPDocumentExtractor{
+		delegate: deterministicextractor.New(extractionResults, nil),
+	}
 	postgresArtifacts := postgresadapter.NewArtifactTransactions(database)
 	uploadIntents := artifact.NewUploadIntentService(
 		postgresArtifacts,
@@ -219,9 +238,10 @@ func TestIdentityDocumentUploadPutAndConfirmOverHTTPWithPostgreSQLAndMinIO(t *te
 		tokens,
 		fixedClock{now: now},
 	)
+	confirmCoordinator := postgresadapter.NewArtifactConfirmCoordinator(newArtifactConfirmAcquireFunc(pool))
 	artifacts := artifact.NewService(
 		postgresArtifacts,
-		postgresArtifacts,
+		confirmCoordinator,
 		objectStorage,
 		extractor,
 		tokens,
@@ -286,6 +306,40 @@ func TestIdentityDocumentUploadPutAndConfirmOverHTTPWithPostgreSQLAndMinIO(t *te
 		)
 	}
 
+	replayRequest := httptest.NewRequest(
+		http.MethodPost,
+		"/verification-sessions/"+sessionID.String()+"/artifacts/confirm",
+		strings.NewReader(
+			`{"uploadIntentId":"`+uploadBody.UploadIntentID.String()+`"}`,
+		),
+	)
+	replayRequest.Header.Set("Authorization", "Bearer "+rawToken)
+	replayRequest.Header.Set("Content-Type", "application/json")
+	replayResponse := httptest.NewRecorder()
+	handler.ServeHTTP(replayResponse, replayRequest)
+	if replayResponse.Code != http.StatusOK {
+		t.Fatalf(
+			"replay confirm status = %d, want %d; body = %s",
+			replayResponse.Code,
+			http.StatusOK,
+			replayResponse.Body.String(),
+		)
+	}
+	if replayResponse.Body.String() != confirmResponse.Body.String() {
+		t.Errorf(
+			"replay confirm body = %s, want exact recorded body %s",
+			replayResponse.Body.String(),
+			confirmResponse.Body.String(),
+		)
+	}
+	if objectStorage.headObjectCallCount() != 1 || extractor.callCount() != 1 {
+		t.Errorf(
+			"real external calls = HeadObject:%d Extract:%d, want 1 each",
+			objectStorage.headObjectCallCount(),
+			extractor.callCount(),
+		)
+	}
+
 	var sessionStatus string
 	var intentStatus string
 	var artifactCount int
@@ -318,6 +372,61 @@ func TestIdentityDocumentUploadPutAndConfirmOverHTTPWithPostgreSQLAndMinIO(t *te
 			eventCount,
 		)
 	}
+}
+
+type countingHTTPObjectStorage struct {
+	delegate interface {
+		PresignUpload(context.Context, string, time.Duration) (string, error)
+		HeadObject(context.Context, string) (artifact.ObjectMetadata, error)
+	}
+	mu              sync.Mutex
+	headObjectCalls int
+}
+
+func (s *countingHTTPObjectStorage) PresignUpload(
+	ctx context.Context,
+	storageKey string,
+	ttl time.Duration,
+) (string, error) {
+	return s.delegate.PresignUpload(ctx, storageKey, ttl)
+}
+
+func (s *countingHTTPObjectStorage) HeadObject(
+	ctx context.Context,
+	storageKey string,
+) (artifact.ObjectMetadata, error) {
+	s.mu.Lock()
+	s.headObjectCalls++
+	s.mu.Unlock()
+	return s.delegate.HeadObject(ctx, storageKey)
+}
+
+func (s *countingHTTPObjectStorage) headObjectCallCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.headObjectCalls
+}
+
+type countingHTTPDocumentExtractor struct {
+	delegate artifact.DocumentExtractor
+	mu       sync.Mutex
+	calls    int
+}
+
+func (e *countingHTTPDocumentExtractor) Extract(
+	ctx context.Context,
+	storageKey string,
+) (artifact.DocumentExtraction, error) {
+	e.mu.Lock()
+	e.calls++
+	e.mu.Unlock()
+	return e.delegate.Extract(ctx, storageKey)
+}
+
+func (e *countingHTTPDocumentExtractor) callCount() int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.calls
 }
 
 type fakeHTTPObjectStorage struct {

@@ -23,6 +23,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/santosidauruk/lawang-go/internal/adapter/deterministicextractor"
 	"github.com/santosidauruk/lawang-go/internal/adapter/httpapi"
 	postgresadapter "github.com/santosidauruk/lawang-go/internal/adapter/postgres"
@@ -229,11 +230,19 @@ func TestMinIOPresignPutAndHeadObjectReturnsSiblingMediaMetadata(t *testing.T) {
 func TestMinIOObjectMetadataDrivesIdentityDocumentRejection(t *testing.T) {
 	now := time.Date(2026, 8, 3, 13, 0, 0, 0, time.UTC)
 	ctx, database := openArtifactDatabase(t)
+	pool, err := pgxpool.New(ctx, database.Config().ConnString())
+	if err != nil {
+		t.Fatalf("create postgresql pool: %v", err)
+	}
+	t.Cleanup(pool.Close)
+
 	storage := newMinIOTestStorage(t, ctx)
 	postgresArtifacts := postgresadapter.NewArtifactTransactions(database)
+	confirmCoordinator := postgresadapter.NewArtifactConfirmCoordinator(newArtifactConfirmAcquireFunc(pool))
+
 	service := artifact.NewService(
 		postgresArtifacts,
-		postgresArtifacts,
+		confirmCoordinator,
 		storage,
 		deterministicextractor.New(nil, nil),
 		session.NewProductionCryptoTokens(),
@@ -299,6 +308,12 @@ func TestMinIOObjectMetadataDrivesIdentityDocumentRejection(t *testing.T) {
 func TestS3StorageFailuresRemainBoundedAtHTTPBoundary(t *testing.T) {
 	now := time.Date(2026, 8, 3, 13, 30, 0, 0, time.UTC)
 	ctx, database := openArtifactDatabase(t)
+	pool, err := pgxpool.New(ctx, database.Config().ConnString())
+	if err != nil {
+		t.Fatalf("create postgresql pool: %v", err)
+	}
+	t.Cleanup(pool.Close)
+
 	minioStorage := newMinIOTestStorage(t, ctx)
 	unavailableStorage := newUnavailableS3TestStorage(t, ctx)
 
@@ -314,9 +329,10 @@ func TestS3StorageFailuresRemainBoundedAtHTTPBoundary(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			fixture := seedArtifactConfirmationState(t, ctx, database, now)
 			postgresArtifacts := postgresadapter.NewArtifactTransactions(database)
+			confirmCoordinator := postgresadapter.NewArtifactConfirmCoordinator(newArtifactConfirmAcquireFunc(pool))
 			service := artifact.NewService(
 				postgresArtifacts,
-				postgresArtifacts,
+				confirmCoordinator,
 				tt.storage,
 				deterministicextractor.New(nil, nil),
 				session.NewProductionCryptoTokens(),

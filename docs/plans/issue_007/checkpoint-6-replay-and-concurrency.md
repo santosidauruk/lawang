@@ -1,7 +1,8 @@
 # Checkpoint 6 — Replay dan Concurrent Confirm
 
-Status: workbench user sudah disiapkan; implementation belum dimulai. Ini hardening
-terakhir setelah PostgreSQL, HTTP, dan MinIO path nyata bekerja.
+Status: selesai pada 2026-08-11. Concurrent success/mismatch, recorded replay,
+advisory-lock lifecycle, stale-result guards, cancellation, create-vs-confirm, dan
+PostgreSQL + MinIO replay path sudah dibuktikan dengan race detector.
 
 ## Tujuan
 
@@ -35,7 +36,7 @@ tetapi satu pool connection tetap ditempati selama object storage/extraction.
 Tidak ada status `confirming`; advisory lock adalah koordinasi sementara dan outcome
 durable tetap status Upload Intent yang sudah ada.
 
-## Audit checkout sebelum RED
+## Audit checkout sebelum RED (catatan historis)
 
 Kondisi kode saat workbench disiapkan:
 
@@ -112,16 +113,19 @@ lock hidup bersama connection. Adapter harus memastikan connection yang mungkin 
 memegang lock tidak kembali sehat ke pool. Detail ini direview setelah tracer pertama
 GREEN, bersama cancellation dan pool-leak tests.
 
-## Workbench
+## Workbench dan hasilnya
 
-File user disiapkan di
-`tests/integration/artifact_confirm_concurrency_test.go`. Fungsinya sengaja bernama
-`checkpoint6ConcurrentConfirmReturnsRecordedSuccessOnce`, bukan `Test...`, dan berisi
-fatal marker. Karena itu existing suite tetap GREEN dan belum ada klaim concurrency
-proof. Menjalankan command terfokus sebelum fungsi diubah menjadi `Test...` akan
-menghasilkan `[no tests to run]`; itu hanya membuktikan package dapat dikompilasi.
+Workbench user di `tests/integration/artifact_confirm_concurrency_test.go` sudah
+diaktifkan menjadi public test. Tracer awal membuktikan dua public `Confirm` untuk
+intent yang sama menerima recorded success yang sama, sementara database menyimpan
+satu artifact/event dan external work berjalan sekali. Sibling agent kemudian
+menambahkan pengamatan `pg_locks` yang menunjukkan satu lock granted dan satu waiter;
+jadi hasil hijau tidak bergantung pada kebetulan scheduler menjalankan caller secara
+berurutan.
 
 ## Bagian user
+
+Status: selesai dan dipertahankan sebagai catatan urutan belajar yang dikerjakan.
 
 Target bagian ini sederhana: dua caller mengonfirmasi Upload Intent yang sama. Keduanya
 mendapat success yang sama, tetapi database hanya menyimpan satu outcome dan pekerjaan
@@ -207,19 +211,19 @@ external I/O, dan apakah test benar-benar menjalankan dua public calls.
 
 Setelah concurrent-success tracer GREEN:
 
-1. proof lock yang deterministic menahan caller pertama pada external boundary dan
+1. [x] proof lock yang deterministic menahan caller pertama pada external boundary dan
    mengamati caller kedua menunggu advisory lock yang sama melalui PostgreSQL, tanpa
    `time.Sleep`; proof ini juga memastikan test tidak hijau hanya karena scheduler
    menjalankan kedua caller secara berurutan;
-2. confirmed replay mengembalikan recorded success tanpa external work/event;
-3. validation-failed replay mengembalikan exact bounded failure tanpa external work;
-4. concurrent mismatch menghasilkan satu failure event dan zero artifacts;
-5. supersede/expiry saat request menunggu lock menghasilkan conflict yang tepat;
-6. stale result setelah external I/O dibuang tanpa partial writes;
-7. external failure melepaskan lock sehingga retry dapat berjalan;
-8. context cancellation ketika menunggu lock tidak membocorkan connection/lock;
-9. race tests untuk create intent dan confirm;
-10. full PostgreSQL + MinIO path membuktikan external work tidak terulang.
+2. [x] confirmed replay mengembalikan recorded success tanpa external work/event;
+3. [x] validation-failed replay mengembalikan exact bounded failure tanpa external work;
+4. [x] concurrent mismatch menghasilkan satu failure event dan zero artifacts;
+5. [x] supersede/expiry saat request menunggu lock menghasilkan conflict yang tepat;
+6. [x] stale result setelah external I/O dibuang tanpa partial writes;
+7. [x] external failure melepaskan lock sehingga retry dapat berjalan;
+8. [x] context cancellation ketika menunggu lock tidak membocorkan connection/lock;
+9. [x] race tests untuk create intent dan confirm;
+10. [x] full PostgreSQL + MinIO path membuktikan external work tidak terulang.
 
 ## Definition of done
 
@@ -237,3 +241,15 @@ Setelah concurrent-success tracer GREEN:
 
 Agent tidak boleh menyatakan Issue 007 selesai hanya dari fake counter. Bukti akhir
 harus mencakup PostgreSQL nyata dan MinIO nyata.
+
+## Evidence aktual
+
+- Focused Checkpoint 6 integration race suite lulus pada 2026-08-11.
+- HTTP -> PostgreSQL -> MinIO tracer menjalankan confirm dan replay dengan response
+  identik; counting wrapper membuktikan real `HeadObject` dan deterministic extraction
+  masing-masing hanya sekali.
+- Unit test coordinator membuktikan unlock sebelum release, discard saat acquire atau
+  unlock gagal, serta cleanup dengan context terpisah dari request context.
+- `make quality` lulus: formatting, vet, staticcheck, full `go test -race ./...`,
+  `sqlc-diff`, migration validation, dan compose validation. Integration race package
+  selesai dalam 167.299 detik pada run tersebut.
