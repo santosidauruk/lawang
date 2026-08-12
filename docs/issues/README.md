@@ -15,6 +15,14 @@ Every new issue starts with `needs-triage`. `Type: AFK` means an agent may compl
 the issue without routine human interaction after blockers are resolved. `Type: HITL`
 means the issue contains a required human decision or learning checkpoint.
 
+## Aturan penjelasan istilah teknis Inggris
+
+Saat agent pertama kali memperkenalkan istilah teknis Inggris yang sulit
+diterjemahkan secara ringkas, seperti `coordinator`, `seam`, atau `predicate`, agent
+harus langsung menambahkan satu kalimat penjelas dalam tanda kurung. Penjelasan harus
+menggunakan bahasa Indonesia yang casual dan menerangkan fungsi istilah tersebut
+dalam konteks pekerjaan yang sedang dibahas, bukan hanya terjemahan kamus.
+
 ## User Outcomes
 
 - **US-01:** As an operator, I can bootstrap and inspect an isolated Go/PostgreSQL
@@ -71,4 +79,3 @@ learning outcomes.
 Do not merge Issue 003-005 during implementation without revising `docs/plan-go.md`.
 If product throughput becomes more important than the learning sequence, revisit
 those boundaries first.
-

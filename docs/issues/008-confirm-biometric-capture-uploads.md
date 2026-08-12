@@ -1,8 +1,8 @@
 # Confirm Biometric Capture Uploads
 
-Status: needs-triage  
+Status: ready-for-human  
 Type: HITL  
-Labels: needs-triage  
+Labels: ready-for-human  
 Source: `docs/plan-go.md` sections 4-5, 8-9, 14, 16 Issue 8, and 17.2
 
 ## User stories covered
@@ -24,6 +24,13 @@ The user implements the first kind-specific domain rule or object-storage adapte
 operation. The agent reviews whether Issue 007's abstractions should be reused or
 remain explicit. Generalize only when the shared invariant is real; two similar
 handlers alone are insufficient evidence.
+
+## Active collaboration plan
+
+The approved user/agent checkpoint split is documented in
+[`docs/plans/issue_008/README.md`](../plans/issue_008/README.md). Checkpoint 1 is the
+active learning checkpoint. Do not begin later checkpoints before the active
+checkpoint reaches its documented review gate.
 
 ## Scope boundaries
 
