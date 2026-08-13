@@ -1,6 +1,7 @@
 # Checkpoint 2 — Application Confirmation tanpa Document Extractor
 
-Status: ready-for-human; checkpoint aktif setelah Checkpoint 1 selesai 2026-08-13.
+Status: selesai pada 2026-08-13; tracer user, sibling agent, regression, dan quality
+gate GREEN.
 
 ## Tujuan
 
@@ -25,7 +26,23 @@ accepted `confirm_biometric_capture` event. `DocumentExtractor` call count harus
 - `internal/domain/verificationsession/state.go` hanya bila tracer menemukan gap;
   state/event constants sekarang sudah tersedia.
 
-## Bagian user
+## Hasil checkpoint
+
+Tracer user `TestConfirmBiometricCaptureAcceptsUploadWithoutExtractionAtomically`
+dipertahankan. Public `artifact.Service.Confirm` memilih state, Personal Details,
+extractor, transition, dan event dari kind milik Upload Intent; caller tidak mengirim
+kind kedua. Biometric Capture memakai `HeadObject` di luar transaction, tidak memuat
+Personal Details, tidak memanggil `DocumentExtractor`, lalu transactionally
+mengonfirmasi intent, membuat accepted Verification Artifact, berpindah ke
+`biometric_capture_uploaded`, dan menulis accepted `confirm_biometric_capture` event.
+
+Agent continuation membekukan JPEG/PNG non-zero sampai inclusive 5 MiB, penolakan
+PDF/unsupported/empty/oversized, bounded storage failure, lifecycle guards, stale
+external-result rejection, dan rollback saat event write gagal. Identity Document
+tetap menerima JPEG/PNG/PDF sampai inclusive 10 MiB serta mempertahankan extraction
+dan identity-number reconciliation.
+
+## Bagian user — selesai dan direview
 
 1. `[test fixture][application service]` User menyiapkan session
    `identity_document_uploaded`, pending biometric Upload Intent, valid token, fixed
@@ -71,7 +88,7 @@ Agent memeriksa:
 - event exact `confirm_biometric_capture`, bukan state name;
 - identity mismatch/extraction behavior tetap unchanged.
 
-## Bagian agent
+## Bagian agent — selesai
 
 Setelah tracer user GREEN, agent mengerjakan sibling behaviors satu per satu:
 
@@ -98,4 +115,22 @@ Minimum verification:
 ```sh
 go test ./internal/application/artifact -count=1
 go test -race ./internal/application/artifact -count=1
+```
+
+Verification evidence pada 2026-08-13:
+
+```text
+GOCACHE=/tmp/lawang-go-build go test ./internal/application/artifact -count=1
+ok github.com/santosidauruk/lawang-go/internal/application/artifact
+
+GOCACHE=/tmp/lawang-go-build go test -race ./internal/application/artifact -count=1
+ok github.com/santosidauruk/lawang-go/internal/application/artifact
+
+GOCACHE=/tmp/lawang-go-build STATICCHECK_CACHE=/tmp/lawang-go-staticcheck make quality
+PASS: fmt-check, vet, staticcheck, full race suite, sqlc-diff,
+migration-validate, and compose-validate
+
+Full race integration packages:
+ok github.com/santosidauruk/lawang-go/tests/integration
+ok github.com/santosidauruk/lawang-go/tests/schema
 ```

@@ -1,6 +1,6 @@
 # Checkpoint 3 — PostgreSQL Atomic Biometric Outcome
 
-Status: approved; menunggu Checkpoint 2 selesai.
+Status: ready-for-human; aktif setelah Checkpoint 2 selesai 2026-08-13.
 
 ## Tujuan
 

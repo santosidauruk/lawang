@@ -35,6 +35,7 @@ type memoryTransactions struct {
 type memoryTransaction struct {
 	state          *memoryState
 	appendEventErr error
+	owner          *memoryTransactions
 }
 
 type confirmFixture struct {
@@ -100,6 +101,21 @@ func newConfirmFixture() *confirmFixture {
 	f.coordinator = stubConfirmCoordinator{
 		reader:     f.transactions,
 		transactor: f.transactions,
+	}
+	return f
+}
+
+func newBiometricConfirmFixture(t *testing.T) *confirmFixture {
+	t.Helper()
+	f := newConfirmFixture()
+	f.transactions.state.session.Status = session.StatusIdentityDocumentUploaded
+	f.transactions.state.details = nil
+	f.transactions.state.uploadIntent.Kind = "biometric_capture"
+	f.transactions.state.uploadIntent.StorageKey = "biometric-capture-key"
+	f.storage.metadata.ETag = "biometric-capture-etag"
+	f.extractor.extraction = artifact.DocumentExtraction{}
+	f.extractor.onExtract = func(storageKey string) {
+		t.Fatalf("Extract() called for Biometric Capture key %q", storageKey)
 	}
 	return f
 }
@@ -341,8 +357,7 @@ func TestConfirmIdentityDocumentAcceptsValidatedUploadAtomically(t *testing.T) {
 }
 
 // TestConfirmBiometricCaptureAcceptsUploadWithoutExtractionAtomically is the
-// user-owned success tracer for Issue 008 Checkpoint 2. Fill this test, remove the
-// Skip and TODO failure, then keep the first meaningful failure as the RED evidence.
+// retained user-owned success tracer for Issue 008 Checkpoint 2.
 func TestConfirmBiometricCaptureAcceptsUploadWithoutExtractionAtomically(t *testing.T) {
 	// ARRANGE 1 — fixed facts and committed state
 	// Prepare a fixed clock, session UUID, Upload Intent UUID, storage key, and raw
@@ -390,7 +405,7 @@ func TestConfirmBiometricCaptureAcceptsUploadWithoutExtractionAtomically(t *test
 	// ARRANGE 2 — committed application state
 	// Build one small in-memory transactor containing:
 	//   - the Verification Session and its stored resume-token hash;
-	//   - immutable Personal Details with one identity number;
+	//   - no matching Personal Details, because biometric confirmation does not use it;
 	//   - the pending Upload Intent;
 	//   - empty Verification Artifact and Session Event collections.
 	// Its transaction callback must copy state and publish the copy only when the
@@ -535,9 +550,352 @@ func TestConfirmBiometricCaptureAcceptsUploadWithoutExtractionAtomically(t *test
 	}
 
 	if transactions.loadDetailsCalls != 0 {
-		t.Fatalf("external calls = extractor:%v and loadDetailsCalls:%d, want 0", extractor.calls, transactions.loadDetailsCalls)
+		t.Fatalf("Personal Details loads = %d, want 0", transactions.loadDetailsCalls)
 	}
 
+}
+
+func TestConfirmBiometricCaptureAcceptsPNGWithoutExtraction(t *testing.T) {
+	f := newBiometricConfirmFixture(t)
+	f.storage.metadata.ContentType = "image/png"
+
+	got, err := f.confirm()
+
+	if err != nil {
+		t.Fatalf("Confirm() error = %#v", err)
+	}
+	if got.Status != session.StatusBiometricCaptureUploaded {
+		t.Errorf("Confirm() status = %q, want %q", got.Status, session.StatusBiometricCaptureUploaded)
+	}
+	if len(f.transactions.state.artifacts) != 1 ||
+		f.transactions.state.artifacts[0].ContentType != "image/png" {
+		t.Errorf("stored artifacts = %#v, want one accepted PNG Biometric Capture", f.transactions.state.artifacts)
+	}
+	if f.storageCalls != 1 || f.extractorCalls != 0 {
+		t.Errorf("external calls = storage:%d extractor:%d, want storage:1 extractor:0", f.storageCalls, f.extractorCalls)
+	}
+}
+
+func TestConfirmBiometricCaptureRejectsEmptyObjectWithoutExtraction(t *testing.T) {
+	f := newBiometricConfirmFixture(t)
+	f.storage.metadata.SizeBytes = 0
+
+	_, err := f.confirm()
+
+	requireArtifactError(t, err, artifact.CodeInvalidObjectMetadata, artifact.ReasonObjectEmpty)
+	if f.storageCalls != 1 || f.extractorCalls != 0 {
+		t.Errorf("external calls = storage:%d extractor:%d, want storage:1 extractor:0", f.storageCalls, f.extractorCalls)
+	}
+	if f.transactions.state.uploadIntent.Status != "pending" ||
+		len(f.transactions.state.artifacts) != 0 ||
+		len(f.transactions.state.events) != 0 {
+		t.Errorf("state = %#v, want no confirmation effects", f.transactions.state)
+	}
+}
+
+func TestConfirmBiometricCaptureRejectsObjectAboveFiveMiBWithoutExtraction(t *testing.T) {
+	f := newBiometricConfirmFixture(t)
+	f.storage.metadata.SizeBytes = 5*1024*1024 + 1
+
+	_, err := f.confirm()
+
+	requireArtifactError(t, err, artifact.CodeInvalidObjectMetadata, artifact.ReasonObjectTooLarge)
+	if f.storageCalls != 1 || f.extractorCalls != 0 {
+		t.Errorf("external calls = storage:%d extractor:%d, want storage:1 extractor:0", f.storageCalls, f.extractorCalls)
+	}
+	if f.transactions.state.uploadIntent.Status != "pending" ||
+		len(f.transactions.state.artifacts) != 0 ||
+		len(f.transactions.state.events) != 0 {
+		t.Errorf("state = %#v, want no confirmation effects", f.transactions.state)
+	}
+}
+
+func TestConfirmBiometricCaptureAcceptsObjectAtFiveMiBWithoutExtraction(t *testing.T) {
+	f := newBiometricConfirmFixture(t)
+	f.storage.metadata.SizeBytes = 5 * 1024 * 1024
+
+	_, err := f.confirm()
+
+	if err != nil {
+		t.Fatalf("Confirm() error = %#v", err)
+	}
+	if len(f.transactions.state.artifacts) != 1 ||
+		f.transactions.state.artifacts[0].SizeBytes != 5*1024*1024 {
+		t.Errorf("stored artifacts = %#v, want accepted Biometric Capture at 5 MiB", f.transactions.state.artifacts)
+	}
+	if f.storageCalls != 1 || f.extractorCalls != 0 {
+		t.Errorf("external calls = storage:%d extractor:%d, want storage:1 extractor:0", f.storageCalls, f.extractorCalls)
+	}
+}
+
+func TestConfirmBiometricCaptureRejectsPDFWithoutExtraction(t *testing.T) {
+	f := newBiometricConfirmFixture(t)
+	f.storage.metadata.ContentType = "application/pdf"
+
+	_, err := f.confirm()
+
+	requireArtifactError(t, err, artifact.CodeInvalidObjectMetadata, artifact.ReasonUnsupportedContentType)
+	if f.storageCalls != 1 || f.extractorCalls != 0 {
+		t.Errorf("external calls = storage:%d extractor:%d, want storage:1 extractor:0", f.storageCalls, f.extractorCalls)
+	}
+	if f.transactions.state.uploadIntent.Status != "pending" ||
+		len(f.transactions.state.artifacts) != 0 ||
+		len(f.transactions.state.events) != 0 {
+		t.Errorf("state = %#v, want no confirmation effects", f.transactions.state)
+	}
+}
+
+func TestConfirmBiometricCaptureRejectsUnsupportedContentTypeWithoutExtraction(t *testing.T) {
+	f := newBiometricConfirmFixture(t)
+	f.storage.metadata.ContentType = "text/plain"
+
+	_, err := f.confirm()
+
+	requireArtifactError(t, err, artifact.CodeInvalidObjectMetadata, artifact.ReasonUnsupportedContentType)
+	if f.storageCalls != 1 || f.extractorCalls != 0 {
+		t.Errorf("external calls = storage:%d extractor:%d, want storage:1 extractor:0", f.storageCalls, f.extractorCalls)
+	}
+	if f.transactions.state.uploadIntent.Status != "pending" ||
+		len(f.transactions.state.artifacts) != 0 ||
+		len(f.transactions.state.events) != 0 {
+		t.Errorf("state = %#v, want no confirmation effects", f.transactions.state)
+	}
+}
+
+func TestConfirmRejectsUnsupportedIntentKindBeforeExternalIO(t *testing.T) {
+	f := newBiometricConfirmFixture(t)
+	f.transactions.state.uploadIntent.Kind = "face_scan"
+
+	_, err := f.confirm()
+
+	requireArtifactError(t, err, artifact.CodeInvalidUploadIntentKind, "")
+	if f.storageCalls != 0 || f.extractorCalls != 0 {
+		t.Errorf("external calls = storage:%d extractor:%d, want 0", f.storageCalls, f.extractorCalls)
+	}
+}
+
+func TestConfirmBiometricCaptureRejectsWrongInitialStateBeforeExternalIO(t *testing.T) {
+	f := newBiometricConfirmFixture(t)
+	f.transactions.state.session.Status = session.StatusPersonalDetailsSubmitted
+
+	_, err := f.confirm()
+
+	requireArtifactError(t, err, artifact.CodeConfirmationStale, "")
+	if f.storageCalls != 0 || f.extractorCalls != 0 {
+		t.Errorf("external calls = storage:%d extractor:%d, want 0", f.storageCalls, f.extractorCalls)
+	}
+}
+
+func TestConfirmBiometricCaptureRejectsExpiredIntentBeforeExternalIO(t *testing.T) {
+	f := newBiometricConfirmFixture(t)
+	f.transactions.state.uploadIntent.ExpiresAt = f.now
+
+	_, err := f.confirm()
+
+	requireArtifactError(t, err, artifact.CodeUploadIntentExpired, "")
+	if f.storageCalls != 0 || f.extractorCalls != 0 {
+		t.Errorf("external calls = storage:%d extractor:%d, want 0", f.storageCalls, f.extractorCalls)
+	}
+}
+
+func TestConfirmBiometricCaptureRejectsSupersededIntentBeforeExternalIO(t *testing.T) {
+	f := newBiometricConfirmFixture(t)
+	f.transactions.state.uploadIntent.Status = "superseded"
+
+	_, err := f.confirm()
+
+	requireArtifactError(t, err, artifact.CodeUploadIntentSuperseded, "")
+	if f.storageCalls != 0 || f.extractorCalls != 0 {
+		t.Errorf("external calls = storage:%d extractor:%d, want 0", f.storageCalls, f.extractorCalls)
+	}
+}
+
+func TestConfirmBiometricCaptureReturnsBoundedErrorWhenIntentIsNotFound(t *testing.T) {
+	f := newBiometricConfirmFixture(t)
+	f.uploadIntentID = uuid.MustParse("1db73bc4-bdaf-46d0-974b-15f6c30ed036")
+
+	_, err := f.confirm()
+
+	requireArtifactError(t, err, artifact.CodeUploadIntentNotFound, "")
+	if f.storageCalls != 0 || f.extractorCalls != 0 {
+		t.Errorf("external calls = storage:%d extractor:%d, want 0", f.storageCalls, f.extractorCalls)
+	}
+}
+
+func TestConfirmBiometricCaptureDiscardsExternalResultWhenIntentKindChanges(t *testing.T) {
+	f := newBiometricConfirmFixture(t)
+	f.storage.onHead = func(string) {
+		f.transactions.state.uploadIntent.Kind = "identity_document"
+	}
+
+	_, err := f.confirm()
+
+	requireArtifactError(t, err, artifact.CodeConfirmationStale, "")
+	if f.extractorCalls != 0 {
+		t.Errorf("extractor calls = %d, want 0", f.extractorCalls)
+	}
+	if f.transactions.loadDetailsCalls != 0 {
+		t.Errorf("Personal Details loads = %d, want 0", f.transactions.loadDetailsCalls)
+	}
+	if f.transactions.state.uploadIntent.Status != "pending" ||
+		len(f.transactions.state.artifacts) != 0 ||
+		len(f.transactions.state.events) != 0 ||
+		f.transactions.state.session.Status != session.StatusIdentityDocumentUploaded {
+		t.Errorf("state = %#v, want changed kind with no confirmation effects", f.transactions.state)
+	}
+}
+
+func TestConfirmBiometricCaptureBoundsObjectStorageFailureWithoutExtraction(t *testing.T) {
+	f := newBiometricConfirmFixture(t)
+	rawBoundaryError := errors.New("sdk secret: bucket=private-biometric-captures")
+	f.storage.err = rawBoundaryError
+
+	_, err := f.confirm()
+
+	requireArtifactError(t, err, artifact.CodeObjectStorageFailed, "")
+	if strings.Contains(err.Error(), rawBoundaryError.Error()) {
+		t.Fatalf("Confirm() error leaked storage details: %q", err)
+	}
+	if f.storageCalls != 1 || f.extractorCalls != 0 {
+		t.Errorf("external calls = storage:%d extractor:%d, want storage:1 extractor:0", f.storageCalls, f.extractorCalls)
+	}
+	if f.transactions.state.uploadIntent.Status != "pending" ||
+		len(f.transactions.state.artifacts) != 0 ||
+		len(f.transactions.state.events) != 0 {
+		t.Errorf("state = %#v, want no confirmation effects", f.transactions.state)
+	}
+}
+
+func TestConfirmBiometricCaptureRollsBackAllWritesWhenEventAppendFails(t *testing.T) {
+	f := newBiometricConfirmFixture(t)
+	previousUpdatedAt := f.now.Add(-time.Minute)
+	f.transactions.state.session.UpdatedAt = previousUpdatedAt
+	f.transactions.state.uploadIntent.LatestStatusChangeAt = previousUpdatedAt
+	injectedErr := errors.New("injected biometric append event failure")
+	f.transactions.appendEventErr = injectedErr
+
+	_, err := f.confirm()
+
+	if !errors.Is(err, injectedErr) {
+		t.Fatalf("Confirm() error = %#v, want injected append failure", err)
+	}
+	storedIntent := f.transactions.state.uploadIntent
+	if storedIntent.Status != "pending" || storedIntent.ConfirmedAt != nil ||
+		storedIntent.FailureCode != nil ||
+		!storedIntent.LatestStatusChangeAt.Equal(previousUpdatedAt) {
+		t.Errorf("stored Upload Intent = %#v, want original pending state", storedIntent)
+	}
+	if len(f.transactions.state.artifacts) != 0 || len(f.transactions.state.events) != 0 {
+		t.Errorf("state = %#v, want no committed artifact or event", f.transactions.state)
+	}
+	if f.transactions.state.session.Status != session.StatusIdentityDocumentUploaded ||
+		!f.transactions.state.session.UpdatedAt.Equal(previousUpdatedAt) {
+		t.Errorf("stored session = %#v, want original state", f.transactions.state.session)
+	}
+	if f.storageCalls != 1 || f.extractorCalls != 0 {
+		t.Errorf("external calls = storage:%d extractor:%d, want storage:1 extractor:0", f.storageCalls, f.extractorCalls)
+	}
+}
+
+func TestConfirmBiometricCapturePerformsHeadObjectOutsideTransaction(t *testing.T) {
+	f := newBiometricConfirmFixture(t)
+	f.storage.onHead = func(string) {
+		if f.transactions.transactionActive {
+			t.Error("HeadObject() called while transaction is active")
+		}
+	}
+
+	_, err := f.confirm()
+
+	if err != nil {
+		t.Fatalf("Confirm() error = %#v", err)
+	}
+}
+
+func TestConfirmBiometricCaptureDiscardsStaleExternalResults(t *testing.T) {
+	tests := []struct {
+		name        string
+		mutate      func(*confirmFixture)
+		wantCode    artifact.ErrorCode
+		wantSession bool
+	}{
+		{
+			name: "session status changes",
+			mutate: func(f *confirmFixture) {
+				f.transactions.state.session.Status = session.StatusCreated
+			},
+			wantCode: artifact.CodeConfirmationStale,
+		},
+		{
+			name: "session expiry changes",
+			mutate: func(f *confirmFixture) {
+				f.transactions.state.session.ExpiresAt = f.now.Add(2 * time.Minute)
+			},
+			wantCode: artifact.CodeConfirmationStale,
+		},
+		{
+			name: "resume token hash changes",
+			mutate: func(f *confirmFixture) {
+				f.transactions.state.session.ResumeTokenHash = []byte("rotated-hash")
+			},
+			wantSession: true,
+		},
+		{
+			name: "intent storage key changes",
+			mutate: func(f *confirmFixture) {
+				f.transactions.state.uploadIntent.StorageKey = "changed-biometric-key"
+			},
+			wantCode: artifact.CodeConfirmationStale,
+		},
+		{
+			name: "intent expiry changes",
+			mutate: func(f *confirmFixture) {
+				f.transactions.state.uploadIntent.ExpiresAt = f.now.Add(6 * time.Minute)
+			},
+			wantCode: artifact.CodeConfirmationStale,
+		},
+		{
+			name: "intent becomes superseded",
+			mutate: func(f *confirmFixture) {
+				f.transactions.state.uploadIntent.Status = "superseded"
+			},
+			wantCode: artifact.CodeUploadIntentSuperseded,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newBiometricConfirmFixture(t)
+			f.tokens.equalFn = bytes.Equal
+			f.storage.onHead = func(string) {
+				tt.mutate(f)
+			}
+
+			_, err := f.confirm()
+
+			if tt.wantSession {
+				var serviceError *session.Error
+				if !errors.As(err, &serviceError) || serviceError.Code != session.CodeInvalidResumeToken {
+					t.Fatalf("Confirm() error = %#v, want %s", err, session.CodeInvalidResumeToken)
+				}
+			} else {
+				requireArtifactError(t, err, tt.wantCode, "")
+			}
+			if f.transactions.state.uploadIntent.ConfirmedAt != nil ||
+				len(f.transactions.state.artifacts) != 0 ||
+				len(f.transactions.state.events) != 0 {
+				t.Errorf("state = %#v, want no confirmation effects", f.transactions.state)
+			}
+			if f.storageCalls != 1 || f.extractorCalls != 0 || f.transactions.loadDetailsCalls != 0 {
+				t.Errorf(
+					"calls = storage:%d extractor:%d details:%d, want storage:1 extractor:0 details:0",
+					f.storageCalls,
+					f.extractorCalls,
+					f.transactions.loadDetailsCalls,
+				)
+			}
+		})
+	}
 }
 
 func TestConfirmIdentityDocumentRecordsMismatchAtomically(t *testing.T) {
@@ -1275,6 +1633,7 @@ func (m *memoryTransactions) WithinTransaction(ctx context.Context, operation fu
 	err := operation(&memoryTransaction{
 		state:          &next,
 		appendEventErr: m.appendEventErr,
+		owner:          m,
 	})
 	m.transactionActive = false
 	if err != nil {
@@ -1405,6 +1764,7 @@ func (m *memoryTransaction) LockUploadIntent(_ context.Context, sessionID uuid.U
 }
 
 func (m *memoryTransaction) LoadPersonalDetails(_ context.Context, sessionID uuid.UUID) (personaldetails.PersonalDetails, error) {
+	m.owner.loadDetailsCalls++
 	return loadPersonalDetails(m.state, sessionID)
 }
 

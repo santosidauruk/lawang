@@ -54,3 +54,47 @@ PASS
 GOCACHE=/tmp/lawang-go-build STATICCHECK_CACHE=/tmp/lawang-go-staticcheck make staticcheck
 PASS
 ```
+
+## Checkpoint 2: application confirmation without extraction
+
+Checkpoint 2 is complete. The retained user tracer proves that the owned pending
+Upload Intent selects Biometric Capture behavior through the existing public
+`artifact.Service.Confirm` method. No request-supplied kind or parallel biometric
+service was added.
+
+The application checks real object metadata before the short database transaction.
+Biometric Capture accepts JPEG/PNG, requires a non-zero object, and uses an inclusive
+5 MiB maximum. PDF and other content types are rejected with bounded
+`INVALID_OBJECT_METADATA` reasons. Identity Document keeps its existing inclusive
+10 MiB JPEG/PNG/PDF policy.
+
+Biometric confirmation does not load immutable Personal Details and never calls the
+DocumentExtractor. The short transaction re-reads the session and intent, rejects a
+changed kind before any kind-specific work, then commits the confirmed intent,
+accepted Biometric Verification Artifact, `biometric_capture_uploaded` state, and
+accepted `confirm_biometric_capture` event as one unit. Injecting final event failure
+rolls back all memory effects. Session/token/intent/key/expiry changes during
+`HeadObject` discard the external result without partial writes.
+
+Two sibling tests produced meaningful RED evidence: 5 MiB plus one byte was initially
+accepted by the Identity Document size policy, and PDF was initially accepted by the
+shared content-type policy. A third RED showed that changing the intent kind during
+external I/O reached a raw domain transition error; the guarded transaction now
+rejects that change as `CONFIRMATION_STALE` before loading Personal Details.
+
+Verification evidence on 2026-08-13:
+
+```text
+GOCACHE=/tmp/lawang-go-build go test ./internal/application/artifact -count=1
+ok github.com/santosidauruk/lawang-go/internal/application/artifact
+
+GOCACHE=/tmp/lawang-go-build go test -race ./internal/application/artifact -count=1
+ok github.com/santosidauruk/lawang-go/internal/application/artifact
+
+GOCACHE=/tmp/lawang-go-build STATICCHECK_CACHE=/tmp/lawang-go-staticcheck make quality
+PASS: fmt-check, vet, staticcheck, full race suite, sqlc-diff,
+migration-validate, and compose-validate
+
+ok github.com/santosidauruk/lawang-go/tests/integration
+ok github.com/santosidauruk/lawang-go/tests/schema
+```

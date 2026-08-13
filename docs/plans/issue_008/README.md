@@ -1,6 +1,7 @@
 # Issue 008 Collaboration Plan
 
-Status: approved on 2026-08-12; Checkpoint 1 selesai, Checkpoint 2 `ready-for-human`.
+Status: approved on 2026-08-12; Checkpoint 1-2 selesai, Checkpoint 3
+`ready-for-human`.
 
 Dokumen ini adalah pintu masuk untuk Issue 008. Ia membagi kontrak Biometric Capture
 menjadi checkpoint belajar yang tetap menghasilkan perilaku observable, bukan fase
@@ -162,13 +163,14 @@ adapter S3 kedua.
 
 ## Handoff checkpoint aktif
 
-Checkpoint 1 selesai pada 2026-08-13. Mulai hanya dari Checkpoint 2:
+Checkpoint 2 selesai pada 2026-08-13. Mulai hanya dari Checkpoint 3:
 
-1. baca panduan Checkpoint 2 dan source/test aktual;
-2. jalankan `git status --short --untracked-files=all` dan focused baseline;
-3. agent menjelaskan fixture confirmation existing dan menyiapkan scaffold tanpa
+1. baca panduan Checkpoint 3 dan PostgreSQL integration fixture aktual;
+2. jalankan `git status --short --untracked-files=all`, cek Docker Desktop, dan
+   focused PostgreSQL baseline;
+3. agent menjelaskan fixture PostgreSQL existing dan menyiapkan scaffold tanpa
    mengisi tracer user;
-4. user menulis satu Biometric Confirm success tracer dan minimal GREEN;
-5. agent mereview sebelum sibling metadata/failure work.
+4. user menulis satu real PostgreSQL Biometric Confirm success tracer;
+5. agent mereview sebelum rollback/constraint sibling work.
 
-Jangan men-scaffold Checkpoint 3-6 sebelum Checkpoint 2 mencapai review gate.
+Jangan men-scaffold Checkpoint 4-6 sebelum Checkpoint 3 mencapai review gate.

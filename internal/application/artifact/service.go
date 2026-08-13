@@ -222,7 +222,7 @@ func (s *Service) Confirm(ctx context.Context, sessionID uuid.UUID, rawToken str
 			return nil
 		}
 
-		if err := validatePendingIdentityIntent(rereadIntent, startedAt); err != nil {
+		if err := validatePendingUploadIntent(rereadIntent, startedAt); err != nil {
 			return err
 		}
 
@@ -248,30 +248,8 @@ func (s *Service) Confirm(ctx context.Context, sessionID uuid.UUID, rawToken str
 			return &Error{Code: CodeObjectStorageFailed}
 		}
 
-		const maximumIdentityDocumentSize int64 = 10 * 1024 * 1024
-
-		if objectMetadata.SizeBytes <= 0 {
-			return &Error{
-				Code:   CodeInvalidObjectMetadata,
-				Reason: ReasonObjectEmpty,
-			}
-		}
-
-		if objectMetadata.SizeBytes > maximumIdentityDocumentSize {
-			return &Error{
-				Code:   CodeInvalidObjectMetadata,
-				Reason: ReasonObjectTooLarge,
-			}
-		}
-
-		switch objectMetadata.ContentType {
-		case "image/jpeg", "image/png", "application/pdf":
-			// valid
-		default:
-			return &Error{
-				Code:   CodeInvalidObjectMetadata,
-				Reason: ReasonUnsupportedContentType,
-			}
+		if err := validateObjectMetadata(rereadIntent.Kind, objectMetadata); err != nil {
+			return err
 		}
 
 		var extraction DocumentExtraction
@@ -304,17 +282,6 @@ func (s *Service) Confirm(ctx context.Context, sessionID uuid.UUID, rawToken str
 				return err
 			}
 
-			var lockedDetails personaldetails.PersonalDetails
-			if lockedIntent.Kind == "identity_document" {
-				lockedDetails, err = tx.LoadPersonalDetails(ctx, sessionID)
-				if errors.Is(err, ErrPersonalDetailsNotFound) {
-					return &Error{Code: CodeConfirmationStale}
-				}
-				if err != nil {
-					return err
-				}
-			}
-
 			confirmedAt := s.clock.Now()
 			if !s.tokens.Equal(s.tokens.Hash(rawToken), lockedSession.ResumeTokenHash) {
 				return &session.Error{
@@ -333,8 +300,23 @@ func (s *Service) Confirm(ctx context.Context, sessionID uuid.UUID, rawToken str
 				return &Error{Code: CodeConfirmationStale}
 			}
 
-			if err := validatePendingIdentityIntent(lockedIntent, confirmedAt); err != nil {
+			if lockedIntent.Kind != rereadIntent.Kind {
+				return &Error{Code: CodeConfirmationStale}
+			}
+
+			if err := validatePendingUploadIntent(lockedIntent, confirmedAt); err != nil {
 				return err
+			}
+
+			var lockedDetails personaldetails.PersonalDetails
+			if lockedIntent.Kind == "identity_document" {
+				lockedDetails, err = tx.LoadPersonalDetails(ctx, sessionID)
+				if errors.Is(err, ErrPersonalDetailsNotFound) {
+					return &Error{Code: CodeConfirmationStale}
+				}
+				if err != nil {
+					return err
+				}
 			}
 
 			if lockedIntent.StorageKey != rereadIntent.StorageKey {
@@ -456,7 +438,7 @@ func (s *Service) Confirm(ctx context.Context, sessionID uuid.UUID, rawToken str
 	return summary, nil
 }
 
-func validatePendingIdentityIntent(intent UploadIntent, now time.Time) error {
+func validatePendingUploadIntent(intent UploadIntent, now time.Time) error {
 	if intent.Status == "superseded" {
 		return &Error{Code: CodeUploadIntentSuperseded}
 	}
@@ -470,6 +452,35 @@ func validatePendingIdentityIntent(intent UploadIntent, now time.Time) error {
 		return &Error{Code: CodeInvalidUploadIntentKind}
 	}
 	return nil
+}
+
+func validateObjectMetadata(kind string, metadata ObjectMetadata) error {
+	maximumSize := int64(10 * 1024 * 1024)
+	if kind == "biometric_capture" {
+		maximumSize = 5 * 1024 * 1024
+	}
+
+	if metadata.SizeBytes <= 0 {
+		return &Error{Code: CodeInvalidObjectMetadata, Reason: ReasonObjectEmpty}
+	}
+	if metadata.SizeBytes > maximumSize {
+		return &Error{Code: CodeInvalidObjectMetadata, Reason: ReasonObjectTooLarge}
+	}
+
+	switch kind {
+	case "identity_document":
+		switch metadata.ContentType {
+		case "image/jpeg", "image/png", "application/pdf":
+			return nil
+		}
+	case "biometric_capture":
+		switch metadata.ContentType {
+		case "image/jpeg", "image/png":
+			return nil
+		}
+	}
+
+	return &Error{Code: CodeInvalidObjectMetadata, Reason: ReasonUnsupportedContentType}
 }
 
 var ErrUploadIntentNotFound = errors.New("upload intent not found")
