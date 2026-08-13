@@ -226,16 +226,21 @@ func (s *Service) Confirm(ctx context.Context, sessionID uuid.UUID, rawToken str
 			return err
 		}
 
-		if rereadSession.Status != session.StatusPersonalDetailsSubmitted {
+		if rereadIntent.Kind == "identity_document" && rereadSession.Status != session.StatusPersonalDetailsSubmitted {
+			return &Error{Code: CodeConfirmationStale}
+		} else if rereadIntent.Kind == "biometric_capture" && rereadSession.Status != session.StatusIdentityDocumentUploaded {
 			return &Error{Code: CodeConfirmationStale}
 		}
 
-		rereadDetails, err := r.LoadPersonalDetails(ctx, sessionID)
-		if errors.Is(err, ErrPersonalDetailsNotFound) {
-			return &Error{Code: CodeConfirmationStale}
-		}
-		if err != nil {
-			return err
+		var rereadDetails personaldetails.PersonalDetails
+		if rereadIntent.Kind == "identity_document" {
+			rereadDetails, err = r.LoadPersonalDetails(ctx, sessionID)
+			if errors.Is(err, ErrPersonalDetailsNotFound) {
+				return &Error{Code: CodeConfirmationStale}
+			}
+			if err != nil {
+				return err
+			}
 		}
 
 		objectMetadata, err := s.objectStorage.HeadObject(ctx, rereadIntent.StorageKey)
@@ -269,9 +274,12 @@ func (s *Service) Confirm(ctx context.Context, sessionID uuid.UUID, rawToken str
 			}
 		}
 
-		extraction, err := s.extractor.Extract(ctx, rereadIntent.StorageKey)
-		if err != nil {
-			return &Error{Code: CodeDocumentExtractionFailed}
+		var extraction DocumentExtraction
+		if rereadIntent.Kind == "identity_document" {
+			extraction, err = s.extractor.Extract(ctx, rereadIntent.StorageKey)
+			if err != nil {
+				return &Error{Code: CodeDocumentExtractionFailed}
+			}
 		}
 
 		eventMetadata, err := sessionevent.NewMetadata(sessionevent.OutcomeAccepted)
@@ -296,12 +304,15 @@ func (s *Service) Confirm(ctx context.Context, sessionID uuid.UUID, rawToken str
 				return err
 			}
 
-			lockedDetails, err := tx.LoadPersonalDetails(ctx, sessionID)
-			if errors.Is(err, ErrPersonalDetailsNotFound) {
-				return &Error{Code: CodeConfirmationStale}
-			}
-			if err != nil {
-				return err
+			var lockedDetails personaldetails.PersonalDetails
+			if lockedIntent.Kind == "identity_document" {
+				lockedDetails, err = tx.LoadPersonalDetails(ctx, sessionID)
+				if errors.Is(err, ErrPersonalDetailsNotFound) {
+					return &Error{Code: CodeConfirmationStale}
+				}
+				if err != nil {
+					return err
+				}
 			}
 
 			confirmedAt := s.clock.Now()
@@ -334,44 +345,52 @@ func (s *Service) Confirm(ctx context.Context, sessionID uuid.UUID, rawToken str
 				return &Error{Code: CodeConfirmationStale}
 			}
 
-			if lockedDetails.IdentityNumber != rereadDetails.IdentityNumber {
-				return &Error{Code: CodeConfirmationStale}
+			if lockedIntent.Kind == "identity_document" {
+				if lockedDetails.IdentityNumber != rereadDetails.IdentityNumber {
+					return &Error{Code: CodeConfirmationStale}
+				}
+
+				lockedIdentityNumberMismatch := extraction.IdentityNumber != lockedDetails.IdentityNumber
+
+				if lockedIdentityNumberMismatch {
+					failureMetadata, err := sessionevent.NewMetadata(sessionevent.OutcomeLocalValidationFailed)
+					if err != nil {
+						return err
+					}
+
+					if err := tx.MarkUploadIntentValidationFailed(
+						ctx,
+						uploadIntentID,
+						string(ReasonIdentityNumberMismatch),
+						confirmedAt,
+					); err != nil {
+						return err
+					}
+
+					if err := tx.AppendEvent(ctx, session.AppendEventParams{
+						SessionID:  lockedSession.ID,
+						Type:       sessionevent.ConfirmIdentityDocument,
+						Metadata:   failureMetadata,
+						OccurredAt: confirmedAt,
+					}); err != nil {
+						return err
+					}
+
+					outcomeError = &Error{
+						Code:   CodeLocalValidationFailed,
+						Reason: ReasonIdentityNumberMismatch,
+					}
+					return nil
+				}
 			}
 
-			lockedIdentityNumberMismatch := extraction.IdentityNumber != lockedDetails.IdentityNumber
-
-			if lockedIdentityNumberMismatch {
-				failureMetadata, err := sessionevent.NewMetadata(sessionevent.OutcomeLocalValidationFailed)
-				if err != nil {
-					return err
-				}
-
-				if err := tx.MarkUploadIntentValidationFailed(
-					ctx,
-					uploadIntentID,
-					string(ReasonIdentityNumberMismatch),
-					confirmedAt,
-				); err != nil {
-					return err
-				}
-
-				if err := tx.AppendEvent(ctx, session.AppendEventParams{
-					SessionID:  lockedSession.ID,
-					Type:       sessionevent.ConfirmIdentityDocument,
-					Metadata:   failureMetadata,
-					OccurredAt: confirmedAt,
-				}); err != nil {
-					return err
-				}
-
-				outcomeError = &Error{
-					Code:   CodeLocalValidationFailed,
-					Reason: ReasonIdentityNumberMismatch,
-				}
-				return nil
+			var event sessionevent.Type
+			if lockedIntent.Kind == "identity_document" {
+				event = sessionevent.ConfirmIdentityDocument
+			} else {
+				event = sessionevent.ConfirmBiometricCapture
 			}
-
-			nextStatus, err := verificationsession.Transition(lockedSession.Status, sessionevent.ConfirmIdentityDocument)
+			nextStatus, err := verificationsession.Transition(lockedSession.Status, event)
 			if err != nil {
 				return err
 			}
@@ -408,7 +427,7 @@ func (s *Service) Confirm(ctx context.Context, sessionID uuid.UUID, rawToken str
 
 			if err := tx.AppendEvent(ctx, session.AppendEventParams{
 				SessionID:  lockedSession.ID,
-				Type:       sessionevent.ConfirmIdentityDocument,
+				Type:       event,
 				Metadata:   eventMetadata,
 				OccurredAt: confirmedAt,
 			}); err != nil {
@@ -447,7 +466,7 @@ func validatePendingIdentityIntent(intent UploadIntent, now time.Time) error {
 	if !now.Before(intent.ExpiresAt) {
 		return &Error{Code: CodeUploadIntentExpired}
 	}
-	if intent.Kind != "identity_document" {
+	if intent.Kind != "identity_document" && intent.Kind != "biometric_capture" {
 		return &Error{Code: CodeInvalidUploadIntentKind}
 	}
 	return nil

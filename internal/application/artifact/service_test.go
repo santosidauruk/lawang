@@ -144,9 +144,8 @@ func newMemoryTransactions(storedSession session.VerificationSession, storedDeta
 	}
 }
 
-// This was the Checkpoint 2 tracer bullet. Its sibling application behaviors were
-// added only after this public success path became GREEN. PostgreSQL, MinIO, HTTP,
-// replay, and concurrency remain separate checkpoints.
+// This was the Issue 007 application tracer bullet. Keep it as the minimum
+// Identity Document regression while Issue 008 adds the Biometric Capture path.
 func TestConfirmIdentityDocumentAcceptsValidatedUploadAtomically(t *testing.T) {
 
 	// ARRANGE 1 — fixed facts
@@ -206,10 +205,12 @@ func TestConfirmIdentityDocumentAcceptsValidatedUploadAtomically(t *testing.T) {
 		},
 	}
 
+	extractorCalls := 0
 	extractor := stubDocumentExtractor{
 		extraction: artifact.DocumentExtraction{
 			IdentityNumber: identityNumber,
 		},
+		calls: &extractorCalls,
 	}
 	// ARRANGE 4 — public application service
 	// Construct artifact.Service from only the dependencies consumed by confirmation.
@@ -337,6 +338,206 @@ func TestConfirmIdentityDocumentAcceptsValidatedUploadAtomically(t *testing.T) {
 	// Assert the committed in-memory state, not private helper calls. This group of
 	// assertions is one logical behavior: successful confirmation commits its accepted
 	// result atomically.
+}
+
+// TestConfirmBiometricCaptureAcceptsUploadWithoutExtractionAtomically is the
+// user-owned success tracer for Issue 008 Checkpoint 2. Fill this test, remove the
+// Skip and TODO failure, then keep the first meaningful failure as the RED evidence.
+func TestConfirmBiometricCaptureAcceptsUploadWithoutExtractionAtomically(t *testing.T) {
+	// ARRANGE 1 — fixed facts and committed state
+	// Prepare a fixed clock, session UUID, Upload Intent UUID, storage key, and raw
+	// resume token. Start the Verification Session in identity_document_uploaded and
+	// the owned biometric_capture Upload Intent in pending, with future expiries.
+	// Leave the committed Verification Artifact and Session Event collections empty.
+	//
+	// ARRANGE 2 — external boundaries
+	// Return image/jpeg, a non-zero size below 5 MiB, and a non-empty ETag from
+	// ObjectStorage for the exact intent storage key. Configure DocumentExtractor to
+	// fail the test if called, and record whether Personal Details are loaded.
+
+	// ARRANGE 3 — public application service
+	// Reuse only the small memory transaction, coordinator, token, clock, storage, and
+	// extractor fakes already in this file. Do not add a biometric-specific public
+	// method or pass the kind separately to Confirm; the owned Upload Intent decides
+	// the bounded behavior.
+
+	// ACT
+	// Call artifact.Service.Confirm once through its public interface.
+	now := time.Date(2026, 7, 16, 10, 0, 0, 0, time.UTC)
+	id := uuid.MustParse("c6ef7d1c-f625-45e0-81ea-b50d3a3bd91b")
+	uploadIntentID := uuid.MustParse("5f08096e-cc4d-49e8-b657-c42c04e61c91")
+	storageKey := "storage-key"
+	rawToken := "raw-resume-token"
+
+	transactions := newMemoryTransactions(
+		session.VerificationSession{
+			ID:              id,
+			Status:          session.StatusIdentityDocumentUploaded,
+			ResumeTokenHash: []byte("stored-hash"), ExpiresAt: now.Add(time.Minute),
+		},
+		personaldetails.PersonalDetails{},
+		artifact.UploadIntent{
+			ID:                    uploadIntentID,
+			VerificationSessionID: id,
+			Status:                "pending",
+			Kind:                  "biometric_capture",
+			StorageKey:            storageKey,
+			CreatedAt:             now,
+			LatestStatusChangeAt:  now,
+			ExpiresAt:             now.Add(5 * time.Minute),
+		})
+
+	// ARRANGE 2 — committed application state
+	// Build one small in-memory transactor containing:
+	//   - the Verification Session and its stored resume-token hash;
+	//   - immutable Personal Details with one identity number;
+	//   - the pending Upload Intent;
+	//   - empty Verification Artifact and Session Event collections.
+	// Its transaction callback must copy state and publish the copy only when the
+	// callback returns nil, like the Issue 006 memory transactor.
+
+	// ARRANGE 3 — external boundaries
+	// Make ObjectStorage metadata describe an existing JPEG object with non-zero size,
+	// no more than 5 MiB, and a stable ETag. These are boundary fakes, not
+	// assertions about internal method-call order.
+
+	objectStorage := stubObjectStorage{
+		metadata: artifact.ObjectMetadata{
+			ContentType: "image/jpeg",
+			SizeBytes:   1024,
+			ETag:        "biometric-capture-etag",
+		},
+		onHead: func(gotKey string) {
+			if gotKey != storageKey {
+				t.Fatalf("HeadObject() have wrong key, got %q, want %q", gotKey, storageKey)
+			}
+		},
+	}
+	// ARRANGE 4 — public application service
+	// Construct artifact.Service from only the dependencies consumed by confirmation.
+	// The intended public call is:
+	//
+	//   got, err := service.Confirm(ctx, sessionID, rawToken, uploadIntentID)
+	//
+	// and its successful result is session.Summary. Let this test reveal the smallest
+	// useful Transaction, ObjectStorage, and DocumentExtractor interfaces; do not add
+	// methods for later failure/replay scenarios yet.
+	tokens := stubTokenIssuer{
+		hash:  []byte("stored-hash"),
+		equal: true,
+	}
+
+	coordinator := stubConfirmCoordinator{
+		reader:     transactions,
+		transactor: transactions,
+	}
+
+	extractor := stubDocumentExtractor{
+		extraction: artifact.DocumentExtraction{},
+		onExtract: func(storageKey string) {
+			t.Fatalf("Extract() dipanggil untuk biometric key %q", storageKey)
+		},
+	}
+
+	service := artifact.NewService(
+		transactions,
+		coordinator,
+		objectStorage,
+		extractor,
+		tokens,
+		fixedClock{now: now},
+	)
+
+	got, err := service.Confirm(context.Background(), id, rawToken, uploadIntentID)
+	// ASSERT — one successful atomic behavior
+	// Verify the returned summary is biometric_capture_uploaded and HeadObject used
+	// the exact intent key. Verify Personal Details and DocumentExtractor were never
+	// used. Verify the committed memory state contains:
+	//   1. the same Upload Intent confirmed at the fixed time;
+	//   2. exactly one biometric_capture Verification Artifact with the JPEG metadata;
+	//   3. one transition to biometric_capture_uploaded; and
+	//   4. exactly one accepted confirm_biometric_capture Session Event.
+	// Keep PostgreSQL, MinIO, replay, concurrency, PNG, and rejection cases out of this
+	// tracer; they belong to later user/agent steps in the checkpoint plan.
+
+	if err != nil {
+		t.Fatalf("Confirm() error = %#v", err)
+	}
+
+	if got.ID != id ||
+		got.Status != session.StatusBiometricCaptureUploaded ||
+		!got.ExpiresAt.Equal(now.Add(time.Minute)) {
+		t.Errorf("Confirm() summary = %#v, want confirmed biometric capture %s", got, id)
+	}
+
+	storedIntent := transactions.state.uploadIntent
+	if storedIntent.Status != "confirmed" ||
+		storedIntent.ConfirmedAt == nil ||
+		!storedIntent.ConfirmedAt.Equal(now) ||
+		!storedIntent.LatestStatusChangeAt.Equal(now) ||
+		storedIntent.FailureCode != nil ||
+		storedIntent.ObjectDeletedAt != nil {
+		t.Errorf("stored upload intent = %#v", storedIntent)
+	}
+
+	if !storedIntent.ExpiresAt.Equal(now.Add(5 * time.Minute)) {
+		t.Errorf(
+			"stored Upload Intent expiry = %s, want unchanged %s",
+			storedIntent.ExpiresAt,
+			now.Add(5*time.Minute),
+		)
+	}
+
+	if len(transactions.state.artifacts) != 1 {
+		t.Fatalf("stored artifacts summary = %d, want exactly 1", len(transactions.state.artifacts))
+	}
+
+	storedArtifact := transactions.state.artifacts[0]
+	if storedArtifact.ID == uuid.Nil ||
+		storedArtifact.VerificationSessionID != id ||
+		storedArtifact.UploadIntentID != uploadIntentID ||
+		storedArtifact.Kind != "biometric_capture" ||
+		storedArtifact.StorageKey != storageKey ||
+		storedArtifact.ContentType != "image/jpeg" ||
+		storedArtifact.SizeBytes != 1024 ||
+		storedArtifact.ETag != "biometric-capture-etag" ||
+		!storedArtifact.CreatedAt.Equal(now) {
+		t.Errorf("stored artifact = %#v, want saved 1 accepted Biometric Capture", storedArtifact)
+	}
+
+	if transactions.state.session.Status !=
+		session.StatusBiometricCaptureUploaded {
+		t.Errorf(
+			"stored session status = %q, want %q",
+			transactions.state.session.Status,
+			session.StatusBiometricCaptureUploaded,
+		)
+	}
+
+	if !transactions.state.session.UpdatedAt.Equal(now) {
+		t.Errorf(
+			"stored session updatedAt = %s, want %s",
+			transactions.state.session.UpdatedAt,
+			now,
+		)
+	}
+
+	if len(transactions.state.events) != 1 {
+		t.Fatalf("stored events = %d, want exactly 1", len(transactions.state.events))
+	}
+
+	event := transactions.state.events[0]
+	if event.SessionID != id ||
+		event.Type != sessionevent.ConfirmBiometricCapture ||
+		event.Metadata.Outcome() != sessionevent.OutcomeAccepted ||
+		!event.OccurredAt.Equal(now) {
+		t.Fatalf("stored event = %#v, want safe confirm_biometric_capture with accepted metadata", event)
+	}
+
+	if transactions.loadDetailsCalls != 0 {
+		t.Fatalf("external calls = extractor:%v and loadDetailsCalls:%d, want 0", extractor.calls, transactions.loadDetailsCalls)
+	}
+
 }
 
 func TestConfirmIdentityDocumentRecordsMismatchAtomically(t *testing.T) {
@@ -598,6 +799,7 @@ func TestConfirmIdentityDocumentRejectsExpiredIntentBeforeExternalIO(t *testing.
 	_, err := f.confirm()
 
 	requireArtifactError(t, err, artifact.CodeUploadIntentExpired, "")
+
 	if f.storageCalls != 0 || f.extractorCalls != 0 {
 		t.Errorf("external calls = storage:%d extractor:%d, want 0", f.storageCalls, f.extractorCalls)
 	}
@@ -649,18 +851,6 @@ func TestConfirmIdentityDocumentRejectsWrongInitialSessionStatusBeforeExternalIO
 	_, err := f.confirm()
 
 	requireArtifactError(t, err, artifact.CodeConfirmationStale, "")
-	if f.storageCalls != 0 || f.extractorCalls != 0 {
-		t.Errorf("external calls = storage:%d extractor:%d, want 0", f.storageCalls, f.extractorCalls)
-	}
-}
-
-func TestConfirmIdentityDocumentRejectsDifferentIntentKindBeforeExternalIO(t *testing.T) {
-	f := newConfirmFixture()
-	f.transactions.state.uploadIntent.Kind = "biometric_capture"
-
-	_, err := f.confirm()
-
-	requireArtifactError(t, err, artifact.CodeInvalidUploadIntentKind, "")
 	if f.storageCalls != 0 || f.extractorCalls != 0 {
 		t.Errorf("external calls = storage:%d extractor:%d, want 0", f.storageCalls, f.extractorCalls)
 	}
