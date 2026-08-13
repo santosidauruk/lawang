@@ -28,9 +28,9 @@ handlers alone are insufficient evidence.
 ## Active collaboration plan
 
 The approved user/agent checkpoint split is documented in
-[`docs/plans/issue_008/README.md`](../plans/issue_008/README.md). Checkpoint 1 is the
-active learning checkpoint. Do not begin later checkpoints before the active
-checkpoint reaches its documented review gate.
+[`docs/plans/issue_008/README.md`](../plans/issue_008/README.md). Checkpoint 1 is
+complete; Checkpoint 2 is the active learning checkpoint. Do not begin later
+checkpoints before the active checkpoint reaches its documented review gate.
 
 ## Scope boundaries
 

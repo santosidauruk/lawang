@@ -154,6 +154,12 @@ Event.
   happens outside the database transaction; only after signing succeeds does a
   short guarded transaction supersede the previous pending intent and insert the
   new one.
+- Identity Document Upload Intents require `personal_details_submitted`; Biometric
+  Capture Upload Intents require `identity_document_uploaded`. Biometric keys use
+  `verification-sessions/{sessionID}/biometric_capture/{intentID}`. The different
+  required states enforce public evidence ordering, while the shared UUID, TTL,
+  presign, guarded transaction, and `(session, kind)` supersession rules remain the
+  same.
 - One Upload Intent creates at most one Verification Artifact.
 - A Verification Artifact exists only after metadata checks and required local
   validation succeed.

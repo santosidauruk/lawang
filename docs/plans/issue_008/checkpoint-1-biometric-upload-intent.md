@@ -1,6 +1,6 @@
 # Checkpoint 1 — Kind Policy dan Biometric Upload Intent
 
-Status: ready-for-human; checkpoint aktif.
+Status: selesai pada 2026-08-13; tracer user, sibling agent, dan regression GREEN.
 
 ## Tujuan
 
@@ -32,7 +32,25 @@ Jangan membuat file policy/generic abstraction sebelum RED menunjukkan seam (tit
 sambungan dalam kode tempat behavior dapat divariasikan tanpa membongkar seluruh
 sistem) yang benar-benar dibutuhkan.
 
-## Bagian user
+## Hasil checkpoint
+
+Tracer user `TestCreateBiometricUploadIntentPresignsBeforeAtomicReplacement`
+dipertahankan. Minimal GREEN memilih required state secara explicit untuk kedua kind,
+sementara storage-key segment memakai exact kind yang telah dibatasi sebelum session,
+presigner, atau transaction disentuh. Tidak ada registry atau generic artifact
+framework baru.
+
+Agent continuation membuktikan wrong initial state, stale transactional re-read,
+presign failure tanpa database effect, kind-scoped supersede yang mempertahankan
+confirmed Identity Document history, repeated create dengan fresh ID/key, isolasi key
+kedua kind, serta invalid-kind short-circuit. Memory transaction hanya membuktikan
+application effects; PostgreSQL race invariant tetap Checkpoint 3.
+
+Seluruh sibling test langsung GREEN ketika pertama dijalankan karena minimal GREEN
+user sudah menerapkan shared flow untuk exact bounded kind. Tidak ada kegagalan RED
+yang direkayasa dan tidak ada production code tambahan pada agent continuation.
+
+## Bagian user — selesai
 
 1. `[test fixture][application service]` Setelah agent menjelaskan fixture yang sudah
    ada, user menyiapkan Verification Session berstatus
@@ -75,7 +93,7 @@ Agent memeriksa:
 - abstraction hanya mengumpulkan invariant yang benar-benar sama;
 - Identity Document tests tetap GREEN tanpa kontrak berubah.
 
-## Bagian agent
+## Bagian agent — selesai
 
 Setelah tracer user direview dan GREEN, agent menutup satu sibling behavior per
 siklus RED -> GREEN:
@@ -107,4 +125,26 @@ Minimum verification:
 ```sh
 go test ./internal/application/artifact -run 'UploadIntent' -count=1
 go test -race ./internal/application/artifact -run 'UploadIntent' -count=1
+```
+
+Verification evidence pada 2026-08-13:
+
+```text
+GOCACHE=/tmp/lawang-go-build go test ./internal/application/artifact -run 'UploadIntent' -count=1
+ok github.com/santosidauruk/lawang-go/internal/application/artifact
+
+GOCACHE=/tmp/lawang-go-build go test -race ./internal/application/artifact -run 'UploadIntent' -count=1
+ok github.com/santosidauruk/lawang-go/internal/application/artifact
+
+GOCACHE=/tmp/lawang-go-build go vet ./internal/application/artifact
+PASS
+
+GOCACHE=/tmp/lawang-go-build go test -race ./internal/application/artifact -count=1
+ok github.com/santosidauruk/lawang-go/internal/application/artifact
+
+GOCACHE=/tmp/lawang-go-build go vet ./...
+PASS
+
+GOCACHE=/tmp/lawang-go-build STATICCHECK_CACHE=/tmp/lawang-go-staticcheck make staticcheck
+PASS
 ```

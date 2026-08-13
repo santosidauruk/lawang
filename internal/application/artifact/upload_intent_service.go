@@ -68,7 +68,7 @@ func (s *UploadIntentService) Create(
 	rawToken string,
 	kind string,
 ) (CreatedUploadIntent, error) {
-	if kind != "identity_document" {
+	if kind != "identity_document" && kind != "biometric_capture" {
 		return CreatedUploadIntent{}, &Error{Code: CodeInvalidUploadIntentKind}
 	}
 
@@ -87,14 +87,23 @@ func (s *UploadIntentService) Create(
 	if !createdAt.Before(storedSession.ExpiresAt) {
 		return CreatedUploadIntent{}, &session.Error{Code: session.CodeSessionExpired}
 	}
-	if storedSession.Status != session.StatusPersonalDetailsSubmitted {
-		return CreatedUploadIntent{}, &Error{Code: CodeUploadIntentStale}
+
+	switch kind {
+	case "identity_document":
+		if storedSession.Status != session.StatusPersonalDetailsSubmitted {
+			return CreatedUploadIntent{}, &Error{Code: CodeUploadIntentStale}
+		}
+	case "biometric_capture":
+		if storedSession.Status != session.StatusIdentityDocumentUploaded {
+			return CreatedUploadIntent{}, &Error{Code: CodeUploadIntentStale}
+		}
 	}
 
 	intentID := uuid.New()
 	storageKey := fmt.Sprintf(
-		"verification-sessions/%s/identity_document/%s",
+		"verification-sessions/%s/%s/%s",
 		sessionID,
+		kind,
 		intentID,
 	)
 	uploadURL, err := s.presigner.PresignUpload(ctx, storageKey, uploadIntentTTL)

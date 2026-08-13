@@ -1,6 +1,6 @@
 # Checkpoint 2 — Application Confirmation tanpa Document Extractor
 
-Status: approved; menunggu Checkpoint 1 selesai.
+Status: ready-for-human; checkpoint aktif setelah Checkpoint 1 selesai 2026-08-13.
 
 ## Tujuan
 
