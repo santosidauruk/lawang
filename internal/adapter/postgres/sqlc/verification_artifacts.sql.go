@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const acquireArtifactConfirmLock = `-- name: AcquireArtifactConfirmLock :exec
@@ -19,6 +20,22 @@ SELECT pg_advisory_lock($1::bigint)
 func (q *Queries) AcquireArtifactConfirmLock(ctx context.Context, lockKey int64) error {
 	_, err := q.db.Exec(ctx, acquireArtifactConfirmLock, lockKey)
 	return err
+}
+
+const hasRequiredAcceptedArtifacts = `-- name: HasRequiredAcceptedArtifacts :one
+SELECT
+    COUNT(*) FILTER (WHERE kind = 'identity_document') = 1
+    AND COUNT(*) FILTER (WHERE kind = 'biometric_capture') = 1
+    AS is_accepted
+FROM verification_artifacts
+WHERE verification_session_id = $1
+`
+
+func (q *Queries) HasRequiredAcceptedArtifacts(ctx context.Context, sessionID uuid.UUID) (pgtype.Bool, error) {
+	row := q.db.QueryRow(ctx, hasRequiredAcceptedArtifacts, sessionID)
+	var is_accepted pgtype.Bool
+	err := row.Scan(&is_accepted)
+	return is_accepted, err
 }
 
 const insertVerificationArtifact = `-- name: InsertVerificationArtifact :exec

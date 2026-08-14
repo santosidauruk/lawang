@@ -29,8 +29,9 @@ handlers alone are insufficient evidence.
 
 The approved user/agent checkpoint split is documented in
 [`docs/plans/issue_008/README.md`](../plans/issue_008/README.md). Checkpoints 1-3 are
-complete; Checkpoint 4 is next and still awaits its agent scaffold. Do not begin
-Checkpoint 5-6 before the active checkpoint reaches its documented review gate.
+complete; Checkpoint 4 is active with its user-owned PostgreSQL tracer scaffold. Do
+not begin Checkpoint 5-6 before the active checkpoint reaches its documented review
+gate.
 
 ## Scope boundaries
 

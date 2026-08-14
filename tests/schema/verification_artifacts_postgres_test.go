@@ -79,6 +79,24 @@ func TestVerificationArtifactMigrationAndConstraintProof(t *testing.T) {
 		t.Fatalf("constraint proof did not emit its completion marker:\n%s", output)
 	}
 	t.Logf("Verification Artifact constraint proof output:\n%s", output)
+
+	readinessOutput := runSchemaSQLFile(
+		t,
+		ctx,
+		container,
+		"../../sql/proofs/007_submission_readiness.sql",
+		"/tmp/007_submission_readiness.sql",
+	)
+	if !strings.Contains(
+		readinessOutput,
+		"proof passed: same-session accepted artifact submission readiness",
+	) {
+		t.Fatalf(
+			"submission readiness proof did not emit its completion marker:\n%s",
+			readinessOutput,
+		)
+	}
+	t.Logf("Submission readiness SQL proof output:\n%s", readinessOutput)
 }
 
 func runSchemaSQLFile(

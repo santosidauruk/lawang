@@ -1,6 +1,6 @@
 # Checkpoint 4 — Artifact-Derived Submission Readiness
 
-Status: approved; menunggu agent scaffold setelah Checkpoint 3 selesai 2026-08-14.
+Status: aktif; scaffold siap untuk bagian user pada 2026-08-14.
 
 ## Tujuan
 
@@ -45,6 +45,32 @@ menjadi pengganti artifact predicate.
 
 Nama interface/result belum dibekukan. Ia harus muncul dari tracer setelah user
 menyetujui boundary internal-only.
+
+## Tracer yang disiapkan
+
+Workbench user berada di
+`tests/integration/artifact_submission_readiness_postgres_test.go` sebagai
+`TestAcceptedIdentityAndBiometricArtifactsMakeSessionSubmissionReady`.
+
+Scaffold sudah menyediakan disposable PostgreSQL helper, waktu dan UUID tetap,
+struktur fixture same-session, ACT melalui boundary produksi, serta assertion satu
+jawaban. Ia sengaja masih `Skip` dan memiliki failure marker; query, bentuk boundary,
+seed artifact, dan assertion readiness belum diisi agar konsep pertama tetap milik
+user.
+
+Mulai dengan menghapus `Skip` dan failure marker saat fixture serta call tracer mulai
+ditulis. Pertahankan kegagalan bermakna pertama sebagai bukti RED. Focused command:
+
+```sh
+GOCACHE=/tmp/lawang-go-build go test ./tests/integration \
+  -run '^TestAcceptedIdentityAndBiometricArtifactsMakeSessionSubmissionReady$' \
+  -count=1 -v
+```
+
+Jangan membuat proof negatif, migration, route, readiness response field, atau
+submission service pada bagian user ini. File proof success baru ditambahkan setelah
+query tracer terbentuk; gunakan nomor forward berikutnya dan jangan mengubah proof
+constraint `006` untuk menyembunyikan dua konsep dalam satu file.
 
 ## Bagian user
 

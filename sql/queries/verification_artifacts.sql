@@ -20,3 +20,11 @@ SELECT pg_advisory_lock(sqlc.arg(lock_key)::bigint);
 
 -- name: ReleaseArtifactConfirmLock :one
 SELECT pg_advisory_unlock(sqlc.arg(lock_key)::bigint);
+
+-- name: HasRequiredAcceptedArtifacts :one
+SELECT
+    COUNT(*) FILTER (WHERE kind = 'identity_document') = 1
+    AND COUNT(*) FILTER (WHERE kind = 'biometric_capture') = 1
+    AS is_accepted
+FROM verification_artifacts
+WHERE verification_session_id = sqlc.arg(session_id);

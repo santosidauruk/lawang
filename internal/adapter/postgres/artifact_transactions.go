@@ -80,6 +80,17 @@ func (t *ArtifactTransactions) WithinUploadIntentTransaction(
 	return tx.Commit(ctx)
 }
 
+func (t *ArtifactTransactions) HasRequiredAcceptedArtifacts(ctx context.Context, sessionID uuid.UUID) (bool, error) {
+	b, err := t.queries.HasRequiredAcceptedArtifacts(ctx, sessionID)
+	if err != nil {
+		return false, err
+	}
+	if !b.Valid {
+		return false, errors.New("artifacts is not accepted yet")
+	}
+	return b.Bool, nil
+}
+
 func (t *artifactTransaction) LockSession(ctx context.Context, sessionID uuid.UUID) (session.VerificationSession, error) {
 	row, err := t.queries.LockVerificationSessionByID(ctx, sessionID)
 	if errors.Is(err, pgx.ErrNoRows) {

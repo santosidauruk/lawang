@@ -1,7 +1,7 @@
 # Issue 008 Collaboration Plan
 
-Status: approved on 2026-08-12; Checkpoint 1-3 selesai, Checkpoint 4 menunggu
-agent scaffold.
+Status: approved on 2026-08-12; Checkpoint 1-3 selesai, Checkpoint 4 sudah
+di-scaffold dan aktif untuk bagian user.
 
 Dokumen ini adalah pintu masuk untuk Issue 008. Ia membagi kontrak Biometric Capture
 menjadi checkpoint belajar yang tetap menghasilkan perilaku observable, bukan fase
@@ -163,6 +163,7 @@ adapter S3 kedua.
 
 ## Handoff checkpoint aktif
 
-Checkpoint 3 selesai pada 2026-08-14. Checkpoint 4 adalah checkpoint berikutnya,
-tetapi agent belum menyiapkan fixture workbench-nya. Jangan mulai query/readiness
-implementation sebelum scaffold Checkpoint 4 dan user-owned tracer siap.
+Checkpoint 3 selesai pada 2026-08-14. Checkpoint 4 aktif dengan user-owned tracer di
+`tests/integration/artifact_submission_readiness_postgres_test.go`. User mengerjakan
+satu success RED -> GREEN lalu berhenti pada `[review]`; jangan mulai negative matrix
+atau Checkpoint 5 sebelum review gate tersebut selesai.
