@@ -111,6 +111,18 @@ SELECT
     now()
 FROM submission_readiness_success_fixture;
 
+ANALYZE verification_artifacts;
+
+EXPLAIN (COSTS OFF)
+SELECT
+    COUNT(*) FILTER (WHERE kind = 'identity_document') = 1
+    AND COUNT(*) FILTER (WHERE kind = 'biometric_capture') = 1
+FROM verification_artifacts
+WHERE verification_session_id = (
+    SELECT session_id
+    FROM submission_readiness_success_fixture
+);
+
 DO $proof$
 DECLARE
     target_session_id uuid;

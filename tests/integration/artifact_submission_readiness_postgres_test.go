@@ -44,11 +44,8 @@ func TestAcceptedIdentityAndBiometricArtifactsMakeSessionSubmissionReady(t *test
 		biometricIntentID,
 	)
 
-	// ARRANGE 2 — one same-session accepted-artifact fixture
-	// TODO(user): seed one Verification Session. Its state may be
-	// biometric_capture_uploaded so the row represents a valid completed history,
-	// but the readiness query itself must not derive its answer from session state.
-	//
+	// ARRANGE 2 — one same-session accepted-artifact fixture. The state represents a
+	// completed history, but the readiness query must not derive its answer from it.
 	tokens := session.NewProductionCryptoTokens()
 	rawToken := "readiness-token-" + uuid.NewString()
 	if _, err := database.Exec(ctx, `
@@ -65,10 +62,8 @@ func TestAcceptedIdentityAndBiometricArtifactsMakeSessionSubmissionReady(t *test
 		t.Fatalf("insert fixture Verification Session: %v", err)
 	}
 
-	// TODO(user): seed one confirmed identity_document Upload Intent and its accepted
-	// Verification Artifact. Keep intent ID, session ID, kind, and storage key
-	// ownership exact so PostgreSQL constraints remain authoritative.
-	//
+	// Seed one confirmed Identity Document Upload Intent and its accepted Verification
+	// Artifact with exact intent/session/kind/key ownership.
 	if _, err := database.Exec(ctx, `
 		INSERT INTO upload_intents (
 			id,
@@ -129,9 +124,8 @@ func TestAcceptedIdentityAndBiometricArtifactsMakeSessionSubmissionReady(t *test
 	`, sessionID, identityConfirmedAt); err != nil {
 		t.Fatalf("insert fixture Identity Document Session Event: %v", err)
 	}
-	// TODO(user): seed one confirmed biometric_capture Upload Intent and its accepted
-	// Verification Artifact for the same session, with a distinct intent ID and key.
-	// No object-storage fake or stored object belongs in this test.
+	// Seed one confirmed Biometric Capture Upload Intent and its accepted Verification
+	// Artifact for the same session, with a distinct intent ID and key.
 
 	if _, err := database.Exec(ctx, `
 		INSERT INTO upload_intents (
@@ -154,7 +148,7 @@ func TestAcceptedIdentityAndBiometricArtifactsMakeSessionSubmissionReady(t *test
 		biometricConfirmedAt,
 		biometricIntentExpiresAt,
 	); err != nil {
-		t.Fatalf("insert fixture pending Biometric Capture Upload Intent: %v", err)
+		t.Fatalf("insert fixture confirmed Biometric Capture Upload Intent: %v", err)
 	}
 
 	if _, err := database.Exec(ctx, `
@@ -188,28 +182,16 @@ func TestAcceptedIdentityAndBiometricArtifactsMakeSessionSubmissionReady(t *test
 		t.Fatalf("insert fixture Biometric Capture Session Event: %v", err)
 	}
 
-	// ACT — internal, transaction-compatible readiness boundary
-	// TODO(user): call the narrow PostgreSQL-backed boundary with sessionID. Let the
-	// first meaningful compile/test failure expose the missing production query or
-	// adapter method. Do not query database rows directly from the assertion: the
-	// tracer must exercise the production boundary that Issue 009 can call from its
-	// guarded transaction.
+	// ACT — internal, transaction-compatible artifact predicate
 	artifacts := postgres.NewArtifactTransactions(database)
 
 	ready, err := artifacts.HasRequiredAcceptedArtifacts(ctx, sessionID)
 	if err != nil {
-		t.Fatalf("Has Required Accepted Artifacts is error: %v", err)
+		t.Fatalf("HasRequiredAcceptedArtifacts() error = %v", err)
 	}
 
 	// ASSERT — one observable answer
-	// TODO(user): require no error and readiness == true. The reason must be the two
-	// exact accepted artifact kinds owned by sessionID, not Upload Intent status,
-	// object presence, or session state alone.
 	if !ready {
-		t.Errorf("Has Required Accepted Artifacts is %t, want true", ready)
+		t.Errorf("HasRequiredAcceptedArtifacts() = %t, want true", ready)
 	}
-
-	// These anchors keep the scaffold compiling until the user-owned fixture and call
-	// replace them. Delete this block together with Skip when beginning the tracer.
-
 }

@@ -165,6 +165,9 @@ Event.
   validation succeed.
 - Provider submission requires accepted Identity Document and Biometric Capture
   Verification Artifacts.
+- Submission readiness is an internal artifact-derived predicate, not a public field,
+  authorization, or durable reservation. Re-run it inside the guarded Provider
+  Submission transaction because any earlier standalone result may be stale.
 - Every state transition and Session Event commit atomically.
 - The database constraint and Go event type/constants admit exactly the seven Session
   Event action verbs above; neither layer accepts arbitrary strings.

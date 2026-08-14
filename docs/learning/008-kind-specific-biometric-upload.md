@@ -140,3 +140,52 @@ GOCACHE=/tmp/lawang-go-build STATICCHECK_CACHE=/tmp/lawang-go-staticcheck make q
 PASS: fmt-check, vet, staticcheck, full race suite, sqlc-diff,
 migration-validate, and compose-validate
 ```
+
+## Checkpoint 4: artifact-derived submission readiness
+
+Checkpoint 4 is complete. The retained user tracer proves one internal PostgreSQL
+predicate: a Verification Session has the required accepted evidence only when the
+same session owns both an `identity_document` and a `biometric_capture` Verification
+Artifact. The query returns one boolean and does not inspect object storage, Upload
+Intent status, or session state.
+
+Standalone `true` is a snapshot, not an authorization or reservation. The same
+adapter boundary can bind to a database handle or an existing `pgx.Tx`; Issue 009
+must call it again inside the guarded Provider Submission transaction together with
+the session-state and replay guards.
+
+Agent sibling tests prove `false` for identity-only, biometric-only, a fake stored
+object without accepted artifact, a confirmed Biometric Intent without artifact, a
+validation-failed Identity Intent plus Biometric Artifact, and required artifacts
+split across two sessions. All sibling behaviors were direct GREEN after the reviewed
+success query, so no additional production branch or abstraction was introduced.
+
+`sql/proofs/007_submission_readiness.sql` proves the same-session success predicate
+and logs the actual PostgreSQL plan. The small disposable fixture chooses an
+`Aggregate` over sequential scans; this does not support a production index-usage
+claim. Existing composite ownership and unique `(verification_session_id, kind)`
+constraints remain sufficient, so Checkpoint 4 adds no migration.
+
+Verification evidence on 2026-08-14:
+
+```text
+GOCACHE=/tmp/lawang-go-build go test ./tests/integration ./tests/schema \
+  -run 'SubmissionReadiness|AcceptedIdentityAndBiometricArtifactsMakeSessionSubmissionReady|VerificationArtifactMigrationAndConstraintProof' \
+  -count=1
+PASS
+
+GOCACHE=/tmp/lawang-go-build go test -race ./internal/adapter/postgres -count=1
+ok github.com/santosidauruk/lawang-go/internal/adapter/postgres
+
+GOCACHE=/tmp/lawang-go-build go vet \
+  ./internal/adapter/postgres ./tests/integration ./tests/schema
+PASS
+
+GOCACHE=/tmp/lawang-go-build make sqlc-diff
+PASS: no generated diff
+
+GOCACHE=/tmp/lawang-go-build \
+  STATICCHECK_CACHE=/tmp/lawang-go-staticcheck make quality
+PASS: fmt-check, vet, staticcheck, full race suite, sqlc-diff,
+migration-validate, and compose-validate
+```

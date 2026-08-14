@@ -1,6 +1,6 @@
 # Checkpoint 5 — Public HTTP, PostgreSQL, dan Real MinIO Path
 
-Status: approved; menunggu Checkpoint 4 selesai.
+Status: approved; Checkpoint 4 selesai, menunggu agent scaffold untuk user tracer.
 
 ## Tujuan
 

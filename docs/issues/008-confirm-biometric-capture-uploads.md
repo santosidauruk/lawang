@@ -28,10 +28,9 @@ handlers alone are insufficient evidence.
 ## Active collaboration plan
 
 The approved user/agent checkpoint split is documented in
-[`docs/plans/issue_008/README.md`](../plans/issue_008/README.md). Checkpoints 1-3 are
-complete; Checkpoint 4 is active with its user-owned PostgreSQL tracer scaffold. Do
-not begin Checkpoint 5-6 before the active checkpoint reaches its documented review
-gate.
+[`docs/plans/issue_008/README.md`](../plans/issue_008/README.md). Checkpoints 1-4 are
+complete; Checkpoint 5 is next and awaits its agent scaffold. Do not begin Checkpoint
+6 before the active checkpoint reaches its documented review gate.
 
 ## Scope boundaries
 
@@ -53,7 +52,7 @@ gate.
 
 ## Acceptance criteria
 
-- [ ] The checkpoint implementation receives critical review before generalization.
+- [x] The checkpoint implementation receives critical review before generalization.
 - [ ] Upload URL creation accepts `biometric_capture` and preserves all intent TTL,
       supersession, key uniqueness, auth, and replay rules from Issue 007.
 - [ ] Confirm uses real `HeadObject` metadata and enforces JPEG/PNG, non-zero, and
@@ -63,9 +62,9 @@ gate.
       duplicates.
 - [ ] Wrong kind, PDF biometric, oversized/empty object, wrong state, superseded or
       expired intent, and stale transactional re-read return bounded errors.
-- [ ] A guarded readiness query/use case returns ready only when both accepted
+- [x] A guarded readiness query/use case returns ready only when both accepted
       artifact records exist for the same session.
-- [ ] Object presence, confirmed intent alone, or a validation-failed identity intent
+- [x] Object presence, confirmed intent alone, or a validation-failed identity intent
       cannot satisfy readiness.
 
 ## API examples
