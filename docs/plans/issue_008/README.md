@@ -168,9 +168,14 @@ Checkpoint 2 selesai pada 2026-08-13. Mulai hanya dari Checkpoint 3:
 1. baca panduan Checkpoint 3 dan PostgreSQL integration fixture aktual;
 2. jalankan `git status --short --untracked-files=all`, cek Docker Desktop, dan
    focused PostgreSQL baseline;
-3. agent menjelaskan fixture PostgreSQL existing dan menyiapkan scaffold tanpa
-   mengisi tracer user;
-4. user menulis satu real PostgreSQL Biometric Confirm success tracer;
-5. agent mereview sebelum rollback/constraint sibling work.
+3. agent sudah menyiapkan
+   `TestBiometricConfirmPersistsPostgresOutcomeAtomically` tanpa mengisi fixture,
+   call, atau assertion tracer user;
+4. poin user 1-8 sudah diimplementasikan sebagai satu real PostgreSQL Biometric
+   Confirm success tracer;
+5. focused tracer poin 9 direct GREEN pada 2026-08-14;
+6. poin 10-11 tidak diperlukan dan poin 12 selesai tanpa SQLC diff karena tidak ada
+   SQL, adapter, atau generated file yang berubah;
+7. lakukan poin 13 `[review]` sebelum rollback/constraint sibling work.
 
 Jangan men-scaffold Checkpoint 4-6 sebelum Checkpoint 3 mencapai review gate.

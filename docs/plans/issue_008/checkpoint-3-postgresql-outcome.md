@@ -1,6 +1,6 @@
 # Checkpoint 3 — PostgreSQL Atomic Biometric Outcome
 
-Status: ready-for-human; aktif setelah Checkpoint 2 selesai 2026-08-13.
+Status: ready-for-review; Bagian user poin 1-9 direct GREEN pada 2026-08-14.
 
 ## Tujuan
 
@@ -33,6 +33,54 @@ Satu call `artifact.Service.Confirm` pada session
 
 Jangan menambah migration hanya karena Issue 008 dimulai. Schema sekarang sudah
 mengizinkan kedua bounded kinds dan ownership FK.
+
+## Tracer yang disiapkan
+
+Tracer user berada di
+`tests/integration/artifact_biometric_postgres_test.go` sebagai
+`TestBiometricConfirmPersistsPostgresOutcomeAtomically`.
+
+Tracer sekarang berisi disposable PostgreSQL fixture, accepted Identity Document
+prerequisite, pending Biometric Capture intent, service dengan adapter/coordinator
+PostgreSQL nyata, satu call `Confirm`, durable outcome assertions, serta test-only
+transaction observer untuk membuktikan `HeadObject` tidak berjalan saat transaction
+database aktif. Extractor dibuat fail-fast dan harus tetap memiliki nol call.
+
+Focused PostgreSQL tracer direct GREEN. Existing query dan adapter dapat direuse
+tanpa perubahan, sehingga poin 10-11 tidak diperlukan. Poin 12 sudah terpenuhi oleh
+run GREEN yang sama; generated diff tidak diperlukan karena tidak ada SQL yang
+berubah. Belum ada query, adapter, migration, atau generated SQLC yang diubah.
+
+Focused command selama bagian user:
+
+```sh
+GOCACHE=/tmp/lawang-go-build go test ./tests/integration \
+  -run '^TestBiometricConfirmPersistsPostgresOutcomeAtomically$' -count=1 -v
+```
+
+Gunakan `openArtifactDatabase(t)` dan pola fixture dalam
+`tests/integration/artifact_postgres_test.go`; jangan membuat container helper,
+adapter, schema, atau query paralel sebelum RED nyata membuktikan gap.
+
+Verification evidence poin 9 pada 2026-08-14:
+
+```text
+GOCACHE=/tmp/lawang-go-build go test ./tests/integration \
+  -run '^TestBiometricConfirmPersistsPostgresOutcomeAtomically$' -count=1 -v
+--- PASS: TestBiometricConfirmPersistsPostgresOutcomeAtomically (7.47s)
+PASS
+ok github.com/santosidauruk/lawang-go/tests/integration 8.581s
+```
+
+Keputusan sesudah direct GREEN:
+
+- poin 10 `[sql query][postgres adapter]`: tidak dikerjakan karena tidak ada missing
+  production SQL operation;
+- poin 11 `[postgres adapter]`: tidak dikerjakan karena existing mapping dan
+  transaction operations sudah memenuhi tracer;
+- poin 12 `[verification]`: selesai; tidak ada SQL/generated file yang perlu dicek
+  ulang melalui `sqlc generate`;
+- poin 13 `[review]`: tetap wajib sebagai gate sebelum Bagian agent dimulai.
 
 ## Bagian user
 
