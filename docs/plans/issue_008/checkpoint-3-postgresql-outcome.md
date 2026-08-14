@@ -1,6 +1,7 @@
 # Checkpoint 3 — PostgreSQL Atomic Biometric Outcome
 
-Status: ready-for-review; Bagian user poin 1-9 direct GREEN pada 2026-08-14.
+Status: selesai pada 2026-08-14; tracer user, review gate, Bagian agent, regression,
+dan full quality gate GREEN.
 
 ## Tujuan
 
@@ -80,9 +81,10 @@ Keputusan sesudah direct GREEN:
   transaction operations sudah memenuhi tracer;
 - poin 12 `[verification]`: selesai; tidak ada SQL/generated file yang perlu dicek
   ulang melalui `sqlc generate`;
-- poin 13 `[review]`: tetap wajib sebagai gate sebelum Bagian agent dimulai.
+- poin 13 `[review]`: selesai; review gate menyetujui tracer setelah fixture history
+  diperbaiki.
 
-## Bagian user
+## Bagian user — selesai dan direview
 
 Agent lebih dulu menyiapkan scaffold satu real PostgreSQL tracer tanpa mengisi bagian
 concept-bearing milik user di bawah ini.
@@ -120,12 +122,18 @@ concept-bearing milik user di bawah ini.
 13. `[review]` User berhenti dan menyerahkan tracer, perubahan minimum, serta output
     RED/GREEN kepada agent sebelum rollback dan sibling PostgreSQL cases ditambahkan.
 
-Jika existing adapter langsung GREEN setelah application change, itu bukti reuse;
-jangan membuat operasi baru demi memenuhi kuota checkpoint.
+Existing adapter langsung GREEN. Tidak ada query, mapping, migration, atau generated
+SQLC baru yang dibuat hanya untuk memenuhi kuota checkpoint.
 
-## Review agent
+## Hasil review agent
 
-Agent memeriksa:
+Review awal menemukan satu gap test fixture: state
+`identity_document_uploaded` sudah memiliki confirmed intent, Verification Artifact,
+dan event konfirmasi, tetapi belum menyimpan immutable Personal Details serta event
+`submit_personal_details` yang membuat urutan publiknya lengkap. Fixture diperbaiki;
+focused tracer tetap GREEN sesudah koreksi.
+
+Review akhir mengonfirmasi:
 
 - seed merepresentasikan urutan publik yang valid;
 - artifact identity dan biometric dimiliki session yang sama tetapi intent/key
@@ -136,17 +144,25 @@ Agent memeriksa:
 - no pgx/sqlc types keluar dari adapter;
 - external HeadObject tidak berjalan saat DB transaction terbuka.
 
-## Bagian agent
+## Bagian agent — selesai
 
-Sesudah success tracer GREEN, agent mengerjakan:
+Sesudah success tracer GREEN dan direview, agent menyelesaikan:
 
-1. forced event-write failure yang membuktikan intent/artifact/state/event rollback;
-2. real PostgreSQL create/supersede biometric intent dan isolation dari identity;
-3. stale state/key/kind re-read dengan no partial writes;
-4. constraint regressions: one artifact per intent, one accepted artifact per
-   `(session, kind)`, dan ownership session/kind/key;
-5. existing Identity Document PostgreSQL suite sebagai regression gate;
-6. sqlc diff/generate check hanya bila SQL berubah.
+1. `TestBiometricPostgresConfirmRollsBackWhenEventWriteFails` membuktikan forced
+   event-write failure me-rollback intent, biometric artifact, state, dan biometric
+   event tanpa menghapus Identity Artifact;
+2. `TestBiometricPostgresCreateSupersedesOnlyPendingBiometricIntent` membuktikan real
+   PostgreSQL create/supersede menyisakan satu pending biometric intent dan tidak
+   mengubah confirmed Identity outcome;
+3. `TestBiometricPostgresConfirmRejectsStaleRereadWithoutPartialWrites` membuktikan
+   perubahan state, key, dan kind saat `HeadObject` menghasilkan
+   `CONFIRMATION_STALE` tanpa partial writes;
+4. existing `TestVerificationArtifactMigrationAndConstraintProof` membuktikan satu
+   artifact per intent, satu artifact per `(session, kind)`, bounded metadata/kind,
+   dan ownership session/kind/key melalui exact PostgreSQL constraints;
+5. seluruh existing Identity Document PostgreSQL success, mismatch, rollback,
+   create/supersede, dan concurrent-create tests tetap GREEN;
+6. `make sqlc-diff` GREEN tanpa generated diff karena production SQL tidak berubah.
 
 ## Definition of done
 
@@ -167,3 +183,33 @@ go vet ./internal/application/artifact ./internal/adapter/postgres ./tests/integ
 
 Nama regex final harus diperbarui sesuai nama test nyata; jangan melaporkan command
 hipotetis sebagai completion evidence.
+
+Final verification evidence pada 2026-08-14:
+
+```text
+GOCACHE=/tmp/lawang-go-build go test ./tests/integration \
+  -run 'Biometric.*Postgres|Postgres.*Biometric' -count=1 -v
+PASS: success, forced rollback, create/supersede isolation, and three stale re-reads
+ok github.com/santosidauruk/lawang-go/tests/integration 21.794s
+
+GOCACHE=/tmp/lawang-go-build go test ./tests/schema \
+  -run '^TestVerificationArtifactMigrationAndConstraintProof$' -count=1 -v
+NOTICE: proof passed: Verification Artifact constraints
+ok github.com/santosidauruk/lawang-go/tests/schema 8.656s
+
+GOCACHE=/tmp/lawang-go-build go test -race \
+  ./internal/application/artifact ./internal/adapter/postgres -count=1
+ok github.com/santosidauruk/lawang-go/internal/application/artifact
+ok github.com/santosidauruk/lawang-go/internal/adapter/postgres
+
+GOCACHE=/tmp/lawang-go-build go vet \
+  ./internal/application/artifact ./internal/adapter/postgres ./tests/integration
+PASS
+
+GOCACHE=/tmp/lawang-go-build make sqlc-diff
+PASS: no generated diff
+
+GOCACHE=/tmp/lawang-go-build STATICCHECK_CACHE=/tmp/lawang-go-staticcheck make quality
+PASS: fmt-check, vet, staticcheck, full race suite, sqlc-diff,
+migration-validate, and compose-validate
+```

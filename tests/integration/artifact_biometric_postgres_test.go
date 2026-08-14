@@ -74,6 +74,27 @@ func TestBiometricConfirmPersistsPostgresOutcomeAtomically(t *testing.T) {
 	}
 
 	if _, err := database.Exec(ctx, `
+		INSERT INTO personal_details (
+			verification_session_id,
+			full_name,
+			date_of_birth,
+			identity_number,
+			address,
+			created_at
+		)
+		VALUES ($1, 'Checkpoint Three', DATE '2000-01-01', '3173000000000008', '', $2)
+	`, sessionID, sessionCreatedAt); err != nil {
+		t.Fatalf("insert immutable Personal Details prerequisite: %v", err)
+	}
+
+	if _, err := database.Exec(ctx, `
+		INSERT INTO session_events (session_id, event_type, occurred_at)
+		VALUES ($1, 'submit_personal_details', $2)
+	`, sessionID, sessionCreatedAt); err != nil {
+		t.Fatalf("insert Personal Details Session Event prerequisite: %v", err)
+	}
+
+	if _, err := database.Exec(ctx, `
 		INSERT INTO upload_intents (
 			id,
 			verification_session_id,

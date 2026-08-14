@@ -1,6 +1,6 @@
 # Checkpoint 4 — Artifact-Derived Submission Readiness
 
-Status: approved; menunggu Checkpoint 3 selesai.
+Status: approved; menunggu agent scaffold setelah Checkpoint 3 selesai 2026-08-14.
 
 ## Tujuan
 
