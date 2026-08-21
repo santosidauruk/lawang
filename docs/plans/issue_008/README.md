@@ -1,6 +1,6 @@
 # Issue 008 Collaboration Plan
 
-Status: approved on 2026-08-12; Checkpoint 1-5 selesai, Checkpoint 6 berikutnya.
+Status: selesai pada 2026-08-21; Checkpoint 1-6 dan full quality gate GREEN.
 
 Dokumen ini adalah pintu masuk untuk Issue 008. Ia membagi kontrak Biometric Capture
 menjadi checkpoint belajar yang tetap menghasilkan perilaku observable, bukan fase
@@ -160,12 +160,24 @@ adapter S3 kedua.
 4. Setiap poin `Bagian user` memakai vocabulary tag di atas dan dipecah menjadi satu
    tindakan utama per poin.
 
-## Handoff checkpoint aktif
+## Completion handoff
 
 Checkpoint 5 selesai pada 2026-08-21. User-owned public JPEG tracer, real
 `HeadObject` metadata proof, durable PostgreSQL outcome, readiness transition, dan
 zero-extractor assertion sudah direview dan GREEN. Agent-owned PNG success,
 PDF/empty/oversize rejection, state/intent/storage error matrix, HTTP wording, dan
-Identity Document regression juga GREEN. Full quality gate lulus. Checkpoint 6 adalah
-checkpoint aktif berikutnya; concurrency tracer tetap bagian user sebelum sibling
-replay/waiter matrix dikerjakan agent.
+Identity Document regression juga GREEN. Checkpoint 6 mempertahankan tracer
+`TestConcurrentBiometricPostgresConfirmReturnsRecordedSuccessAndRunsExternalWorkOnce`
+di `tests/integration/artifact_biometric_confirm_concurrency_test.go` direct GREEN
+dengan `-race` pada 2026-08-21. Ia membuktikan concurrent public Confirm memakai dua
+connection lease, satu external execution, satu durable biometric outcome, dan
+readiness `true`; tidak ada behavioral RED sehingga poin 10 tidak membutuhkan
+perubahan coordinator/adapter.
+
+Setelah review, agent menutup sequential replay, real PostgreSQL waiter, waiter
+cancellation, supersede/expiry/create-vs-confirm races, concurrent create per kind,
+key isolation, dan full Identity Document regression. Focused biometric race suite
+lulus 8 tests dalam 74.124s; focused Identity Document regression lulus 10 tests
+dalam 83.574s. Full `make quality` lulus tanpa Docker integration skip; package
+integration selesai dalam 601.513s. Issue 008 siap ditutup dan Issue 009 menjadi
+urutan berikutnya.

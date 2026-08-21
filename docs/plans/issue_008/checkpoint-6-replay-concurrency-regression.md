@@ -1,6 +1,6 @@
 # Checkpoint 6 — Replay, Concurrency, dan Identity Regression
 
-Status: approved; menunggu Checkpoint 5 selesai.
+Status: selesai pada 2026-08-21; tracer user dan seluruh sibling/regression agent GREEN.
 
 ## Tujuan
 
@@ -27,8 +27,37 @@ Dua `Confirm` concurrent untuk biometric Upload Intent yang sama:
 ## Candidate files
 
 - `tests/integration/artifact_confirm_concurrency_test.go`
+- `tests/integration/artifact_biometric_confirm_concurrency_test.go`
 - application/postgres coordinator tests existing sebagai regression surface;
 - `docs/learning/008-kind-specific-biometric-upload.md` pada completion.
+
+## Tracer yang dipertahankan
+
+Workbench user berada di
+`tests/integration/artifact_biometric_confirm_concurrency_test.go` sebagai
+`TestConcurrentBiometricPostgresConfirmReturnsRecordedSuccessAndRunsExternalWorkOnce`.
+Tracer merakit disposable PostgreSQL, pool dua koneksi, complete accepted Identity
+Document history plus pending Biometric Capture Upload Intent, existing confirm
+coordinator, fixed clock, production token issuer, blocking ObjectStorage fake, dan
+synchronized fail-fast extractor. Dua caller dilepas pada start edge yang sama;
+HeadObject pertama ditahan sampai kedua coordinator call memegang connection lease
+berbeda. Result collection memakai bounded timeout dan tidak memakai `time.Sleep`
+atau memanggil advisory-lock query langsung dari test.
+
+Jalankan dengan:
+
+```sh
+GOCACHE=/tmp/lawang-go-build go test -race ./tests/integration \
+  -run '^TestConcurrentBiometricPostgresConfirmReturnsRecordedSuccessAndRunsExternalWorkOnce$' \
+  -count=1 -v
+```
+
+Pada 2026-08-21 command tersebut direct GREEN terhadap PostgreSQL 18.4 disposable
+dengan race detector: dua caller menerima recorded summary yang sama, HeadObject satu
+kali, extractor nol, satu confirmed biometric intent/artifact/event, final state
+`biometric_capture_uploaded`, dan readiness `true`. Tidak ada behavioral RED yang
+memerlukan perubahan coordinator/adapter pada poin 10. Review menerima tracer tanpa
+menggantinya.
 
 ## Bagian user
 
@@ -110,3 +139,39 @@ Setelah tracer user benar, agent menutup satu behavior per RED -> GREEN:
 Command completion harus memakai test names aktual. Full closeout juga menjalankan
 quality gate proyek dan memastikan tidak ada Docker integration test yang skip
 diam-diam.
+
+## Completion evidence
+
+Agent-owned regression ada di
+`tests/integration/artifact_biometric_confirm_concurrency_agent_test.go` dan menutup:
+
+- sequential confirmed replay tanpa external/database effect tambahan;
+- satu granted advisory lock dan satu real waiter dari `pg_locks`;
+- cancellation waiter tanpa merilis lock first caller atau memblokir replay;
+- supersede, expiry, dan create-vs-confirm tanpa partial biometric outcome;
+- concurrent create dengan satu pending winner per kind dan storage-key isolation;
+- full Identity Document replay/mismatch/extractor/concurrency regression.
+
+Semua behavior direct GREEN terhadap coordinator Issue 007. Satu compile RED hanya
+menunjukkan test fake belum memiliki synchronized `callCount` accessor; minimal GREEN
+diterapkan pada test fixture, bukan production coordinator/adapter.
+
+Verification aktual pada 2026-08-21:
+
+```text
+GOCACHE=/tmp/lawang-go-build go test -race ./tests/integration \
+  -run '^(TestConcurrentBiometricPostgresConfirmReturnsRecordedSuccessAndRunsExternalWorkOnce|TestPostgresBiometric.*|TestPostgresCreateBiometric.*|TestPostgresConcurrentCreateKeeps.*)$' \
+  -count=1 -v
+PASS: 8 tests, tests/integration 74.124s
+
+Focused Identity Document replay/mismatch/extractor/concurrency suite
+PASS: 10 tests, tests/integration 83.574s
+
+GOCACHE=/tmp/lawang-go-build STATICCHECK_CACHE=/tmp/lawang-go-staticcheck make quality
+PASS: fmt-check, vet, staticcheck, full race suite, sqlc-diff,
+migration-validate, and compose-validate
+ok github.com/santosidauruk/lawang-go/tests/integration 601.513s
+```
+
+Docker integration tests berjalan nyata tanpa `t.Skip`. Tidak ada production code,
+migration, hand-written query, generated SQLC, atau coordinator kedua yang diperlukan.

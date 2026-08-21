@@ -1,8 +1,8 @@
 # Confirm Biometric Capture Uploads
 
-Status: ready-for-human  
+Status: done  
 Type: HITL  
-Labels: ready-for-human  
+Labels: done  
 Source: `docs/plan-go.md` sections 4-5, 8-9, 14, 16 Issue 8, and 17.2
 
 ## User stories covered
@@ -28,9 +28,10 @@ handlers alone are insufficient evidence.
 ## Active collaboration plan
 
 The approved user/agent checkpoint split is documented in
-[`docs/plans/issue_008/README.md`](../plans/issue_008/README.md). Checkpoints 1-5 are
-complete; Checkpoint 6 is next. Its concurrency tracer remains user-owned and must
-reach the documented review gate before the agent adds sibling cases.
+[`docs/plans/issue_008/README.md`](../plans/issue_008/README.md). Checkpoints 1-6 are
+complete. The user-owned concurrency tracer passed review before the agent added
+replay, waiter, cancellation, stale-race, per-kind create, and Identity Document
+regressions.
 
 ## Scope boundaries
 
@@ -53,11 +54,11 @@ reach the documented review gate before the agent adds sibling cases.
 ## Acceptance criteria
 
 - [x] The checkpoint implementation receives critical review before generalization.
-- [ ] Upload URL creation accepts `biometric_capture` and preserves all intent TTL,
+- [x] Upload URL creation accepts `biometric_capture` and preserves all intent TTL,
       supersession, key uniqueness, auth, and replay rules from Issue 007.
 - [x] Confirm uses real `HeadObject` metadata and enforces JPEG/PNG, non-zero, and
       5 MiB maximum without invoking the document extractor.
-- [ ] Successful confirm creates one artifact, advances state, and appends one event
+- [x] Successful confirm creates one artifact, advances state, and appends one event
       of type `confirm_biometric_capture` atomically; replay/concurrency creates no
       duplicates.
 - [x] Wrong kind, PDF biometric, oversized/empty object, wrong state, superseded or

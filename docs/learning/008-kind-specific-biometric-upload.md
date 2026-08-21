@@ -227,3 +227,50 @@ PASS: fmt-check, vet, staticcheck, full race suite, sqlc-diff,
 migration-validate, and compose-validate
 ok github.com/santosidauruk/lawang-go/tests/integration 266.288s
 ```
+
+## Checkpoint 6: replay, concurrency, and Identity regression
+
+Checkpoint 6 is complete. The retained user tracer starts two public
+`artifact.Service.Confirm` calls for the same pending Biometric Upload Intent against
+disposable PostgreSQL. A blocking `HeadObject` rendezvous and a two-connection pool
+prove both callers overlap without sharing a raw connection or using `time.Sleep`.
+Both callers return the same recorded `biometric_capture_uploaded` summary while
+external work runs once, DocumentExtractor remains unused, and PostgreSQL stores one
+confirmed intent, accepted Biometric Verification Artifact, and
+`confirm_biometric_capture` event. Readiness becomes true only from the accepted
+Identity and Biometric artifact rows.
+
+The tracer was direct GREEN, so no coordinator/adapter change was justified. The
+existing coordinator remains kind-neutral and locks by Upload Intent ID on a pinned
+connection. Agent regressions use `pg_locks` to observe one granted lock and one real
+waiter, then prove sequential replay performs no extra work, cancellation of the
+waiter does not release the winner's lock, and a later replay is not left blocked.
+
+Supersede, expiry, and create-vs-confirm races discard the already-fetched biometric
+metadata without committing partial effects or readiness. Four concurrent PostgreSQL
+creates—two per kind—produce one pending winner and one unique-conflict per kind;
+the two committed keys keep exact identity/biometric kind segments and distinct
+intent UUIDs. The full Identity Document replay, mismatch, extraction, cancellation,
+stale-result, and create-vs-confirm suite remains GREEN.
+
+The only RED in agent work was a compile failure because a mutex-protected test fake
+lacked a `callCount` accessor. The minimal GREEN added that test-only accessor. No
+production code, migration, SQL query, generated SQLC, new coordinator, or new status
+was needed.
+
+Verification evidence on 2026-08-21:
+
+```text
+GOCACHE=/tmp/lawang-go-build go test -race ./tests/integration \
+  -run '^(TestConcurrentBiometricPostgresConfirmReturnsRecordedSuccessAndRunsExternalWorkOnce|TestPostgresBiometric.*|TestPostgresCreateBiometric.*|TestPostgresConcurrentCreateKeeps.*)$' \
+  -count=1 -v
+PASS: 8 tests, tests/integration 74.124s
+
+Focused Identity Document replay/mismatch/extractor/concurrency suite
+PASS: 10 tests, tests/integration 83.574s
+
+GOCACHE=/tmp/lawang-go-build STATICCHECK_CACHE=/tmp/lawang-go-staticcheck make quality
+PASS: fmt-check, vet, staticcheck, full race suite, sqlc-diff,
+migration-validate, and compose-validate
+ok github.com/santosidauruk/lawang-go/tests/integration 601.513s
+```
