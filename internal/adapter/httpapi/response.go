@@ -97,7 +97,7 @@ func writeArtifactError(response http.ResponseWriter, id uuid.UUID, err error) {
 	case artifact.CodeInvalidUploadIntentKind:
 		writeJSON(response, http.StatusConflict, APIError{
 			Code:    string(artifactError.Code),
-			Message: "upload intent kind is not valid for identity document confirmation",
+			Message: "upload intent kind is not valid for artifact confirmation",
 		})
 	case artifact.CodeInvalidObjectMetadata:
 		writeJSON(response, http.StatusUnprocessableEntity, APIError{
@@ -138,7 +138,7 @@ func writeArtifactUploadIntentError(response http.ResponseWriter, id uuid.UUID, 
 		artifactError.Code == artifact.CodeInvalidUploadIntentKind {
 		writeJSON(response, http.StatusBadRequest, APIError{
 			Code:    string(artifactError.Code),
-			Message: "only identity_document uploads are supported",
+			Message: "only identity_document and biometric_capture uploads are supported",
 		})
 		return
 	}

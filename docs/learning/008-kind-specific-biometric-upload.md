@@ -189,3 +189,41 @@ GOCACHE=/tmp/lawang-go-build \
 PASS: fmt-check, vet, staticcheck, full race suite, sqlc-diff,
 migration-validate, and compose-validate
 ```
+
+## Checkpoint 5: public HTTP, PostgreSQL, and real MinIO
+
+Checkpoint 5 is complete. The retained user tracer crosses the public upload-url
+handler, performs an unauthenticated HTTP PUT to the exact returned presigned URL,
+confirms through the public handler, and observes the durable PostgreSQL result. Its
+metadata assertion compares the stored artifact with metadata captured from the real
+MinIO `HeadObject`, rather than repeating request constants.
+
+The public success contract remains shared with Identity Document: upload-url returns
+exactly `uploadIntentId` and `uploadUrl`, while confirm returns the current session
+summary. The bounded upload-kind error now names the two supported kinds. A wrong
+intent kind during confirmation uses kind-neutral wording; no biometric-specific
+route or service was introduced.
+
+Agent siblings prove real PNG success, readiness false before and true after the
+accepted biometric artifact commits, and bounded rejection of PDF, empty, and
+over-5-MiB objects based on real MinIO metadata. Wrong session state, expiry, and
+supersession short-circuit before object storage. Missing objects and an unavailable
+S3 endpoint map to the bounded storage error without durable biometric effects.
+Every biometric path keeps DocumentExtractor at zero calls.
+
+Verification evidence on 2026-08-21:
+
+```text
+Focused HTTP/PostgreSQL/MinIO biometric and Identity Document suite
+PASS: tests/integration, 38.084s
+
+GOCACHE=/tmp/lawang-go-build go test -race \
+  ./internal/application/artifact ./internal/adapter/httpapi \
+  ./internal/adapter/postgres -count=1
+PASS
+
+GOCACHE=/tmp/lawang-go-build STATICCHECK_CACHE=/tmp/lawang-go-staticcheck make quality
+PASS: fmt-check, vet, staticcheck, full race suite, sqlc-diff,
+migration-validate, and compose-validate
+ok github.com/santosidauruk/lawang-go/tests/integration 266.288s
+```

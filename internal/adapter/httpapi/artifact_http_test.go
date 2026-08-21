@@ -641,7 +641,7 @@ func TestConfirmIdentityDocumentMapsInvalidUploadIntentKind(t *testing.T) {
 		&artifact.Error{Code: artifact.CodeInvalidUploadIntentKind},
 		http.StatusConflict,
 		"INVALID_UPLOAD_INTENT_KIND",
-		"upload intent kind is not valid for identity document confirmation",
+		"upload intent kind is not valid for artifact confirmation",
 		nil,
 	)
 }

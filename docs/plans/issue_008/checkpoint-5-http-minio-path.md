@@ -1,7 +1,6 @@
 # Checkpoint 5 — Public HTTP, PostgreSQL, dan Real MinIO Path
 
-Status: scaffold siap pada 2026-08-15; menunggu user mengerjakan tracer sampai
-`[review]`.
+Status: selesai pada 2026-08-21; tracer user dan sibling/regression agent GREEN.
 
 ## Tujuan
 
@@ -36,20 +35,20 @@ Dengan session yang sudah memiliki accepted Identity Document Verification Artif
 - runtime wiring existing sebagai regression target, bukan tempat membuat service
   biometric terpisah.
 
-## Tracer yang disiapkan
+## Tracer yang dipertahankan
 
 Workbench user berada di
 `tests/integration/artifact_biometric_http_minio_test.go` sebagai
 `TestBiometricCaptureUploadPutAndConfirmOverHTTPWithPostgreSQLAndMinIO`.
 
-Scaffold sudah merakit disposable PostgreSQL/MinIO, adapter PostgreSQL dan S3
-existing, public handler, production token issuer, fixed clock, counting
-ObjectStorage, dan fail-fast DocumentExtractor. Bagian concept-bearing tetap milik
-user: complete accepted Identity Document history, exact public upload-url response,
+Tracer merakit disposable PostgreSQL/MinIO, adapter PostgreSQL dan S3 existing,
+public handler, production token issuer, fixed clock, counting ObjectStorage, dan
+fail-fast DocumentExtractor. Bagian concept-bearing yang diselesaikan user mencakup
+complete accepted Identity Document history, exact public upload-url response,
 direct PUT ke URL yang dikembalikan, public confirm, durable outcome, readiness, dan
-zero extractor call.
+zero extractor call. Review agent menerima tracer tanpa menggantinya.
 
-Mulai dengan menghapus `t.Skip` scaffold, lalu jalankan satu tracer ini:
+Tracer dapat dijalankan dengan:
 
 ```sh
 GOCACHE=/tmp/lawang-go-build go test ./tests/integration \
@@ -57,9 +56,8 @@ GOCACHE=/tmp/lawang-go-build go test ./tests/integration \
   -count=1 -v
 ```
 
-`t.Skip` tersebut hanya guard workbench yang belum dikerjakan, bukan fallback ketika
-Docker tidak tersedia. Setelah guard dihapus, kegagalan startup PostgreSQL/MinIO
-harus tetap fail dan dilaporkan sebagai environment failure.
+Tidak ada `t.Skip` sebagai fallback ketika Docker tidak tersedia. Kegagalan startup
+PostgreSQL/MinIO tetap fail dan harus dilaporkan sebagai environment failure.
 
 ## Bagian user
 
@@ -142,3 +140,29 @@ Setelah tracer JPEG GREEN, agent menutup sibling cases:
 Final verification harus mencatat test names aktual, Docker status, focused MinIO
 suite, dan race-safe package tests. Jangan memakai developer database atau silent
 skip.
+
+## Completion evidence
+
+Tracer user `TestBiometricCaptureUploadPutAndConfirmOverHTTPWithPostgreSQLAndMinIO`
+GREEN dan membuktikan JPEG dari URL presign publik sampai metadata durable yang sama
+dengan hasil `HeadObject` nyata. Sibling agent menambahkan:
+
+- `TestBiometricPNGConfirmOverHTTPWithPostgreSQLAndMinIOChangesReadiness`;
+- `TestBiometricHTTPMinIORejectsInvalidMetadataWithoutDurableOutcome` untuk PDF,
+  empty object, dan object di atas 5 MiB;
+- `TestBiometricHTTPRejectsInvalidIntentStateBeforeObjectStorage` untuk wrong state,
+  expired, dan superseded intent;
+- `TestBiometricHTTPBoundsObjectStorageFailures` untuk missing object dan endpoint
+  S3 unavailable.
+
+Focused suite yang juga memuat Identity Document HTTP/PostgreSQL/MinIO regression
+GREEN dalam 38.084s. Docker Desktop berstatus running. Final
+`GOCACHE=/tmp/lawang-go-build STATICCHECK_CACHE=/tmp/lawang-go-staticcheck make quality`
+GREEN: formatting, vet, staticcheck, full race suite, sqlc drift, migration, dan
+Compose validation; package integration dengan race detector selesai dalam 266.288s.
+
+RED yang ditemukan pada penutupan checkpoint terbatas pada wording HTTP lama yang
+masih menyatakan hanya Identity Document didukung dan wording confirm yang terlalu
+identity-specific. Minimal GREEN membatasi upload kind ke dua kind yang disetujui dan
+membuat error confirm kind-neutral; tidak ada route, service, atau storage adapter
+biometric kedua.

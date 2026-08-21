@@ -591,7 +591,7 @@ func seedBiometricPostgresConfirmationState(
 			address,
 			created_at
 		)
-		VALUES ($1, 'Checkpoint Three', DATE '2000-01-01', '3173000000000008', '', $2)
+		VALUES ($1, 'Checkpoint Three', DATE '2000-01-01', '3173000000000008', 'Checkpoint Three Address', $2)
 	`, fixture.sessionID, now.Add(-10*time.Minute)); err != nil {
 		t.Fatalf("insert fixture Personal Details: %v", err)
 	}

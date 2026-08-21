@@ -15,6 +15,7 @@ import (
 	postgresadapter "github.com/santosidauruk/lawang-go/internal/adapter/postgres"
 	"github.com/santosidauruk/lawang-go/internal/application/artifact"
 	"github.com/santosidauruk/lawang-go/internal/application/session"
+	"github.com/santosidauruk/lawang-go/internal/domain/sessionevent"
 )
 
 // TestBiometricCaptureUploadPutAndConfirmOverHTTPWithPostgreSQLAndMinIO is the
@@ -45,7 +46,7 @@ func TestBiometricCaptureUploadPutAndConfirmOverHTTPWithPostgreSQLAndMinIO(t *te
 	}
 	t.Cleanup(pool.Close)
 
-	// TODO(user): seed a semantically complete identity_document_uploaded history:
+	// Seed a semantically complete identity_document_uploaded history:
 	// immutable Personal Details plus submit_personal_details, a confirmed Identity
 	// Document Upload Intent, its accepted Verification Artifact, and the accepted
 	// confirm_identity_document event. Keep all session/kind/key ownership exact.
@@ -78,7 +79,7 @@ func TestBiometricCaptureUploadPutAndConfirmOverHTTPWithPostgreSQLAndMinIO(t *te
 			address,
 			created_at
 		)
-		VALUES ($1, 'Checkpoint Three', DATE '2000-01-01', '3173000000000008', '', $2)
+		VALUES ($1, 'Checkpoint Three', DATE '2000-01-01', '3173000000000008', 'jalan boulevard', $2)
 	`, sessionID, sessionCreatedAt); err != nil {
 		t.Fatalf("insert immutable Personal Details prerequisite: %v", err)
 	}
@@ -175,7 +176,7 @@ func TestBiometricCaptureUploadPutAndConfirmOverHTTPWithPostgreSQLAndMinIO(t *te
 	handler := httpapi.NewHandler(nil, nil, artifacts, uploadIntents)
 
 	// ACT + ASSERT 1 — public upload-url contract
-	// TODO(user): send an authenticated POST through handler with exact JSON
+	// Send an authenticated POST through handler with exact JSON
 	// {"kind":"biometric_capture"}. Require status 201 and reject response fields
 	// other than uploadIntentId and uploadUrl. Do not derive or guess the new storage
 	// key in order to perform the upload.
@@ -206,7 +207,7 @@ func TestBiometricCaptureUploadPutAndConfirmOverHTTPWithPostgreSQLAndMinIO(t *te
 	_, hasUploadURL := uploadResponseFields["uploadUrl"]
 
 	if len(uploadResponseFields) != 2 || !hasUploadIntentID || !hasUploadURL {
-		t.Fatalf("upload-url response fields = %v, want exactly 2 fields, uploadIntentId and uploadUrl", uploadResponseFields)
+		t.Fatal("upload-url response fields want exactly 2 fields, uploadIntentId and uploadUrl")
 	}
 
 	var uploadBody struct {
@@ -224,19 +225,20 @@ func TestBiometricCaptureUploadPutAndConfirmOverHTTPWithPostgreSQLAndMinIO(t *te
 	}
 
 	// ACT 2 — direct client upload
-	// TODO(user): PUT a non-zero JPEG to the exact returned uploadUrl with
+	// PUT a non-zero JPEG to the exact returned uploadUrl with
 	// Content-Type image/jpeg. Use putObjectToURL; do not add credentials, call the
 	// AWS SDK PutObject operation, or rewrite the signed host.
+	uploadedJPEG := smallJPEG(t)
 	putObjectToURL(
 		t,
 		ctx,
 		uploadBody.UploadURL,
 		"image/jpeg",
-		smallJPEG(t),
+		uploadedJPEG,
 	)
 
 	// ACT + ASSERT 3 — public confirm contract
-	// TODO(user): send an authenticated confirm POST through handler using the exact
+	// Send an authenticated confirm POST through handler using the exact
 	// returned uploadIntentId. Require status 200 and an exact current-session summary
 	// whose state is biometric_capture_uploaded.
 	confirmRequest := httptest.NewRequest(
@@ -269,7 +271,7 @@ func TestBiometricCaptureUploadPutAndConfirmOverHTTPWithPostgreSQLAndMinIO(t *te
 	_, hasExpiresAt := confirmResponseFields["expiresAt"]
 
 	if len(confirmResponseFields) != 3 || !hasID || !hasStatus || !hasExpiresAt {
-		t.Fatalf("upload-url response fields = %v, want exactly 3 fields, id, status and expiresAt", confirmResponseFields)
+		t.Fatal("upload-url response fields, want exactly 3 fields, id, status and expiresAt")
 	}
 
 	var confirmResponseBody struct {
@@ -291,44 +293,117 @@ func TestBiometricCaptureUploadPutAndConfirmOverHTTPWithPostgreSQLAndMinIO(t *te
 	}
 
 	// ASSERT 4 — durable accepted outcome
-	// TODO(user): query PostgreSQL for exactly one confirmed Biometric Capture Upload
+	// Query PostgreSQL for exactly one confirmed Biometric Capture Upload
 	// Intent, one accepted Biometric Capture Verification Artifact, and one accepted
 	// confirm_biometric_capture event. Require the pre-existing Identity Document
 	// artifact to remain present.
 	var sessionStatus string
 	var intentStatus string
+	var biometricArtifactKind string
+	var biometricArtifactKey string
+	var biometricArtifactContentType string
+	var biometricArtifactSizeBytes int64
+	var biometricArtifactETag string
 	var artifactCount int
+	var identityArtifactCount int
 	var eventCount int
+	var rawEventMetadata []byte
 	if err := database.QueryRow(ctx, `
-	  SELECT
+		SELECT
 			vs.status,
 			ui.status,
+			va.kind,
+			va.storage_key,
+			va.content_type,
+			va.size_bytes,
+			va.etag,
 			(SELECT count(*) FROM verification_artifacts va WHERE va.upload_intent_id = ui.id),
-			(SELECT count(*) FROM session_events se WHERE vs.id = se.session_id AND se.event_type = 'confirm_biometric_capture')
+			(SELECT count(*)
+			 FROM verification_artifacts identity_va
+			 WHERE identity_va.id = $3
+			   AND identity_va.upload_intent_id = $4
+			   AND identity_va.verification_session_id = vs.id
+			   AND identity_va.kind = 'identity_document'
+			   AND identity_va.storage_key = $5),
+			(SELECT count(*) FROM session_events se WHERE vs.id = se.session_id AND se.event_type = 'confirm_biometric_capture'),
+			(SELECT metadata FROM session_events se WHERE vs.id = se.session_id AND se.event_type = 'confirm_biometric_capture' LIMIT 1)
 		FROM verification_sessions vs
 		JOIN upload_intents ui ON ui.verification_session_id = vs.id
-		WHERE vs.id = $1 and ui.id = $2
-	`, sessionID, uploadBody.UploadIntentID).Scan(
+		JOIN verification_artifacts va ON va.upload_intent_id = ui.id
+		WHERE vs.id = $1 AND ui.id = $2
+	`, sessionID, uploadBody.UploadIntentID, identityArtifactID, identityIntentID, identityKey).Scan(
 		&sessionStatus,
 		&intentStatus,
+		&biometricArtifactKind,
+		&biometricArtifactKey,
+		&biometricArtifactContentType,
+		&biometricArtifactSizeBytes,
+		&biometricArtifactETag,
 		&artifactCount,
+		&identityArtifactCount,
 		&eventCount,
+		&rawEventMetadata,
 	); err != nil {
 		t.Fatalf("read MinIO HTTP tracer durable outcome: %v", err)
 	}
 	if sessionStatus != session.StatusBiometricCaptureUploaded.String() ||
-		intentStatus != "confirmed" || artifactCount != 1 || eventCount != 1 {
+		intentStatus != "confirmed" || artifactCount != 1 ||
+		identityArtifactCount != 1 || eventCount != 1 {
 		t.Errorf(
-			"durable outcome = session:%s intent:%s artifacts:%d events:%d",
+			"durable outcome = session:%s intent:%s biometric artifacts:%d identity artifacts:%d events:%d",
 			sessionStatus,
 			intentStatus,
 			artifactCount,
+			identityArtifactCount,
 			eventCount,
 		)
 	}
 
+	expectedBiometricKey := "verification-sessions/" + sessionID.String() +
+		"/biometric_capture/" + uploadBody.UploadIntentID.String()
+	headObjectMetadata := objectStorage.headObjectMetadata()
+	if headObjectMetadata.ContentType != "image/jpeg" ||
+		headObjectMetadata.SizeBytes != int64(len(uploadedJPEG)) ||
+		headObjectMetadata.ETag == "" {
+		t.Errorf(
+			"real HeadObject metadata = content-type:%q size:%d etag:%q, want image/jpeg/%d/non-empty",
+			headObjectMetadata.ContentType,
+			headObjectMetadata.SizeBytes,
+			headObjectMetadata.ETag,
+			len(uploadedJPEG),
+		)
+	}
+	if biometricArtifactKind != "biometric_capture" ||
+		biometricArtifactContentType != headObjectMetadata.ContentType ||
+		biometricArtifactSizeBytes != headObjectMetadata.SizeBytes ||
+		biometricArtifactETag != headObjectMetadata.ETag {
+		t.Errorf(
+			"stored biometric artifact = kind:%q content-type:%q size:%d etag:%q",
+			biometricArtifactKind,
+			biometricArtifactContentType,
+			biometricArtifactSizeBytes,
+			biometricArtifactETag,
+		)
+	}
+
+	if biometricArtifactKey != expectedBiometricKey {
+		t.Errorf("wrong stored storage key")
+	}
+
+	eventMetadata, err := sessionevent.ParseMetadata(rawEventMetadata)
+	if err != nil {
+		t.Fatalf("parse confirm_biometric_capture event metadata: %v", err)
+	}
+	if eventMetadata.Outcome() != sessionevent.OutcomeAccepted {
+		t.Errorf(
+			"confirm_biometric_capture outcome = %s, want %s",
+			eventMetadata.Outcome(),
+			sessionevent.OutcomeAccepted,
+		)
+	}
+
 	// ASSERT 5 — readiness and external boundaries
-	// TODO(user): call HasRequiredAcceptedArtifacts for sessionID and require true.
+	// Call HasRequiredAcceptedArtifacts for sessionID and require true.
 	// Require exactly one real HeadObject call and zero Extract calls.
 	hasRequiredArtifact, err := postgresArtifacts.HasRequiredAcceptedArtifacts(ctx, sessionID)
 	if err != nil {
@@ -357,7 +432,7 @@ func (e *biometricHTTPFailFastExtractor) Extract(
 	storageKey string,
 ) (artifact.DocumentExtraction, error) {
 	e.calls++
-	e.t.Fatalf("Extract() called for Biometric Capture key %q", storageKey)
+	e.t.Fatal("Extract() should not be called for Biometric Capture key")
 	return artifact.DocumentExtraction{}, nil
 }
 

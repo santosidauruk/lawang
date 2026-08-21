@@ -240,7 +240,7 @@ func createArtifactUploadIntent(service ArtifactUploadIntentService) http.Handle
 		if body.Kind == nil {
 			writeJSON(response, http.StatusBadRequest, APIError{
 				Code:    "INVALID_UPLOAD_INTENT_KIND",
-				Message: "only identity_document uploads are supported",
+				Message: "only identity_document and biometric_capture uploads are supported",
 			})
 			return
 		}

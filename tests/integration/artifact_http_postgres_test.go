@@ -379,8 +379,9 @@ type countingHTTPObjectStorage struct {
 		PresignUpload(context.Context, string, time.Duration) (string, error)
 		HeadObject(context.Context, string) (artifact.ObjectMetadata, error)
 	}
-	mu              sync.Mutex
-	headObjectCalls int
+	mu                     sync.Mutex
+	headObjectCalls        int
+	lastHeadObjectMetadata artifact.ObjectMetadata
 }
 
 func (s *countingHTTPObjectStorage) PresignUpload(
@@ -395,16 +396,28 @@ func (s *countingHTTPObjectStorage) HeadObject(
 	ctx context.Context,
 	storageKey string,
 ) (artifact.ObjectMetadata, error) {
+	metadata, err := s.delegate.HeadObject(ctx, storageKey)
+
 	s.mu.Lock()
 	s.headObjectCalls++
+	if err == nil {
+		s.lastHeadObjectMetadata = metadata
+	}
 	s.mu.Unlock()
-	return s.delegate.HeadObject(ctx, storageKey)
+
+	return metadata, err
 }
 
 func (s *countingHTTPObjectStorage) headObjectCallCount() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.headObjectCalls
+}
+
+func (s *countingHTTPObjectStorage) headObjectMetadata() artifact.ObjectMetadata {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.lastHeadObjectMetadata
 }
 
 type countingHTTPDocumentExtractor struct {

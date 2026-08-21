@@ -100,7 +100,7 @@ func TestMinIOPresignPutAndHeadObjectReturnsActualMetadata(t *testing.T) {
 		Bucket: aws.String(bucketName),
 	})
 	if err != nil {
-		t.Fatalf("create isolated MinIO bucket %q: %v", bucketName, err)
+		t.Fatalf("create isolated MinIO bucket: %v", err)
 	}
 
 	presignClient := s3.NewPresignClient(s3Client)
@@ -489,7 +489,7 @@ func newMinIOTestStorage(t *testing.T, ctx context.Context) *s3storageadapter.Ad
 		Bucket: aws.String(bucketName),
 	})
 	if err != nil {
-		t.Fatalf("create isolated MinIO bucket %q: %v", bucketName, err)
+		t.Fatalf("create isolated MinIO bucket: %v", err)
 	}
 
 	return s3storageadapter.New(s3.NewPresignClient(s3Client), bucketName, s3Client)

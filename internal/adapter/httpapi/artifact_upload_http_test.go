@@ -83,7 +83,7 @@ func TestCreateIdentityDocumentUploadIntentRejectsBodyAboveOneMiB(t *testing.T) 
 	}
 }
 
-func TestCreateIdentityDocumentUploadIntentRejectsMissingKind(t *testing.T) {
+func TestCreateArtifactUploadIntentRejectsMissingKindWithBoundedKinds(t *testing.T) {
 	service := newArtifactUploadIntentHTTPFixture()
 	response := performArtifactUploadIntentRequest(
 		t,
@@ -99,14 +99,14 @@ func TestCreateIdentityDocumentUploadIntentRejectsMissingKind(t *testing.T) {
 		response,
 		http.StatusBadRequest,
 		"INVALID_UPLOAD_INTENT_KIND",
-		"only identity_document uploads are supported",
+		"only identity_document and biometric_capture uploads are supported",
 	)
 	if service.calls != 0 {
 		t.Errorf("Create() calls = %d, want 0", service.calls)
 	}
 }
 
-func TestCreateIdentityDocumentUploadIntentRejectsUnsupportedKind(t *testing.T) {
+func TestCreateArtifactUploadIntentRejectsUnsupportedKindWithBoundedKinds(t *testing.T) {
 	service := newArtifactUploadIntentHTTPFixture()
 	service.err = &artifact.Error{Code: artifact.CodeInvalidUploadIntentKind}
 	response := performArtifactUploadIntentRequest(
@@ -115,7 +115,7 @@ func TestCreateIdentityDocumentUploadIntentRejectsUnsupportedKind(t *testing.T) 
 		http.MethodPost,
 		"4dbfda8d-f69e-453f-a1c4-2dba229fc73b",
 		"Bearer opaque-token",
-		`{"kind":"biometric_capture"}`,
+		`{"kind":"unsupported"}`,
 	)
 
 	assertArtifactUploadIntentError(
@@ -123,7 +123,7 @@ func TestCreateIdentityDocumentUploadIntentRejectsUnsupportedKind(t *testing.T) 
 		response,
 		http.StatusBadRequest,
 		"INVALID_UPLOAD_INTENT_KIND",
-		"only identity_document uploads are supported",
+		"only identity_document and biometric_capture uploads are supported",
 	)
 	if service.calls != 1 {
 		t.Errorf("Create() calls = %d, want 1", service.calls)

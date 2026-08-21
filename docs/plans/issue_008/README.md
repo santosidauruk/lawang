@@ -1,7 +1,6 @@
 # Issue 008 Collaboration Plan
 
-Status: approved on 2026-08-12; Checkpoint 1-4 selesai, Checkpoint 5 menunggu agent
-scaffold.
+Status: approved on 2026-08-12; Checkpoint 1-5 selesai, Checkpoint 6 berikutnya.
 
 Dokumen ini adalah pintu masuk untuk Issue 008. Ia membagi kontrak Biometric Capture
 menjadi checkpoint belajar yang tetap menghasilkan perilaku observable, bukan fase
@@ -163,8 +162,10 @@ adapter S3 kedua.
 
 ## Handoff checkpoint aktif
 
-Checkpoint 4 selesai pada 2026-08-14. User-owned same-session success tracer,
-production SQL predicate, SQL proof, negative false-positive matrix, transaction-bound
-proof, dan focused quality gates GREEN. Scaffold Checkpoint 5 sudah siap di
-`tests/integration/artifact_biometric_http_minio_test.go`; user sekarang mengerjakan
-public HTTP/PostgreSQL/MinIO tracer sampai `[review]` sebelum Bagian agent dimulai.
+Checkpoint 5 selesai pada 2026-08-21. User-owned public JPEG tracer, real
+`HeadObject` metadata proof, durable PostgreSQL outcome, readiness transition, dan
+zero-extractor assertion sudah direview dan GREEN. Agent-owned PNG success,
+PDF/empty/oversize rejection, state/intent/storage error matrix, HTTP wording, dan
+Identity Document regression juga GREEN. Full quality gate lulus. Checkpoint 6 adalah
+checkpoint aktif berikutnya; concurrency tracer tetap bagian user sebelum sibling
+replay/waiter matrix dikerjakan agent.
