@@ -1,9 +1,14 @@
 # Submit Verification and Apply Signed Verdicts
 
-Status: needs-triage  
+Status: ready-for-human
 Type: HITL  
-Labels: needs-triage  
+Labels: ready-for-human
 Source: `docs/plan-go.md` sections 4-5, 6, 8, 10, 12-14, 16 Issue 9, and 17.2
+
+Approved collaboration plan:
+[`docs/plans/issue_009/README.md`](../plans/issue_009/README.md).
+Active checkpoint:
+[`Checkpoint 1 — Atomic Submission dan Durable Outbox`](../plans/issue_009/checkpoint-1-atomic-submission-outbox.md).
 
 ## User stories covered
 
@@ -29,6 +34,11 @@ Before agent implementation, the user writes:
 The agent reviews transaction, crash-window, signature parsing, and constant-time
 comparison risks before implementing the relay and sibling callback cases.
 
+The approved checkpoint plan further prioritizes user-authored application code,
+query/adapter operations, queue/provider operations, and runtime wiring. Repetitive
+unit tests, fixtures, sibling errors, and direct-GREEN regressions belong to the
+agent unless the proof technique itself is the learning concept.
+
 ## Scope boundaries
 
 - One worker binary hosts relay and provider tasks; expiry/cleanup handlers arrive in
@@ -41,7 +51,7 @@ comparison risks before implementing the relay and sibling callback cases.
 ## Reliability and security invariants
 
 - Submit requires both accepted artifacts and atomically commits pending state,
-  deadline, `submit_session` event, and outbox before returning `202`.
+  one-day deadline, `submit_session` event, and outbox before returning `202`.
 - An applied successful verdict appends `verification_passed`; an applied rejected
   verdict appends `verification_failed`.
 - Redis/provider failure after commit cannot lose durable work.
@@ -87,7 +97,7 @@ Authorization: Bearer <resume-token>
 HTTP/1.1 202 Accepted
 Content-Type: application/json
 
-<freeze exact idempotent response before implementation>
+{"id":"<session-uuid>","status":"verification_pending"}
 ```
 
 ```http
@@ -95,8 +105,13 @@ POST /webhooks/verification HTTP/1.1
 x-signature: sha256=<hex-hmac-of-exact-body>
 Content-Type: application/json
 
-<provider event JSON>
+{"eventId":"<event-uuid>","sessionId":"<session-uuid>","verdict":"verified"}
 ```
+
+Rejected webhook events add exact field `reason` with one bounded rejection reason.
+The behavior for a signature-valid, structurally-valid event whose `sessionId` is
+unknown remains an explicit Checkpoint 5 decision gate; do not infer it from the
+approved late/out-of-order behavior for known sessions.
 
 Provider rejection reasons are exactly `document_invalid`, `biometric_mismatch`,
 `identity_not_verified`, and `suspected_fraud`.
