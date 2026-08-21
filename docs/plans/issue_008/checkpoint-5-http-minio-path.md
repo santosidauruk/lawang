@@ -1,6 +1,7 @@
 # Checkpoint 5 — Public HTTP, PostgreSQL, dan Real MinIO Path
 
-Status: approved; Checkpoint 4 selesai, menunggu agent scaffold untuk user tracer.
+Status: scaffold siap pada 2026-08-15; menunggu user mengerjakan tracer sampai
+`[review]`.
 
 ## Tujuan
 
@@ -34,6 +35,31 @@ Dengan session yang sudah memiliki accepted Identity Document Verification Artif
 - HTTP error mapping/router hanya bila RED menunjukkan hard-coded identity contract;
 - runtime wiring existing sebagai regression target, bukan tempat membuat service
   biometric terpisah.
+
+## Tracer yang disiapkan
+
+Workbench user berada di
+`tests/integration/artifact_biometric_http_minio_test.go` sebagai
+`TestBiometricCaptureUploadPutAndConfirmOverHTTPWithPostgreSQLAndMinIO`.
+
+Scaffold sudah merakit disposable PostgreSQL/MinIO, adapter PostgreSQL dan S3
+existing, public handler, production token issuer, fixed clock, counting
+ObjectStorage, dan fail-fast DocumentExtractor. Bagian concept-bearing tetap milik
+user: complete accepted Identity Document history, exact public upload-url response,
+direct PUT ke URL yang dikembalikan, public confirm, durable outcome, readiness, dan
+zero extractor call.
+
+Mulai dengan menghapus `t.Skip` scaffold, lalu jalankan satu tracer ini:
+
+```sh
+GOCACHE=/tmp/lawang-go-build go test ./tests/integration \
+  -run '^TestBiometricCaptureUploadPutAndConfirmOverHTTPWithPostgreSQLAndMinIO$' \
+  -count=1 -v
+```
+
+`t.Skip` tersebut hanya guard workbench yang belum dikerjakan, bukan fallback ketika
+Docker tidak tersedia. Setelah guard dihapus, kegagalan startup PostgreSQL/MinIO
+harus tetap fail dan dilaporkan sebagai environment failure.
 
 ## Bagian user
 

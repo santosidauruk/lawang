@@ -165,6 +165,6 @@ adapter S3 kedua.
 
 Checkpoint 4 selesai pada 2026-08-14. User-owned same-session success tracer,
 production SQL predicate, SQL proof, negative false-positive matrix, transaction-bound
-proof, dan focused quality gates GREEN. Checkpoint 5 adalah checkpoint berikutnya,
-tetapi user belum boleh memulai public HTTP/MinIO tracer sebelum agent menyiapkan
-scaffold-nya.
+proof, dan focused quality gates GREEN. Scaffold Checkpoint 5 sudah siap di
+`tests/integration/artifact_biometric_http_minio_test.go`; user sekarang mengerjakan
+public HTTP/PostgreSQL/MinIO tracer sampai `[review]` sebelum Bagian agent dimulai.
