@@ -11,6 +11,19 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type Outbox struct {
+	ID                    uuid.UUID          `json:"id"`
+	VerificationSessionID uuid.UUID          `json:"verification_session_id"`
+	TaskType              string             `json:"task_type"`
+	Payload               []byte             `json:"payload"`
+	CreatedAt             time.Time          `json:"created_at"`
+	PublishedAt           pgtype.Timestamptz `json:"published_at"`
+	ClaimToken            pgtype.UUID        `json:"claim_token"`
+	ClaimedUntil          pgtype.Timestamptz `json:"claimed_until"`
+	AttemptCount          int32              `json:"attempt_count"`
+	LastErrorCode         pgtype.Text        `json:"last_error_code"`
+}
+
 type PersonalDetail struct {
 	VerificationSessionID uuid.UUID `json:"verification_session_id"`
 	FullName              string    `json:"full_name"`
@@ -55,10 +68,11 @@ type VerificationArtifact struct {
 }
 
 type VerificationSession struct {
-	ID              uuid.UUID `json:"id"`
-	Status          string    `json:"status"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
-	ResumeTokenHash []byte    `json:"resume_token_hash"`
-	ExpiresAt       time.Time `json:"expires_at"`
+	ID                     uuid.UUID          `json:"id"`
+	Status                 string             `json:"status"`
+	CreatedAt              time.Time          `json:"created_at"`
+	UpdatedAt              time.Time          `json:"updated_at"`
+	ResumeTokenHash        []byte             `json:"resume_token_hash"`
+	ExpiresAt              time.Time          `json:"expires_at"`
+	VerificationDeadlineAt pgtype.Timestamptz `json:"verification_deadline_at"`
 }

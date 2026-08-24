@@ -1,6 +1,6 @@
 # Checkpoint 2 — Exact-Raw-Body Webhook HMAC Foundation
 
-Status: menunggu Checkpoint 1 user review; required learning gate kedua.
+Status: aktif; siap untuk Bagian user sebagai required learning gate kedua.
 
 ## Tujuan
 

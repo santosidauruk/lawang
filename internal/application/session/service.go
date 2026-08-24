@@ -25,12 +25,13 @@ const (
 )
 
 type VerificationSession struct {
-	ID              uuid.UUID
-	Status          Status
-	ResumeTokenHash []byte
-	ExpiresAt       time.Time
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	ID                     uuid.UUID
+	Status                 Status
+	ResumeTokenHash        []byte
+	ExpiresAt              time.Time
+	CreatedAt              time.Time
+	UpdatedAt              time.Time
+	VerificationDeadlineAt *time.Time
 }
 
 type CreateParams struct {

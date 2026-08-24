@@ -105,9 +105,14 @@ func (t *artifactTransaction) LockSession(ctx context.Context, sessionID uuid.UU
 		return session.VerificationSession{}, err
 	}
 
+	var verificationDeadlineAt *time.Time
+	if row.VerificationDeadlineAt.Valid {
+		verificationDeadlineAt = &row.VerificationDeadlineAt.Time
+	}
+
 	return session.VerificationSession{
 		ID: row.ID, Status: state, ResumeTokenHash: row.ResumeTokenHash,
-		ExpiresAt: row.ExpiresAt, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
+		ExpiresAt: row.ExpiresAt, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt, VerificationDeadlineAt: verificationDeadlineAt,
 	}, nil
 }
 

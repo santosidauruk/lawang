@@ -1,6 +1,7 @@
 # Issue 009 Collaboration Plan
 
-Status: disetujui pada 2026-08-21; Checkpoint 1 aktif dan siap untuk user.
+Status: disetujui pada 2026-08-21; Bagian user Checkpoint 1 sudah direview dan
+lulus, Checkpoint 2 aktif sebagai required HMAC learning gate.
 
 Dokumen ini membagi asynchronous Provider Submission dan signed verdict callback
 menjadi delapan checkpoint belajar. Setiap checkpoint menghasilkan satu perilaku

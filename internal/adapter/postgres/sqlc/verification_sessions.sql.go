@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createVerificationSession = `-- name: CreateVerificationSession :one
@@ -136,19 +137,20 @@ func (q *Queries) GuardVerificationSessionState(ctx context.Context, arg GuardVe
 }
 
 const lockVerificationSessionByID = `-- name: LockVerificationSessionByID :one
-SELECT id, status, resume_token_hash, expires_at, created_at, updated_at
+SELECT id, status, resume_token_hash, expires_at, created_at, updated_at, verification_deadline_at
 FROM verification_sessions
 WHERE id = $1
 FOR UPDATE
 `
 
 type LockVerificationSessionByIDRow struct {
-	ID              uuid.UUID `json:"id"`
-	Status          string    `json:"status"`
-	ResumeTokenHash []byte    `json:"resume_token_hash"`
-	ExpiresAt       time.Time `json:"expires_at"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	ID                     uuid.UUID          `json:"id"`
+	Status                 string             `json:"status"`
+	ResumeTokenHash        []byte             `json:"resume_token_hash"`
+	ExpiresAt              time.Time          `json:"expires_at"`
+	CreatedAt              time.Time          `json:"created_at"`
+	UpdatedAt              time.Time          `json:"updated_at"`
+	VerificationDeadlineAt pgtype.Timestamptz `json:"verification_deadline_at"`
 }
 
 func (q *Queries) LockVerificationSessionByID(ctx context.Context, id uuid.UUID) (LockVerificationSessionByIDRow, error) {
@@ -161,6 +163,7 @@ func (q *Queries) LockVerificationSessionByID(ctx context.Context, id uuid.UUID)
 		&i.ExpiresAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.VerificationDeadlineAt,
 	)
 	return i, err
 }

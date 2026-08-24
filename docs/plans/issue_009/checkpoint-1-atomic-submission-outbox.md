@@ -1,6 +1,7 @@
 # Checkpoint 1 — Atomic Submission dan Durable Outbox
 
-Status: aktif; siap untuk Bagian user.
+Status: Bagian user direview dan lulus; menunggu review HMAC learning gate
+Checkpoint 2 sebelum Bagian agent.
 
 ## Tujuan
 

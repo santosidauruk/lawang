@@ -19,7 +19,7 @@ SET status = sqlc.arg(next_state), updated_at = sqlc.arg(updated_at)
 WHERE id = sqlc.arg(id) AND status = sqlc.arg(expected_state);
 
 -- name: LockVerificationSessionByID :one
-SELECT id, status, resume_token_hash, expires_at, created_at, updated_at
+SELECT id, status, resume_token_hash, expires_at, created_at, updated_at, verification_deadline_at
 FROM verification_sessions
 WHERE id = $1
 FOR UPDATE;
