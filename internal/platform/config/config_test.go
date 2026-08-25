@@ -90,13 +90,14 @@ func TestLoadParsesS3Configuration(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgresql://lawang:lawang@localhost:5432/lawang_db_go")
 
 	want := map[string]string{
-		"S3_INTERNAL_ENDPOINT": "http://minio:9000",
-		"S3_PUBLIC_ENDPOINT":   "https://uploads.example.test",
-		"S3_REGION":            "ap-southeast-3",
-		"S3_ACCESS_KEY":        "test-minio",
-		"S3_SECRET_KEY":        "test-minio-password",
-		"S3_BUCKET":            "test-artifacts",
-		"S3_USE_PATH_STYLE":    "true",
+		"S3_INTERNAL_ENDPOINT":    "http://minio:9000",
+		"S3_PUBLIC_ENDPOINT":      "https://uploads.example.test",
+		"S3_REGION":               "ap-southeast-3",
+		"S3_ACCESS_KEY":           "test-minio",
+		"S3_SECRET_KEY":           "test-minio-password",
+		"S3_BUCKET":               "test-artifacts",
+		"S3_USE_PATH_STYLE":       "true",
+		"PROVIDER_WEBHOOK_SECRET": "secret",
 	}
 
 	for key, value := range want {
@@ -254,13 +255,14 @@ func setValidS3Environment(t *testing.T) {
 	t.Helper()
 
 	s3Env := map[string]string{
-		"S3_INTERNAL_ENDPOINT": "http://minio:9000",
-		"S3_PUBLIC_ENDPOINT":   "https://uploads.example.test",
-		"S3_REGION":            "ap-southeast-3",
-		"S3_ACCESS_KEY":        "test-minio",
-		"S3_SECRET_KEY":        "test-minio-password",
-		"S3_BUCKET":            "test-artifacts",
-		"S3_USE_PATH_STYLE":    "true",
+		"S3_INTERNAL_ENDPOINT":    "http://minio:9000",
+		"S3_PUBLIC_ENDPOINT":      "https://uploads.example.test",
+		"S3_REGION":               "ap-southeast-3",
+		"S3_ACCESS_KEY":           "test-minio",
+		"S3_SECRET_KEY":           "test-minio-password",
+		"S3_BUCKET":               "test-artifacts",
+		"S3_USE_PATH_STYLE":       "true",
+		"PROVIDER_WEBHOOK_SECRET": "secret",
 	}
 
 	for key, value := range s3Env {

@@ -173,7 +173,7 @@ func TestBiometricCaptureUploadPutAndConfirmOverHTTPWithPostgreSQLAndMinIO(t *te
 		tokens,
 		fixedClock{now: now},
 	)
-	handler := httpapi.NewHandler(nil, nil, artifacts, uploadIntents)
+	handler := httpapi.NewHandler(nil, nil, artifacts, uploadIntents, nil)
 
 	// ACT + ASSERT 1 — public upload-url contract
 	// Send an authenticated POST through handler with exact JSON

@@ -11,17 +11,18 @@ import (
 
 // Config contains values validated once at process startup.
 type Config struct {
-	DatabaseURL        string
-	HTTPAddress        string
-	ShutdownTimeout    time.Duration
-	LogLevel           slog.Level
-	S3InternalEndpoint string
-	S3PublicEndpoint   string
-	S3Region           string
-	S3AccessKey        string
-	S3SecretKey        string
-	S3Bucket           string
-	S3UsePathStyle     bool
+	DatabaseURL           string
+	HTTPAddress           string
+	ShutdownTimeout       time.Duration
+	LogLevel              slog.Level
+	S3InternalEndpoint    string
+	S3PublicEndpoint      string
+	S3Region              string
+	S3AccessKey           string
+	S3SecretKey           string
+	S3Bucket              string
+	S3UsePathStyle        bool
+	ProviderWebhookSecret string
 }
 
 // Load reads and validates process configuration from the environment.
@@ -94,18 +95,24 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 
+	providerWebhookSecret, ok := os.LookupEnv("PROVIDER_WEBHOOK_SECRET")
+	if !ok || providerWebhookSecret == "" {
+		return Config{}, errors.New("PROVIDER_WEBHOOK_SECRET is required")
+	}
+
 	return Config{
-		DatabaseURL:        databaseURL,
-		HTTPAddress:        lookupOrDefault("HTTP_ADDRESS", ":8080"),
-		ShutdownTimeout:    shutdownTimeout,
-		LogLevel:           logLevel,
-		S3InternalEndpoint: s3InternalEndpoint,
-		S3PublicEndpoint:   s3PublicEndpoint,
-		S3Region:           s3Region,
-		S3AccessKey:        s3AccessKey,
-		S3SecretKey:        s3SecretKey,
-		S3Bucket:           s3Bucket,
-		S3UsePathStyle:     s3BoolUsePathStyle,
+		DatabaseURL:           databaseURL,
+		HTTPAddress:           lookupOrDefault("HTTP_ADDRESS", ":8080"),
+		ShutdownTimeout:       shutdownTimeout,
+		LogLevel:              logLevel,
+		S3InternalEndpoint:    s3InternalEndpoint,
+		S3PublicEndpoint:      s3PublicEndpoint,
+		S3Region:              s3Region,
+		S3AccessKey:           s3AccessKey,
+		S3SecretKey:           s3SecretKey,
+		S3Bucket:              s3Bucket,
+		S3UsePathStyle:        s3BoolUsePathStyle,
+		ProviderWebhookSecret: providerWebhookSecret,
 	}, nil
 }
 

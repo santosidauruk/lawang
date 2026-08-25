@@ -62,6 +62,11 @@ service tanpa mengisi assertion concept-bearing atau verifier production.
 Kesalahan verify-after-decode, ordinary string comparison, atau body logging adalah
 concept-bearing dan dikembalikan kepada user untuk direvisi.
 
+
+// kerjain unit test
+// bikin route
+// bikin fungsi dengan param hmac header dan validasi
+// bikin route handler dan panggil fungsi barusan
 ## Review agent
 
 Agent memeriksa:

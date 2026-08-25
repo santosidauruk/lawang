@@ -2,6 +2,8 @@ package httpapi
 
 import (
 	"context"
+	"crypto/hmac"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -32,12 +34,22 @@ type ArtifactUploadIntentService interface {
 	Create(ctx context.Context, sessionID uuid.UUID, rawToken string, kind string) (artifact.CreatedUploadIntent, error)
 }
 
+type VerifiedBodyService interface {
+	HandleVerifiedBody(ctx context.Context, body []byte) error
+}
+
+type VerifiedBody struct {
+	Service               VerifiedBodyService
+	ProviderWebhookSecret string
+}
+
 // NewHandler builds the public HTTP routing surface.
 func NewHandler(
 	sessionService SessionService,
 	personalDetailsService PersonalDetailsService,
 	artifactConfirmService ArtifactConfirmService,
 	artifactUploadIntentService ArtifactUploadIntentService,
+	verifiedBody *VerifiedBody,
 ) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health/live", requireMethod(http.MethodGet, liveHealth))
@@ -62,6 +74,9 @@ func NewHandler(
 			"/verification-sessions/{id}/artifacts/upload-url",
 			requireMethod(http.MethodPost, createArtifactUploadIntent(artifactUploadIntentService)),
 		)
+	}
+	if verifiedBody != nil && verifiedBody.Service != nil {
+		mux.HandleFunc("/webhooks/verification", requireMethod(http.MethodPost, verifyProviderSubmission(verifiedBody.Service, verifiedBody.ProviderWebhookSecret)))
 	}
 	return mux
 }
@@ -326,6 +341,67 @@ func confirmArtifact(service ArtifactConfirmService) http.HandlerFunc {
 		}{
 			ID: summary.ID.String(), Status: summary.Status,
 			ExpiresAt: summary.ExpiresAt.UTC().Format(time.RFC3339),
+		})
+	}
+
+}
+
+type verifyProviderSubmissionRequest struct {
+	EventID   string `json:"eventId"`
+	SessionID string `json:"sessionId"`
+	Verdict   string `json:"verdict"`
+}
+
+func verifyProviderSubmission(service VerifiedBodyService, providerWebhookSecret string) http.HandlerFunc {
+	return func(response http.ResponseWriter, request *http.Request) {
+
+		request.Body = http.MaxBytesReader(response, request.Body, 1<<20)
+		bytesBody, err := io.ReadAll(request.Body)
+		if err != nil {
+			writeJSON(response, http.StatusInternalServerError, APIError{Code: "INTERNAL", Message: "Internal server error"})
+			return
+		}
+
+		signatureHeader := request.Header.Get("x-signature")
+		if !strings.HasPrefix(signatureHeader, "sha256=") {
+			writeJSON(response, http.StatusUnauthorized, APIError{Code: "INTERNAL", Message: "Internal server error"})
+			return
+		}
+
+		hmacHexStr := strings.TrimPrefix(signatureHeader, "sha256=")
+		decodedHmac, err := hex.DecodeString(hmacHexStr)
+		if err != nil {
+			writeJSON(response, http.StatusInternalServerError, APIError{Code: "INTERNAL", Message: "Internal server error"})
+			return
+		}
+
+		if len(decodedHmac) != 32 {
+			writeJSON(response, http.StatusInternalServerError, APIError{Code: "INTERNAL", Message: "Internal server error"})
+			return
+		}
+
+		bodyHmac, err := SetHmacSubmissionBody(providerWebhookSecret, bytesBody)
+		if err != nil {
+			writeJSON(response, http.StatusInternalServerError, APIError{Code: "INTERNAL", Message: "Internal server error"})
+			return
+		}
+
+		hmacIsValid := hmac.Equal(bodyHmac, decodedHmac)
+		if !hmacIsValid {
+			writeJSON(response, http.StatusUnauthorized, APIError{Code: "INTERNAL", Message: "Internal server error"})
+			return
+		}
+
+		err = service.HandleVerifiedBody(request.Context(), []byte(bytesBody))
+		if err != nil {
+			writeJSON(response, http.StatusInternalServerError, APIError{Code: "INTERNAL", Message: "Internal server error"})
+			return
+		}
+
+		writeJSON(response, http.StatusOK, struct {
+			Status string `json:"status"`
+		}{
+			Status: "ok",
 		})
 	}
 

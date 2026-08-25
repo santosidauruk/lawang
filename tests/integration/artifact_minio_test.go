@@ -338,7 +338,7 @@ func TestS3StorageFailuresRemainBoundedAtHTTPBoundary(t *testing.T) {
 				session.NewProductionCryptoTokens(),
 				fixedClock{now: now},
 			)
-			handler := httpapi.NewHandler(nil, nil, service, nil)
+			handler := httpapi.NewHandler(nil, nil, service, nil, nil)
 			request := httptest.NewRequest(
 				http.MethodPost,
 				"/verification-sessions/"+fixture.sessionID.String()+"/artifacts/confirm",

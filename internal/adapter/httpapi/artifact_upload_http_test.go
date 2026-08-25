@@ -347,7 +347,7 @@ func performArtifactUploadIntentRequest(
 	}
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
-	httpapi.NewHandler(nil, nil, nil, service).ServeHTTP(response, request)
+	httpapi.NewHandler(nil, nil, nil, service, nil).ServeHTTP(response, request)
 	return response
 }
 

@@ -21,6 +21,7 @@ import (
 	"github.com/santosidauruk/lawang-go/internal/adapter/s3storage"
 	"github.com/santosidauruk/lawang-go/internal/application/artifact"
 	"github.com/santosidauruk/lawang-go/internal/application/personaldetails"
+	"github.com/santosidauruk/lawang-go/internal/application/providerverdict"
 	"github.com/santosidauruk/lawang-go/internal/application/session"
 	"github.com/santosidauruk/lawang-go/internal/platform/config"
 	"github.com/santosidauruk/lawang-go/internal/platform/httpserver"
@@ -104,7 +105,12 @@ func run() int {
 	artifactConfirm := artifact.NewService(artifactStore, confirmCoordinator, objectStorage, extractor, tokens, clock)
 
 	uploadIntentService := artifact.NewUploadIntentService(artifactStore, artifactStore, objectStorage, tokens, clock)
-	handler := httpapi.WithRequestLogging(httpapi.NewHandler(sessions, details, artifactConfirm, uploadIntentService), logger)
+	providerVerdictService := providerverdict.NewProviderVerdictService(clock)
+	verifiedBody := &httpapi.VerifiedBody{
+		Service:               providerVerdictService,
+		ProviderWebhookSecret: cfg.ProviderWebhookSecret,
+	}
+	handler := httpapi.WithRequestLogging(httpapi.NewHandler(sessions, details, artifactConfirm, uploadIntentService, verifiedBody), logger)
 	server := httpserver.New(cfg.HTTPAddress, handler)
 	logger.Info("API listening", "address", listener.Addr().String())
 	if err := httpserver.Run(ctx, server, listener, cfg.ShutdownTimeout); err != nil {
