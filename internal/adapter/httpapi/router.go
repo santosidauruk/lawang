@@ -2,8 +2,6 @@ package httpapi
 
 import (
 	"context"
-	"crypto/hmac"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -341,67 +339,6 @@ func confirmArtifact(service ArtifactConfirmService) http.HandlerFunc {
 		}{
 			ID: summary.ID.String(), Status: summary.Status,
 			ExpiresAt: summary.ExpiresAt.UTC().Format(time.RFC3339),
-		})
-	}
-
-}
-
-type verifyProviderSubmissionRequest struct {
-	EventID   string `json:"eventId"`
-	SessionID string `json:"sessionId"`
-	Verdict   string `json:"verdict"`
-}
-
-func verifyProviderSubmission(service VerifiedBodyService, providerWebhookSecret string) http.HandlerFunc {
-	return func(response http.ResponseWriter, request *http.Request) {
-
-		request.Body = http.MaxBytesReader(response, request.Body, 1<<20)
-		bytesBody, err := io.ReadAll(request.Body)
-		if err != nil {
-			writeJSON(response, http.StatusInternalServerError, APIError{Code: "INTERNAL", Message: "Internal server error"})
-			return
-		}
-
-		signatureHeader := request.Header.Get("x-signature")
-		if !strings.HasPrefix(signatureHeader, "sha256=") {
-			writeJSON(response, http.StatusUnauthorized, APIError{Code: "INTERNAL", Message: "Internal server error"})
-			return
-		}
-
-		hmacHexStr := strings.TrimPrefix(signatureHeader, "sha256=")
-		decodedHmac, err := hex.DecodeString(hmacHexStr)
-		if err != nil {
-			writeJSON(response, http.StatusInternalServerError, APIError{Code: "INTERNAL", Message: "Internal server error"})
-			return
-		}
-
-		if len(decodedHmac) != 32 {
-			writeJSON(response, http.StatusInternalServerError, APIError{Code: "INTERNAL", Message: "Internal server error"})
-			return
-		}
-
-		bodyHmac, err := SetHmacSubmissionBody(providerWebhookSecret, bytesBody)
-		if err != nil {
-			writeJSON(response, http.StatusInternalServerError, APIError{Code: "INTERNAL", Message: "Internal server error"})
-			return
-		}
-
-		hmacIsValid := hmac.Equal(bodyHmac, decodedHmac)
-		if !hmacIsValid {
-			writeJSON(response, http.StatusUnauthorized, APIError{Code: "INTERNAL", Message: "Internal server error"})
-			return
-		}
-
-		err = service.HandleVerifiedBody(request.Context(), []byte(bytesBody))
-		if err != nil {
-			writeJSON(response, http.StatusInternalServerError, APIError{Code: "INTERNAL", Message: "Internal server error"})
-			return
-		}
-
-		writeJSON(response, http.StatusOK, struct {
-			Status string `json:"status"`
-		}{
-			Status: "ok",
 		})
 	}
 

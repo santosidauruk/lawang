@@ -1,6 +1,7 @@
 # Checkpoint 2 — Exact-Raw-Body Webhook HMAC Foundation
 
-Status: aktif; siap untuk Bagian user sebagai required learning gate kedua.
+Status: selesai pada 2026-08-25; tracer user direview dan seluruh sibling/security
+regression Bagian agent GREEN.
 
 ## Tujuan
 
@@ -34,7 +35,7 @@ Untuk exact JSON bytes dan header
 Jangan meletakkan HMAC di provider-verdict domain service; raw request bytes dan
 header adalah tanggung jawab HTTP adapter.
 
-## Bagian user
+## Bagian user — selesai dan direview
 
 Agent menyiapkan test scaffold dengan fixed secret, exact body bytes, dan recording
 service tanpa mengisi assertion concept-bearing atau verifier production.
@@ -62,11 +63,6 @@ service tanpa mengisi assertion concept-bearing atau verifier production.
 Kesalahan verify-after-decode, ordinary string comparison, atau body logging adalah
 concept-bearing dan dikembalikan kepada user untuk direvisi.
 
-
-// kerjain unit test
-// bikin route
-// bikin fungsi dengan param hmac header dan validasi
-// bikin route handler dan panggil fungsi barusan
 ## Review agent
 
 Agent memeriksa:
@@ -78,7 +74,7 @@ Agent memeriksa:
 - secret tidak tampil dalam error/log/test output;
 - valid service stub tidak diartikan sebagai verdict persistence.
 
-## Bagian agent
+## Bagian agent — selesai
 
 Setelah review lulus, agent menutup:
 
@@ -99,3 +95,42 @@ Setelah review lulus, agent menutup:
 - invalid signatures menghasilkan `401` tanpa downstream effect;
 - no webhook table, verdict transition, provider process, atau queue dependency;
 - Checkpoint 1 dan 2 learning gates keduanya GREEN sebelum continuation besar agent.
+
+## Completion evidence
+
+Tracer user `TestWebhookForwardExactRawBodyWithValidSignature` dan
+`TestWebhookForwardWrongRawBodyWithValidSignature` GREEN. Tracer menghitung HMAC
+secara independen dari helper produksi, melewati public route, membuktikan exact raw
+bytes diteruskan satu kali, dan mempertahankan signature lama ketika satu trailing
+space ditambahkan.
+
+Bagian agent menambahkan `webhook_agent_test.go` untuk:
+
+- missing header, wrong scheme, empty/malformed/odd-length hex, serta invalid MAC
+  menjadi exact safe `401 INVALID_SIGNATURE` tanpa service call;
+- uppercase hex success; lowercase success tetap dibuktikan tracer user;
+- body di atas 1 MiB menjadi bounded `413 PAYLOAD_TOO_LARGE`;
+- read failure dan verified-body service failure menjadi safe `500 INTERNAL` tanpa
+  raw error, body, atau secret leakage;
+- valid signature atas malformed JSON diteruskan tanpa JSON decode;
+- request log hanya menyimpan bounded HTTP outcome dan tidak memuat webhook body,
+  signature, header name, atau configured secret;
+- required provider webhook secret dibaca dan divalidasi sekali oleh config lalu
+  diinjeksi dari `cmd/api`; `.env.example` hanya memuat safe local placeholder.
+
+Verification GREEN:
+
+- focused user dan agent webhook tests;
+- `go test -race ./internal/adapter/httpapi -count=1`;
+- `go test ./internal/platform/config -count=1`;
+- scoped staticcheck untuk HTTP, config, provider-verdict stub, dan API runtime;
+- `go vet ./...`, `make sqlc-diff`, `make migration-validate`,
+  `make compose-validate`, dan `git diff --check`.
+
+Repository-wide `make quality` belum GREEN karena pekerjaan Checkpoint 1 yang sudah
+ada memiliki duplicate SQLC import dan dua unused fixture helpers. Full
+`go test -race ./...` melewati seluruh package non-integration tetapi integration
+fixtures Issue 008 yang hanya memasang migration 00001-00006 gagal setelah generated
+session query Checkpoint 1 mulai membaca `verification_deadline_at` dari migration
+00007. Ini dicatat sebagai Checkpoint 1 continuation/regression work; tidak ada
+failure pada focused webhook atau applicant HTTP adapter suite Checkpoint 2.

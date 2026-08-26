@@ -145,6 +145,51 @@ func TestLoadParsesFalseS3UsePathStyle(t *testing.T) {
 	}
 }
 
+func TestLoadParsesProviderWebhookSecret(t *testing.T) {
+	const secret = "provider-webhook-secret-for-config-test"
+	t.Setenv("DATABASE_URL", "postgresql://lawang:lawang@localhost:5432/lawang_db_go")
+	setValidS3Environment(t)
+	t.Setenv("PROVIDER_WEBHOOK_SECRET", secret)
+
+	got, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got.ProviderWebhookSecret != secret {
+		t.Errorf("ProviderWebhookSecret = %q, want configured value", got.ProviderWebhookSecret)
+	}
+}
+
+func TestLoadRequiresProviderWebhookSecret(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgresql://lawang:lawang@localhost:5432/lawang_db_go")
+	setValidS3Environment(t)
+	t.Setenv("PROVIDER_WEBHOOK_SECRET", "")
+
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("Load() error = nil, want required PROVIDER_WEBHOOK_SECRET error")
+	}
+	if got, want := err.Error(), "PROVIDER_WEBHOOK_SECRET is required"; got != want {
+		t.Fatalf("Load() error = %q, want %q", got, want)
+	}
+}
+
+func TestLoadValidationErrorDoesNotExposeProviderWebhookSecret(t *testing.T) {
+	const secret = "do-not-log-provider-webhook-secret"
+	t.Setenv("DATABASE_URL", "postgresql://lawang:lawang@localhost:5432/lawang_db_go")
+	setValidS3Environment(t)
+	t.Setenv("PROVIDER_WEBHOOK_SECRET", secret)
+	t.Setenv("S3_PUBLIC_ENDPOINT", "https://[::1")
+
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("Load() error = nil, want invalid endpoint error")
+	}
+	if strings.Contains(err.Error(), secret) {
+		t.Fatal("Load() error exposes PROVIDER_WEBHOOK_SECRET")
+	}
+}
+
 func TestLoadRejectsInvalidS3Endpoints(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgresql://lawang:lawang@localhost:5432/lawang_db_go")
 	setValidS3Environment(t)
