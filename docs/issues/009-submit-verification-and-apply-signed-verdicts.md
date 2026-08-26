@@ -8,7 +8,7 @@ Source: `docs/plan-go.md` sections 4-5, 6, 8, 10, 12-14, 16 Issue 9, and 17.2
 Approved collaboration plan:
 [`docs/plans/issue_009/README.md`](../plans/issue_009/README.md).
 Active checkpoint:
-[`Checkpoint 1 — Atomic Submission dan Durable Outbox`](../plans/issue_009/checkpoint-1-atomic-submission-outbox.md).
+[`Checkpoint 4 — Concurrent Outbox Relay`](../plans/issue_009/checkpoint-4-outbox-relay.md).
 
 ## User stories covered
 

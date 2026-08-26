@@ -581,19 +581,3 @@ func openProviderSubmissionDatabase(t *testing.T) (context.Context, *pgx.Conn) {
 	t.Cleanup(func() { _ = database.Close(context.Background()) })
 	return ctx, database
 }
-
-func (f providerSubmissionSuccessFixture) identityStorageKey() string {
-	return fmt.Sprintf(
-		"verification-sessions/%s/identity_document/%s",
-		f.sessionID,
-		f.identityIntentID,
-	)
-}
-
-func (f providerSubmissionSuccessFixture) biometricStorageKey() string {
-	return fmt.Sprintf(
-		"verification-sessions/%s/biometric_capture/%s",
-		f.sessionID,
-		f.biometricIntentID,
-	)
-}

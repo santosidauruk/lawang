@@ -87,7 +87,7 @@ func TestIdentityDocumentUploadAndConfirmOverHTTPWithPostgreSQL(t *testing.T) {
 		tokens,
 		fixedClock{now: now},
 	)
-	handler := httpapi.NewHandler(nil, nil, artifacts, uploadIntents, nil)
+	handler := httpapi.NewHandler(nil, nil, artifacts, uploadIntents, nil, nil)
 
 	uploadRequest := httptest.NewRequest(
 		http.MethodPost,
@@ -247,7 +247,7 @@ func TestIdentityDocumentUploadPutAndConfirmOverHTTPWithPostgreSQLAndMinIO(t *te
 		tokens,
 		fixedClock{now: now},
 	)
-	handler := httpapi.NewHandler(nil, nil, artifacts, uploadIntents, nil)
+	handler := httpapi.NewHandler(nil, nil, artifacts, uploadIntents, nil, nil)
 
 	uploadRequest := httptest.NewRequest(
 		http.MethodPost,

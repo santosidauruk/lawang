@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/santosidauruk/lawang-go/internal/application/artifact"
 	"github.com/santosidauruk/lawang-go/internal/application/personaldetails"
+	"github.com/santosidauruk/lawang-go/internal/application/providersubmission"
 	"github.com/santosidauruk/lawang-go/internal/application/session"
 )
 
@@ -66,6 +67,36 @@ func writePersonalDetailsError(response http.ResponseWriter, id uuid.UUID, err e
 		}
 	}
 	writeSessionError(response, id, err)
+}
+
+func writeProviderSubmissionError(response http.ResponseWriter, id uuid.UUID, err error) {
+	var submissionError *providersubmission.Error
+	if !errors.As(err, &submissionError) {
+		writeSessionError(response, id, err)
+		return
+	}
+
+	details := map[string]any{"id": submissionError.ID.String()}
+	switch submissionError.Code {
+	case providersubmission.CodeSubmissionNotReady:
+		writeJSON(response, http.StatusConflict, APIError{
+			Code:    string(submissionError.Code),
+			Message: "verification session is not ready for provider submission",
+			Details: details,
+		})
+	case providersubmission.CodeIllegalTransition:
+		details["from"] = submissionError.From.String()
+		details["event"] = submissionError.Action.String()
+		writeJSON(response, http.StatusConflict, APIError{
+			Code:    string(submissionError.Code),
+			Message: "illegal transition from " + submissionError.From.String() + " via " + submissionError.Action.String(),
+			Details: details,
+		})
+	default:
+		writeJSON(response, http.StatusInternalServerError, APIError{
+			Code: "INTERNAL", Message: "internal server error",
+		})
+	}
 }
 
 func writeArtifactError(response http.ResponseWriter, id uuid.UUID, err error) {

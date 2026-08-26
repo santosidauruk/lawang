@@ -39,7 +39,7 @@ func TestConfirmIdentityDocumentHTTPContract(t *testing.T) {
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 
-	httpapi.NewHandler(nil, nil, service, nil, nil).ServeHTTP(response, request)
+	httpapi.NewHandler(nil, nil, service, nil, nil, nil).ServeHTTP(response, request)
 
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, want = %d", response.Code, http.StatusOK)
@@ -195,7 +195,7 @@ func TestConfirmIdentityDocumentRejectsUnknownField(t *testing.T) {
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 
-	httpapi.NewHandler(nil, nil, service, nil, nil).ServeHTTP(response, request)
+	httpapi.NewHandler(nil, nil, service, nil, nil, nil).ServeHTTP(response, request)
 
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want = %d; body = %s", response.Code, http.StatusBadRequest, response.Body.String())
@@ -227,7 +227,7 @@ func TestConfirmIdentityDocumentRequiresUploadIntentID(t *testing.T) {
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 
-	httpapi.NewHandler(nil, nil, service, nil, nil).ServeHTTP(response, request)
+	httpapi.NewHandler(nil, nil, service, nil, nil, nil).ServeHTTP(response, request)
 
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf(
@@ -268,7 +268,7 @@ func TestConfirmIdentityDocumentRejectsInvalidUploadIntentID(t *testing.T) {
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 
-	httpapi.NewHandler(nil, nil, service, nil, nil).ServeHTTP(response, request)
+	httpapi.NewHandler(nil, nil, service, nil, nil, nil).ServeHTTP(response, request)
 
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf(
@@ -309,7 +309,7 @@ func TestConfirmIdentityDocumentRejectsMalformedJSON(t *testing.T) {
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 
-	httpapi.NewHandler(nil, nil, service, nil, nil).ServeHTTP(response, request)
+	httpapi.NewHandler(nil, nil, service, nil, nil, nil).ServeHTTP(response, request)
 
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf(
@@ -350,7 +350,7 @@ func TestConfirmIdentityDocumentRejectsEmptyBody(t *testing.T) {
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 
-	httpapi.NewHandler(nil, nil, service, nil, nil).ServeHTTP(response, request)
+	httpapi.NewHandler(nil, nil, service, nil, nil, nil).ServeHTTP(response, request)
 
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf(
@@ -392,7 +392,7 @@ func TestConfirmIdentityDocumentRejectsSecondJSONValue(t *testing.T) {
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 
-	httpapi.NewHandler(nil, nil, service, nil, nil).ServeHTTP(response, request)
+	httpapi.NewHandler(nil, nil, service, nil, nil, nil).ServeHTTP(response, request)
 
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf(
@@ -434,7 +434,7 @@ func TestConfirmIdentityDocumentRejectsBodyAboveOneMiB(t *testing.T) {
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 
-	httpapi.NewHandler(nil, nil, service, nil, nil).ServeHTTP(response, request)
+	httpapi.NewHandler(nil, nil, service, nil, nil, nil).ServeHTTP(response, request)
 
 	if response.Code != http.StatusRequestEntityTooLarge {
 		t.Fatalf(
@@ -516,7 +516,7 @@ func TestConfirmIdentityDocumentHTTPBoundaryRejections(t *testing.T) {
 			request.Header.Set("Content-Type", "application/json")
 			response := httptest.NewRecorder()
 
-			httpapi.NewHandler(nil, nil, service, nil, nil).ServeHTTP(response, request)
+			httpapi.NewHandler(nil, nil, service, nil, nil, nil).ServeHTTP(response, request)
 
 			if response.Code != test.wantStatus {
 				t.Fatalf(
@@ -562,7 +562,7 @@ func TestConfirmIdentityDocumentMapsIdentityMismatch(t *testing.T) {
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 
-	httpapi.NewHandler(nil, nil, service, nil, nil).ServeHTTP(response, request)
+	httpapi.NewHandler(nil, nil, service, nil, nil, nil).ServeHTTP(response, request)
 
 	if response.Code != http.StatusUnprocessableEntity {
 		t.Fatalf(
@@ -711,7 +711,7 @@ func TestCreateIdentityDocumentUploadIntentHTTPContract(t *testing.T) {
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 
-	httpapi.NewHandler(nil, nil, nil, service, nil).ServeHTTP(response, request)
+	httpapi.NewHandler(nil, nil, nil, service, nil, nil).ServeHTTP(response, request)
 
 	if response.Code != http.StatusCreated {
 		t.Fatalf(
@@ -787,7 +787,7 @@ func assertArtifactConfirmError(
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 
-	httpapi.NewHandler(nil, nil, service, nil, nil).ServeHTTP(response, request)
+	httpapi.NewHandler(nil, nil, service, nil, nil, nil).ServeHTTP(response, request)
 
 	if response.Code != wantStatus {
 		t.Fatalf(

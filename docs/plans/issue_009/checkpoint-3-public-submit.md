@@ -1,6 +1,7 @@
 # Checkpoint 3 — Public Submit dan Exact Idempotent Replay
 
-Status: menunggu review gates Checkpoint 1 dan 2.
+Status: selesai pada 2026-08-26; Bagian user direview dan seluruh public
+failure/concurrency/regression matrix Bagian agent GREEN.
 
 ## Tujuan
 
@@ -33,6 +34,30 @@ details.
 - `internal/adapter/postgres/provider_submission_transactions.go`
 - `cmd/api/main.go`
 - public HTTP-to-PostgreSQL integration tracer
+
+## Scaffold agent sebelum Bagian user
+
+- `internal/application/providersubmission/service_test.go` membekukan first submit
+  dan durable replay tanpa menulis production orchestration;
+- `internal/adapter/httpapi/provider_submission_test.go` membekukan exact `202`
+  body untuk initial/replay dan menyediakan injectable auth/error fixture untuk
+  continuation agent setelah review;
+- `tests/integration/provider_submission_http_postgres_test.go` memakai fixture
+  semantic Checkpoint 1 dan membuktikan dua request kelak tetap menghasilkan satu
+  deadline, event, dan outbox;
+- regression/rollback/concurrency Checkpoint 1 sudah ditutup sebelum RED scaffold
+  ini diberikan.
+
+Mulai dari RED application slice:
+
+```sh
+GOCACHE=/tmp/lawang-go-build go test ./internal/application/providersubmission \
+  -run 'TestSubmit(FirstEligible|Pending)' -count=1
+```
+
+Expected RED awal adalah `undefined: providersubmission.NewService`. Setelah poin
+1-4 GREEN, lanjutkan focused HTTP contract; jangan menjalankan tracer PostgreSQL
+sebagai pengganti application RED pertama.
 
 ## Bagian user
 
@@ -77,7 +102,30 @@ Agent memeriksa:
 - HTTP adapter hanya tahu application-owned interface/result;
 - response byte/field contract tepat dan tidak memiliki field tambahan.
 
-## Bagian agent
+## Review gate evidence
+
+Review Bagian user lulus pada 2026-08-26 tanpa temuan concept-bearing. Application
+service memakai guarded PostgreSQL transaction untuk first submit dan durable
+replay, HTTP adapter hanya bergantung pada consumer-owned interface, exact response
+tidak mengekspos `Replayed`, dan `cmd/api` menyambungkan PostgreSQL service tanpa
+Redis atau provider client.
+
+Verification GREEN:
+
+- focused application first/replay tests dengan race detector: 2;
+- focused exact HTTP initial/replay contract dengan race detector: 3;
+- real HTTP-to-PostgreSQL initial/replay tracer dengan race detector: 1;
+- seluruh `internal/...` dengan race detector: 297;
+- applicant create/resume, Personal Details, dan Identity Document PostgreSQL HTTP
+  regressions dengan race detector: 3;
+- scoped `go vet`, scoped Staticcheck, `make sqlc-diff`, `make migration-validate`,
+  `make compose-validate`, dan `git diff --check`.
+
+Personal Details integration fixture diperbaiki untuk menjalankan migration 00007
+yang kini dibutuhkan shared generated session-lock query. Ini fixture regression
+agent-owned, bukan defect Provider Submission behavior.
+
+## Bagian agent — selesai
 
 Setelah review lulus, agent menutup:
 
@@ -101,3 +149,35 @@ yang disiapkan agent; jangan membuat generic error framework.
 - API tidak memiliki Redis/provider client;
 - full HTTP-to-PostgreSQL tracer GREEN;
 - focused race tests dan applicant-route regression GREEN.
+
+## Completion evidence
+
+Bagian agent menutup exact public failure matrix untuk missing/malformed/wrong
+Authorization, unknown session, applicant expiry sebelum first submit, missing
+accepted artifacts, wrong/terminal state, malformed UUID, wrong method, non-empty
+request body, body-read failure, serta internal failure. Error mapping memakai
+bounded `SUBMISSION_NOT_READY`, existing `ILLEGAL_TRANSITION`, dan safe `INTERNAL`
+tanpa raw error/token leakage.
+
+Concurrent public HTTP proof menjalankan dua caller melalui production handler,
+application service, PostgreSQL adapter, dan row lock nyata. Keduanya menerima exact
+`202`, sementara database menyimpan tepat satu deadline, `submit_session`, dan
+`provider:submit` outbox. Real success tracer hanya menyediakan PostgreSQL; tidak ada
+Redis/provider dependency yang tersedia untuk ditunggu. Architecture regression
+juga menolak queue/provider imports pada application, HTTP adapter, dan `cmd/api`.
+
+Verification GREEN pada 2026-08-26:
+
+- focused application/HTTP/architecture race suite;
+- 13 focused Provider Submission PostgreSQL/HTTP race tests;
+- applicant create/resume, Personal Details, dan Identity Document PostgreSQL HTTP
+  regressions;
+- full `make quality`, termasuk `go test -race ./...` dengan integration suite
+  selesai dalam 578.785 detik;
+- `go vet`, Staticcheck, `make sqlc-diff`, `make migration-validate`,
+  `make compose-validate`, dan `git diff --check`.
+
+Fixture regressions yang ditutup selama checkpoint: artifact dan Personal Details
+PostgreSQL helpers kini memasang migration 00007 untuk shared generated session-lock
+query; dua unused Provider Submission storage-key helpers dihapus agar Staticcheck
+GREEN.

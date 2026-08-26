@@ -204,7 +204,7 @@ func TestWebhookRequestLoggingExcludesBodySignatureAndSecret(t *testing.T) {
 	handler := httpapi.WithRequestLogging(
 		httpapi.NewHandler(nil, nil, nil, nil, &httpapi.VerifiedBody{
 			Service: service, ProviderWebhookSecret: webhookSecret,
-		}),
+		}, nil),
 		logger,
 	)
 	request := httptest.NewRequest(http.MethodPost, "/webhooks/verification", bytes.NewReader(rawBody))
@@ -262,7 +262,7 @@ func newAgentWebhookHandler(service httpapi.VerifiedBodyService) http.Handler {
 	return httpapi.NewHandler(nil, nil, nil, nil, &httpapi.VerifiedBody{
 		Service:               service,
 		ProviderWebhookSecret: checkpoint2WebhookSecret,
-	})
+	}, nil)
 }
 
 func assertWebhookError(

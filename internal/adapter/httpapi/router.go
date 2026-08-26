@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/santosidauruk/lawang-go/internal/application/artifact"
 	"github.com/santosidauruk/lawang-go/internal/application/personaldetails"
+	"github.com/santosidauruk/lawang-go/internal/application/providersubmission"
 	"github.com/santosidauruk/lawang-go/internal/application/session"
 )
 
@@ -41,6 +42,10 @@ type VerifiedBody struct {
 	ProviderWebhookSecret string
 }
 
+type ProviderSubmissionService interface {
+	Submit(ctx context.Context, sessionID uuid.UUID, rawToken string) (providersubmission.Result, error)
+}
+
 // NewHandler builds the public HTTP routing surface.
 func NewHandler(
 	sessionService SessionService,
@@ -48,6 +53,7 @@ func NewHandler(
 	artifactConfirmService ArtifactConfirmService,
 	artifactUploadIntentService ArtifactUploadIntentService,
 	verifiedBody *VerifiedBody,
+	providerSubmissionService ProviderSubmissionService,
 ) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health/live", requireMethod(http.MethodGet, liveHealth))
@@ -75,6 +81,9 @@ func NewHandler(
 	}
 	if verifiedBody != nil && verifiedBody.Service != nil {
 		mux.HandleFunc("/webhooks/verification", requireMethod(http.MethodPost, verifyProviderSubmission(verifiedBody.Service, verifiedBody.ProviderWebhookSecret)))
+	}
+	if providerSubmissionService != nil {
+		mux.HandleFunc("/verification-sessions/{id}/submit", requireMethod(http.MethodPost, submitVerificationSession(providerSubmissionService)))
 	}
 	return mux
 }
@@ -342,4 +351,43 @@ func confirmArtifact(service ArtifactConfirmService) http.HandlerFunc {
 		})
 	}
 
+}
+
+func submitVerificationSession(service ProviderSubmissionService) http.HandlerFunc {
+	return func(response http.ResponseWriter, request *http.Request) {
+		token, authError := ParseBearer(request.Header.Get("Authorization"))
+		if authError != nil {
+			writeJSON(response, http.StatusUnauthorized, authError)
+			return
+		}
+		id, err := uuid.Parse(request.PathValue("id"))
+		if err != nil {
+			writeJSON(response, http.StatusBadRequest, APIError{Code: "VALIDATION_ERROR", Message: "id must be a UUID"})
+			return
+		}
+		bodyProbe, err := io.ReadAll(io.LimitReader(request.Body, 1))
+		if err != nil {
+			writeJSON(response, http.StatusInternalServerError, APIError{Code: "INTERNAL", Message: "internal server error"})
+			return
+		}
+		if len(bodyProbe) != 0 {
+			writeJSON(response, http.StatusBadRequest, APIError{Code: "VALIDATION_ERROR", Message: "request body must be empty"})
+			return
+		}
+
+		submissionResult, err := service.Submit(request.Context(), id, token)
+		if err != nil {
+			writeProviderSubmissionError(response, id, err)
+			return
+		}
+
+		writeJSON(response, http.StatusAccepted, struct {
+			ID     string         `json:"id"`
+			Status session.Status `json:"status"`
+		}{
+			ID:     submissionResult.ID.String(),
+			Status: submissionResult.Status,
+		})
+
+	}
 }

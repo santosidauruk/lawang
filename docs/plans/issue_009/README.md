@@ -1,8 +1,8 @@
 # Issue 009 Collaboration Plan
 
-Status: disetujui pada 2026-08-21; Bagian user Checkpoint 1 sudah direview dan
-lulus, Checkpoint 2 selesai pada 2026-08-25, dan continuation Bagian agent
-Checkpoint 1 tidak lagi diblokir HMAC learning gate.
+Status: disetujui pada 2026-08-21; Checkpoint 1 selesai pada 2026-08-26,
+Checkpoint 2 selesai pada 2026-08-25, dan Checkpoint 3 selesai pada 2026-08-26.
+Handoff berikutnya adalah Checkpoint 4 concurrent outbox relay.
 
 Dokumen ini membagi asynchronous Provider Submission dan signed verdict callback
 menjadi delapan checkpoint belajar. Setiap checkpoint menghasilkan satu perilaku

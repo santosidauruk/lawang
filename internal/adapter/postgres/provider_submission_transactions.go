@@ -8,7 +8,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/santosidauruk/lawang-go/internal/adapter/postgres/sqlc"
-	generated "github.com/santosidauruk/lawang-go/internal/adapter/postgres/sqlc"
 	"github.com/santosidauruk/lawang-go/internal/application/providersubmission"
 	"github.com/santosidauruk/lawang-go/internal/application/session"
 	"github.com/santosidauruk/lawang-go/internal/domain/verificationsession"
@@ -45,7 +44,7 @@ func (t *ProviderSubmissionTransactions) WithinTransaction(
 		_ = tx.Rollback(ctx)
 	}()
 
-	queries := generated.New(tx)
+	queries := sqlc.New(tx)
 	transaction := &providerTransaction{
 		queries: queries,
 		events:  &eventTransaction{queries: queries},

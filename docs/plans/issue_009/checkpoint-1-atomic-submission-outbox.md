@@ -1,7 +1,7 @@
 # Checkpoint 1 — Atomic Submission dan Durable Outbox
 
-Status: Bagian user direview dan lulus; menunggu review HMAC learning gate
-Checkpoint 2 sebelum Bagian agent.
+Status: selesai pada 2026-08-26; Bagian user direview dan lulus, HMAC learning
+gate Checkpoint 2 lulus, dan seluruh continuation Bagian agent GREEN.
 
 ## Tujuan
 
@@ -129,3 +129,26 @@ Exact HTTP replay response tetap Checkpoint 3. Redis publication tetap Checkpoin
 - one-winner concurrency menghasilkan satu outbox row;
 - tidak ada Redis/provider I/O atau public route di checkpoint ini;
 - focused tests, race detector, `sqlc-diff`, dan migration validation GREEN.
+
+## Completion evidence
+
+Bagian agent menambahkan PostgreSQL cases untuk missing accepted artifact,
+wrong/non-pending dan terminal states, forced failure setelah Session Event, serta
+dua first submission konkuren. Seluruh rejection/rollback case meninggalkan state,
+deadline, `submit_session`, dan outbox tanpa perubahan; concurrency menghasilkan
+tepat satu durable outcome dan satu caller mengenali replay setelah row lock.
+
+Fixture Issue 008 yang memakai generated transaction-bound session query sekarang
+menjalankan migration 00007 sehingga regression HTTP-to-PostgreSQL kembali GREEN.
+Duplicate SQLC import pada adapter juga dihapus tanpa mengubah boundary produksi.
+
+Verification GREEN pada 2026-08-26:
+
+- 20 focused PostgreSQL/race/readiness regression tests;
+- `make sqlc-diff`;
+- `make migration-validate`;
+- `git diff --check` sebelum RED scaffold Checkpoint 3 diaktifkan.
+
+Application-service fake/unit tests yang diwajibkan poin pertama Bagian agent
+menjadi RED handoff awal Checkpoint 3 karena production orchestration tetap milik
+user.

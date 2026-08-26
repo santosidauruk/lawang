@@ -986,6 +986,13 @@ func openArtifactDatabase(t *testing.T) (context.Context, *pgx.Conn) {
 		"../../sql/migrations/00006_create_verification_artifacts.sql",
 		"/tmp/00006.sql",
 	)
+	runPSQLFile(
+		t,
+		ctx,
+		container,
+		"../../sql/migrations/00007_add_provider_submission_outbox.sql",
+		"/tmp/00007.sql",
+	)
 
 	database, err := pgx.Connect(ctx, databaseURL)
 	if err != nil {

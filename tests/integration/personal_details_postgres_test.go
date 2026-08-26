@@ -292,7 +292,7 @@ func TestApplicantSubmitsPersonalDetailsOverHTTPWithPostgreSQL(t *testing.T) {
 	clock := integrationClock{now: now}
 	sessions := session.NewService(postgresadapter.NewSessionStore(database), tokens, clock)
 	details := personaldetails.NewService(postgresadapter.NewPersonalDetailsTransactions(database), tokens, clock)
-	handler := httpapi.NewHandler(sessions, details, nil, nil, nil)
+	handler := httpapi.NewHandler(sessions, details, nil, nil, nil, nil)
 
 	createRequest := httptest.NewRequest(http.MethodPost, "/verification-sessions", nil)
 	createResponse := httptest.NewRecorder()
@@ -373,6 +373,7 @@ func openPersonalDetailsDatabase(t *testing.T) (context.Context, *pgx.Conn) {
 		{"../../sql/migrations/00002_add_resume_token_authentication.sql", "/tmp/00002.sql"},
 		{"../../sql/migrations/00003_create_session_events.sql", "/tmp/00003.sql"},
 		{"../../sql/migrations/00004_create_personal_details.sql", "/tmp/00004.sql"},
+		{"../../sql/migrations/00007_add_provider_submission_outbox.sql", "/tmp/00007.sql"},
 	} {
 		runPSQLFile(t, ctx, container, migration.host, migration.container)
 	}

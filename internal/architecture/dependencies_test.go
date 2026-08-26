@@ -124,6 +124,37 @@ func TestOnlyCommandPackagesComposeRuntimeComponents(t *testing.T) {
 	}
 }
 
+func TestProviderSubmissionAPIDoesNotComposeQueueOrProviderClients(t *testing.T) {
+	root := repositoryRoot(t)
+	for _, relative := range []string{
+		"internal/application/providersubmission/service.go",
+		"internal/adapter/httpapi/router.go",
+		"cmd/api/main.go",
+	} {
+		path := filepath.Join(root, relative)
+		parsed, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
+		if err != nil {
+			t.Fatalf("parse %s imports: %v", relative, err)
+		}
+		for _, imported := range parsed.Imports {
+			name, err := strconv.Unquote(imported.Path.Value)
+			if err != nil {
+				t.Fatalf("decode %s import: %v", relative, err)
+			}
+			for _, forbidden := range []string{
+				"github.com/hibiken/asynq",
+				"github.com/redis",
+				"/internal/adapter/queue",
+				"/internal/adapter/provider",
+			} {
+				if strings.Contains(name, forbidden) {
+					t.Errorf("%s imports forbidden synchronous submission dependency %q", relative, name)
+				}
+			}
+		}
+	}
+}
+
 func forbiddenAdapterImport(name string) bool {
 	return strings.Contains(name, "github.com/jackc/pgx") ||
 		strings.Contains(name, "/internal/adapter/postgres/sqlc") ||

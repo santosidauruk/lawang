@@ -50,7 +50,7 @@ func TestWebhookForwardExactRawBodyWithValidSignature(t *testing.T) {
 	request.Header.Set("x-signature", fmt.Sprintf("sha256=%s", signature))
 
 	response := httptest.NewRecorder()
-	httpapi.NewHandler(nil, nil, nil, nil, &verifiedBody).ServeHTTP(response, request)
+	httpapi.NewHandler(nil, nil, nil, nil, &verifiedBody, nil).ServeHTTP(response, request)
 
 	if service.calls != 1 {
 		t.Fatalf("service calls got %d, want 1", service.calls)
@@ -83,7 +83,7 @@ func TestWebhookChangedWhitespaceWithOriginalSignature(t *testing.T) {
 	request.Header.Set("x-signature", fmt.Sprintf("sha256=%s", signature))
 
 	response := httptest.NewRecorder()
-	httpapi.NewHandler(nil, nil, nil, nil, &verifiedBody).ServeHTTP(response, request)
+	httpapi.NewHandler(nil, nil, nil, nil, &verifiedBody, nil).ServeHTTP(response, request)
 
 	if service.calls != 0 {
 		t.Fatalf("service calls got %d, want 0", service.calls)
