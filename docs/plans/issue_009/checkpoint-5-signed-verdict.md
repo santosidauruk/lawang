@@ -1,6 +1,7 @@
 # Checkpoint 5 — Signed Verdict PostgreSQL Outcome
 
-Status: menunggu review gates Checkpoint 1-2 dan keputusan unknown-session callback.
+Status: aktif sejak 2026-08-27; review gates Checkpoint 1-2 selesai dan keputusan
+unknown-session callback sudah dibekukan.
 
 ## Tujuan
 
@@ -46,12 +47,21 @@ bounded reason. Duplicate callback memakai exact `eventId` yang sama. Callback b
 dengan `eventId` berbeda setelah session tidak lagi pending adalah late/out-of-order,
 bukan duplicate.
 
-## Decision gate sebelum implementation
+## Keputusan unknown-session — dibekukan 2026-08-27
 
-User belum membekukan behavior untuk signature-valid, structurally-valid callback
-dengan `sessionId` yang tidak dikenal. Jangan menulis migration Webhook Event atau
-unknown-session behavior sampai dipilih apakah event tersebut disimpan sebagai
-`ignored` dengan `200` atau memakai kontrak lain yang disetujui.
+Signature-valid dan structurally-valid callback dengan `sessionId` yang tidak dikenal
+disimpan tepat sekali sebagai Webhook Event dengan processing status `ignored` dan
+bounded reason `unknown_session`. Ia mengembalikan exact
+`200 {"status":"ok"}`, tidak mengubah Verification Session, dan tidak membuat Session
+Event. Ignored outcome bersifat final dan tidak otomatis diterapkan bila session
+dengan UUID tersebut muncul kemudian.
+
+Provider-reported UUID disimpan sebagai `reported_session_id UUID NOT NULL` tanpa
+foreign key ke `verification_sessions`. Kolom ini merekam identifier yang dinyatakan
+provider, bukan menjamin aggregate ada. Valid raw payload tetap disimpan exact dan
+provider `eventId` tetap menjadi primary deduplication key. Replay event ID yang sama
+kelak mengembalikan `200` tanpa mutation tambahan; minimal duplicate behavior tetap
+diimplementasikan bersama duplicate/late matrix Checkpoint 8.
 
 (`structurally valid` berarti JSON mempunyai exact fields dan bounded values yang
 benar, meskipun referenced session mungkin tidak ada.)
@@ -79,10 +89,10 @@ rejected path beserta empat reasons.
    rejection reasons tanpa free-form provider result.
 2. `[domain]` User menulis parser/constructor rule bahwa verified tidak memiliki
    reason dan rejected wajib memiliki satu bounded reason.
-3. `[migration]` Setelah unknown-session decision disetujui, user membuat
-   `webhook_events` dengan provider event ID deduplication, session reference sesuai
-   keputusan, exact valid raw payload, processing status `applied|ignored`, bounded
-   ignore reason, serta received/processed timestamps.
+3. `[migration]` User membuat `webhook_events` dengan provider event ID
+   deduplication, `reported_session_id UUID NOT NULL` tanpa foreign key, exact valid
+   raw payload, processing status `applied|ignored`, bounded ignore reason termasuk
+   `unknown_session`, serta received/processed timestamps.
 4. `[migration]` User menambahkan `verified_at`, `rejected_at`, dan bounded
    `rejection_reason` ke `verification_sessions` dengan coherent terminal-field
    constraints.
@@ -124,6 +134,8 @@ Agent memeriksa:
 - HMAC tetap diverifikasi sebelum strict JSON decode dan persistence;
 - raw valid payload memiliki hard size bound dan tidak masuk log;
 - `eventId` adalah deduplication key, sedangkan `sessionId` memilih aggregate;
+- `reported_session_id` tetap non-null tetapi sengaja bukan foreign key karena valid
+  unknown-session event adalah durable integration outcome;
 - schema/query surface dapat mendukung duplicate/ignored continuation tanpa
   mengimplementasikan behavior itu lebih awal;
 - verified/rejected action memakai existing domain transition map;
@@ -139,11 +151,13 @@ Setelah verified/rejected user paths direview, agent menutup:
    reason combinations tidak tersimpan;
 2. forced Session Event atau Webhook Event status failure me-roll back seluruh verdict;
 3. invalid-signature no-row proof dari Checkpoint 2 tetap GREEN;
-4. focused PostgreSQL/HTTP rollback suite dan existing terminal-state regressions.
+4. focused PostgreSQL/HTTP rollback suite dan existing terminal-state regressions;
+5. first valid unknown-session callback disimpan `ignored:unknown_session`, mendapat
+   exact `200 {"status":"ok"}`, dan tidak membuat session mutation atau Session Event.
 
 ## Definition of done
 
-- unknown-session decision gate ditutup sebelum migration;
+- unknown-session contract di atas dibuktikan melalui signed public path;
 - user-authored domain/schema/query/verified/rejected code direview;
 - keempat rejected reasons terbukti melalui signed public path;
 - applied/ignored tetap Webhook Event processing status;

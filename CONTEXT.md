@@ -171,6 +171,13 @@ Event.
 - Every state transition and Session Event commit atomically.
 - The database constraint and Go event type/constants admit exactly the seven Session
   Event action verbs above; neither layer accepts arbitrary strings.
+- A signature-valid and structurally-valid provider callback whose reported session
+  UUID does not resolve is persisted once as a Webhook Event with processing status
+  `ignored` and reason `unknown_session`. It returns exact `200 {"status":"ok"}`,
+  mutates no Verification Session, appends no Session Event, and is never
+  automatically applied later. Its `reported_session_id UUID NOT NULL` deliberately
+  has no foreign key because it records the provider's assertion, not a guaranteed
+  aggregate relation.
 - External network and object-storage I/O never runs inside a database transaction.
 - After external I/O, a short transaction re-reads and guards relevant state before
   committing.

@@ -63,6 +63,9 @@ agent unless the proof technique itself is the learning concept.
 - Invalid signatures return `401` and persist nothing.
 - Valid duplicate or late/out-of-order callbacks return `200` without another state
   transition; late valid events are stored as bounded `ignored` outcomes.
+- A signature-valid and structurally-valid callback for an unknown `sessionId` is
+  stored once as `ignored:unknown_session` and returns exact
+  `200 {"status":"ok"}` without a Verification Session mutation or Session Event.
 
 ## Acceptance criteria
 
@@ -81,6 +84,9 @@ agent unless the proof technique itself is the learning concept.
       reasons, delay, and duplicate callback count.
 - [ ] Webhook accepts lowercase/uppercase hex signatures, rejects malformed/invalid
       signatures before decoding, and never logs/stores invalid bodies.
+- [ ] A valid signed callback for an unknown `sessionId` persists exactly one
+      `ignored:unknown_session` Webhook Event, returns exact `200 {"status":"ok"}`,
+      and creates no Verification Session or Session Event mutation.
 - [ ] Valid callback atomically deduplicates event, guards state, applies verified or
       rejected verdict, appends exactly one `verification_passed` or
       `verification_failed` Session Event, and marks the event applied.
@@ -109,9 +115,11 @@ Content-Type: application/json
 ```
 
 Rejected webhook events add exact field `reason` with one bounded rejection reason.
-The behavior for a signature-valid, structurally-valid event whose `sessionId` is
-unknown remains an explicit Checkpoint 5 decision gate; do not infer it from the
-approved late/out-of-order behavior for known sessions.
+For a signature-valid, structurally-valid event whose `sessionId` is unknown, persist
+the exact valid event once with non-FK `reported_session_id`, processing status
+`ignored`, and reason `unknown_session`; return exact `200 {"status":"ok"}` and do not
+mutate a Verification Session or append a Session Event. This ignored outcome is
+final rather than automatically applicable if the session appears later.
 
 Provider rejection reasons are exactly `document_invalid`, `biometric_mismatch`,
 `identity_not_verified`, and `suspected_fraud`.

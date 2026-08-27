@@ -2,8 +2,8 @@
 
 Status: disetujui pada 2026-08-21; Checkpoint 1 selesai pada 2026-08-26,
 Checkpoint 2 selesai pada 2026-08-25, Checkpoint 3 selesai pada 2026-08-26, dan
-Checkpoint 4 selesai pada 2026-08-27. Handoff berikutnya adalah decision gate
-unknown-session sebelum Checkpoint 5 signed verdict dimulai.
+Checkpoint 4 selesai pada 2026-08-27. Decision gate unknown-session ditutup pada
+2026-08-27 dan Checkpoint 5 signed verdict sekarang aktif.
 
 Dokumen ini membagi asynchronous Provider Submission dan signed verdict callback
 menjadi delapan checkpoint belajar. Setiap checkpoint menghasilkan satu perilaku
@@ -150,19 +150,32 @@ parent Issue 009, bukan delapan issue tracker baru.
    disimpan.
 10. `ignored` adalah processing status Webhook Event, bukan Verification Session
     status dan tidak membuat Session Event.
+11. Callback dengan signature dan struktur valid tetapi `sessionId` tidak dikenal
+    disimpan tepat sekali sebagai Webhook Event `ignored` dengan bounded reason
+    `unknown_session`, lalu mengembalikan exact `200 {"status":"ok"}` tanpa
+    Verification Session mutation atau Session Event. Provider-reported UUID disimpan
+    sebagai `reported_session_id UUID NOT NULL` tanpa foreign key; ignored outcome
+    bersifat final dan tidak otomatis diterapkan bila session muncul kemudian.
 
-## Decision gate yang belum dibekukan
+## Keputusan unknown-session yang dibekukan
 
-Perilaku callback dengan signature dan JSON valid tetapi `sessionId` tidak dikenal
-belum disetujui. Sebelum Checkpoint 5 dimulai, user harus memilih apakah callback itu:
+Pada 2026-08-27 user memilih durable ignored outcome untuk callback dengan signature
+dan struktur valid tetapi `sessionId` tidak dikenal:
 
-- disimpan sebagai `ignored` lalu mengembalikan `200`, yang mengharuskan
-  `webhook_events.session_id` tidak memakai mandatory foreign key; atau
-- memakai kontrak lain yang disetujui tanpa mengubah behavior late/out-of-order
-  callback untuk session yang dikenal.
+- persist exact valid raw payload satu kali berdasarkan provider `eventId`;
+- simpan provider-reported UUID sebagai `reported_session_id UUID NOT NULL` tanpa
+  foreign key ke `verification_sessions`;
+- set processing status `ignored`, bounded ignore reason `unknown_session`, serta
+  received/processed timestamps;
+- jangan mengubah Verification Session dan jangan membuat Session Event;
+- kembalikan exact `200 {"status":"ok"}` seperti callback valid lain;
+- perlakukan ignored outcome sebagai final, bukan pending replay bila session dengan
+  UUID tersebut kelak tersedia.
 
-Jangan menulis migration Webhook Event atau unknown-session test sebelum decision
-gate ini ditutup.
+Schema dan first unknown-session behavior menjadi bagian Checkpoint 5. Replay exact
+`eventId` yang sama tetap harus menghasilkan `200` tanpa mutation tambahan, tetapi
+minimal duplicate orchestration tetap dimiliki Checkpoint 8 bersama duplicate/late
+matrix lainnya.
 
 ## Scope antark-checkpoint
 

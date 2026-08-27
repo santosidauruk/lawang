@@ -745,8 +745,9 @@ open while presigning.
 #### `webhook_events`
 
 - provider event ID primary key for deduplication.
-- session ID, valid signed raw payload, processing status (`applied` or `ignored`),
-  ignore reason, received and processed timestamps.
+- provider-reported session ID as a non-null UUID without a mandatory foreign key,
+  valid signed raw payload, processing status (`applied` or `ignored`), bounded ignore
+  reason, received and processed timestamps.
 - invalid-signature bodies are never persisted.
 
 ## 9. Object Storage and Local Validation
@@ -927,6 +928,12 @@ suspected_fraud
 
 A duplicate provider event ID returns `200` with no mutation. A valid but late or
 out-of-order event is stored as `ignored` with a bounded reason and returns `200`.
+Likewise, a signature-valid and structurally-valid callback whose reported session ID
+does not resolve is stored once as `ignored:unknown_session`, returns exact
+`200 {"status":"ok"}`, and creates no Verification Session mutation or Session Event.
+Store its UUID in non-null `reported_session_id` without a foreign key; the ignored
+outcome is final and is not automatically applied if a matching session appears
+later.
 HTTPS remains mandatory outside local development; HMAC supplies integrity and
 authenticity, not confidentiality.
 
