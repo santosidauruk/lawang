@@ -1,8 +1,9 @@
 # Issue 009 Collaboration Plan
 
 Status: disetujui pada 2026-08-21; Checkpoint 1 selesai pada 2026-08-26,
-Checkpoint 2 selesai pada 2026-08-25, dan Checkpoint 3 selesai pada 2026-08-26.
-Handoff berikutnya adalah Checkpoint 4 concurrent outbox relay.
+Checkpoint 2 selesai pada 2026-08-25, Checkpoint 3 selesai pada 2026-08-26, dan
+Checkpoint 4 selesai pada 2026-08-27. Handoff berikutnya adalah decision gate
+unknown-session sebelum Checkpoint 5 signed verdict dimulai.
 
 Dokumen ini membagi asynchronous Provider Submission dan signed verdict callback
 menjadi delapan checkpoint belajar. Setiap checkpoint menghasilkan satu perilaku

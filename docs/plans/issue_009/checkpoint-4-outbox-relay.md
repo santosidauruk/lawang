@@ -1,6 +1,7 @@
 # Checkpoint 4 — Concurrent Outbox Relay ke Redis
 
-Status: menunggu review gates Checkpoint 1 dan 2.
+Status: selesai pada 2026-08-27; claim/relay/queue slice user direview dan seluruh
+idle, outage, crash-window, reclaim, duplicate, serta safety matrix agent GREEN.
 
 ## Tujuan
 
@@ -82,7 +83,22 @@ Agent memeriksa:
 - concurrent test benar-benar mempertemukan dua relay, bukan dua goroutine yang
   berjalan serial secara kebetulan.
 
-## Bagian agent
+## Review gate evidence
+
+Review Bagian user lulus pada 2026-08-27. Claim memakai transaction PostgreSQL
+pendek dan commit sebelum publisher dipanggil; exact token memagari publication;
+application port hanya membawa UUID, task type, dan identifier-only payload; serta
+Asynq tetap berada di queue adapter. User-authored concurrent tracer menjalankan dua
+relay dengan connection terpisah, start gate tanpa `time.Sleep`, active-lease
+inspection dari connection lain, non-owner mark rejection, exact one-winner
+publication, dan goroutine cleanup yang menunggu kedua actor sebelum resource
+dilepas.
+
+Focused user verification GREEN dengan race detector untuk single-relay dan
+concurrent-relay tracer. Review juga mengoreksi no-row dari raw `pgx.ErrNoRows`
+menjadi application-owned idle outcome pada continuation agent.
+
+## Bagian agent — selesai
 
 Setelah concurrent tracer user direview, agent menutup:
 
@@ -105,3 +121,31 @@ Setelah concurrent tracer user direview, agent menutup:
 - outbox UUID menjadi exact TaskID;
 - published hanya berarti handoff ke queue selesai;
 - real PostgreSQL + Redis race suite GREEN tanpa silent skip.
+
+## Completion evidence
+
+Bagian agent menutup no-row idle tanpa loop internal; malformed/unknown task ditolak
+sebelum Redis; Redis outage menyimpan hanya bounded `queue_publish_failed` dan
+meninggalkan unpublished claim untuk retry setelah lease; successful retry
+membersihkan failure metadata. Crash setelah Redis enqueue tetapi sebelum
+`MarkPublished` direproduksi, lalu relay baru mereclaim sesudah expiry. Token lama
+ditolak setelah token baru tersimpan, duplicate Asynq TaskID diperlakukan sebagai
+successful handoff, row akhirnya published, dan Redis tetap memiliki tepat satu
+logical task dengan outbox UUID sebagai TaskID.
+
+Verification GREEN pada 2026-08-27:
+
+- application/postgres/queue unit suite dengan race detector;
+- enam focused PostgreSQL + Redis outbox relay tracers dengan race detector,
+  termasuk user-owned single/concurrent proof dan agent idle/outage/crash/duplicate
+  matrix;
+- full `make quality`, termasuk `go test -race ./...`, integration package selesai
+  dalam 556.641 detik dan schema package dalam 18.231 detik;
+- `go vet`, Staticcheck, `make sqlc-diff`, `make migration-validate`,
+  `make compose-validate`, dan `git diff --check`;
+- PostgreSQL 18.4 dari `postgres:18.4-alpine3.23`, Redis 7.4.11 dari
+  `redis:7.4-alpine`, dan exact direct Asynq dependency `v0.26.0`.
+
+Checkpoint ini tetap berhenti pada PostgreSQL -> Redis handoff. Ia tidak menjalankan
+provider task dan tidak menambahkan worker runtime wiring, yang tetap milik
+Checkpoint 7.

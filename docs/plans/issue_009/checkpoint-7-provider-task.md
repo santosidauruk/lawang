@@ -1,6 +1,6 @@
 # Checkpoint 7 — Provider Submission Task dan Worker Wiring
 
-Status: menunggu Checkpoint 4 dan 6.
+Status: menunggu Checkpoint 6; Checkpoint 4 selesai pada 2026-08-27.
 
 ## Tujuan
 

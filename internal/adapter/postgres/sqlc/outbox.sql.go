@@ -7,9 +7,62 @@ package sqlc
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
+
+const claimNextOutbox = `-- name: ClaimNextOutbox :one
+select id, verification_session_id, task_type, payload
+from outbox
+where task_type = 'provider:submit' and published_at is null and (claimed_until is null or claimed_until <= $1::timestamptz)
+order by created_at, id
+limit 1
+for update skip locked
+`
+
+type ClaimNextOutboxRow struct {
+	ID                    uuid.UUID `json:"id"`
+	VerificationSessionID uuid.UUID `json:"verification_session_id"`
+	TaskType              string    `json:"task_type"`
+	Payload               []byte    `json:"payload"`
+}
+
+func (q *Queries) ClaimNextOutbox(ctx context.Context, claimedAt time.Time) (ClaimNextOutboxRow, error) {
+	row := q.db.QueryRow(ctx, claimNextOutbox, claimedAt)
+	var i ClaimNextOutboxRow
+	err := row.Scan(
+		&i.ID,
+		&i.VerificationSessionID,
+		&i.TaskType,
+		&i.Payload,
+	)
+	return i, err
+}
+
+const fillClaimTokenOutbox = `-- name: FillClaimTokenOutbox :execrows
+update outbox
+set
+  claim_token = $1,
+  claimed_until = $2::timestamptz,
+  attempt_count = attempt_count + 1
+where published_at is null and id = $3
+`
+
+type FillClaimTokenOutboxParams struct {
+	ClaimToken   pgtype.UUID `json:"claim_token"`
+	ClaimedUntil time.Time   `json:"claimed_until"`
+	OutboxID     uuid.UUID   `json:"outbox_id"`
+}
+
+func (q *Queries) FillClaimTokenOutbox(ctx context.Context, arg FillClaimTokenOutboxParams) (int64, error) {
+	result, err := q.db.Exec(ctx, fillClaimTokenOutbox, arg.ClaimToken, arg.ClaimedUntil, arg.OutboxID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
 
 const insertUnpublishedOutbox = `-- name: InsertUnpublishedOutbox :exec
 insert into outbox (
@@ -37,4 +90,48 @@ type InsertUnpublishedOutboxParams struct {
 func (q *Queries) InsertUnpublishedOutbox(ctx context.Context, arg InsertUnpublishedOutboxParams) error {
 	_, err := q.db.Exec(ctx, insertUnpublishedOutbox, arg.ID, arg.VerificationSessionID)
 	return err
+}
+
+const markPublishedOutbox = `-- name: MarkPublishedOutbox :execrows
+update outbox
+set
+  published_at = now(),
+  claim_token = null,
+  claimed_until = null,
+  last_error_code = null
+where id = $1 and published_at is null and claim_token = $2
+`
+
+type MarkPublishedOutboxParams struct {
+	OutboxID   uuid.UUID   `json:"outbox_id"`
+	ClaimToken pgtype.UUID `json:"claim_token"`
+}
+
+func (q *Queries) MarkPublishedOutbox(ctx context.Context, arg MarkPublishedOutboxParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markPublishedOutbox, arg.OutboxID, arg.ClaimToken)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const recordOutboxPublishFailure = `-- name: RecordOutboxPublishFailure :execrows
+update outbox
+set last_error_code = 'queue_publish_failed'
+where id = $1
+  and published_at is null
+  and claim_token = $2
+`
+
+type RecordOutboxPublishFailureParams struct {
+	OutboxID   uuid.UUID   `json:"outbox_id"`
+	ClaimToken pgtype.UUID `json:"claim_token"`
+}
+
+func (q *Queries) RecordOutboxPublishFailure(ctx context.Context, arg RecordOutboxPublishFailureParams) (int64, error) {
+	result, err := q.db.Exec(ctx, recordOutboxPublishFailure, arg.OutboxID, arg.ClaimToken)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
