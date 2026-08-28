@@ -1,6 +1,6 @@
 # Checkpoint 6 — Deterministic Fake Provider Process
 
-Status: menunggu Checkpoint 2.
+Status: siap dimulai setelah Checkpoint 5 selesai pada 2026-08-28; belum aktif.
 
 ## Tujuan
 

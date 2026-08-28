@@ -175,6 +175,106 @@ func TestFirstSignedVerifiedVerdictCommitsOnePostgreSQLOutcome(t *testing.T) {
 	}
 }
 
+func TestFirstSignedRejectedVerdictCommitsBoundedPostgreSQLOutcome(t *testing.T) {
+	ctx, database := openProviderVerdictDatabase(t)
+
+	for index, reason := range []string{
+		"document_invalid",
+		"biometric_mismatch",
+		"identity_not_verified",
+		"suspected_fraud",
+	} {
+		t.Run(reason, func(t *testing.T) {
+			fixture := newRejectedVerdictFixture(index)
+			seedVerifiedVerdictFixture(t, ctx, database, fixture)
+			rawBody := []byte(fmt.Sprintf(
+				`{"eventId":%q,"sessionId":%q,"verdict":"rejected","reason":%q}`,
+				fixture.providerEventID,
+				fixture.sessionID,
+				reason,
+			))
+
+			handler := newProviderVerdictHandler(database, fixture.processedAt)
+			request := httptest.NewRequest(http.MethodPost, "/webhooks/verification", bytes.NewReader(rawBody))
+			request.Header.Set("x-signature", "sha256="+signCheckpoint5WebhookBody(t, rawBody))
+			response := httptest.NewRecorder()
+
+			handler.ServeHTTP(response, request)
+
+			if response.Code != http.StatusOK || response.Body.String() != "{\"status\":\"ok\"}\n" {
+				t.Fatalf("signed rejected webhook response = status:%d body:%q, want status:200 exact ok body", response.Code, response.Body.String())
+			}
+
+			var status string
+			var updatedAt, rejectedAt time.Time
+			var verifiedAtIsNull bool
+			var storedReason string
+			if err := database.QueryRow(ctx, `
+				SELECT status, updated_at, rejected_at, verified_at IS NULL, rejection_reason
+				FROM verification_sessions
+				WHERE id = $1
+			`, fixture.sessionID).Scan(&status, &updatedAt, &rejectedAt, &verifiedAtIsNull, &storedReason); err != nil {
+				t.Fatalf("read rejected Verification Session: %v", err)
+			}
+			if status != "rejected" || !updatedAt.Equal(fixture.processedAt) ||
+				!rejectedAt.Equal(fixture.processedAt) || !verifiedAtIsNull || storedReason != reason {
+				t.Errorf("rejected session = status:%q updated:%s rejected:%s verified-null:%t reason:%q", status, updatedAt, rejectedAt, verifiedAtIsNull, storedReason)
+			}
+
+			var storedSessionID uuid.UUID
+			var storedPayload []byte
+			var processingStatus string
+			var ignoreReasonIsNull bool
+			var receivedAt, processedAt time.Time
+			if err := database.QueryRow(ctx, `
+				SELECT reported_session_id, payload, processing_status, ignore_reason IS NULL, received_at, processed_at
+				FROM webhook_events
+				WHERE id = $1
+			`, fixture.providerEventID).Scan(
+				&storedSessionID, &storedPayload, &processingStatus, &ignoreReasonIsNull, &receivedAt, &processedAt,
+			); err != nil {
+				t.Fatalf("read rejected Webhook Event: %v", err)
+			}
+			if storedSessionID != fixture.sessionID || !bytes.Equal(storedPayload, rawBody) ||
+				processingStatus != "applied" || !ignoreReasonIsNull ||
+				!receivedAt.Equal(fixture.processedAt) || !processedAt.Equal(fixture.processedAt) {
+				t.Errorf("rejected Webhook Event = session:%s raw-match:%t status:%q ignore-null:%t received:%s processed:%s", storedSessionID, bytes.Equal(storedPayload, rawBody), processingStatus, ignoreReasonIsNull, receivedAt, processedAt)
+			}
+
+			var failedEventCount int
+			var failedEventIsExact bool
+			if err := database.QueryRow(ctx, `
+				SELECT count(*), COALESCE(bool_and(metadata = '{}'::jsonb AND occurred_at = $2), false)
+				FROM session_events
+				WHERE session_id = $1 AND event_type = 'verification_failed'
+			`, fixture.sessionID, fixture.processedAt).Scan(&failedEventCount, &failedEventIsExact); err != nil {
+				t.Fatalf("read verification_failed Session Event: %v", err)
+			}
+			if failedEventCount != 1 || !failedEventIsExact {
+				t.Errorf("verification_failed events = count:%d exact:%t, want count:1 exact:true", failedEventCount, failedEventIsExact)
+			}
+		})
+	}
+
+	var freeFormReasonCount int
+	if err := database.QueryRow(ctx, `
+		SELECT count(*)
+		FROM verification_sessions
+		WHERE status = 'rejected'
+		  AND rejection_reason NOT IN (
+			'document_invalid',
+			'biometric_mismatch',
+			'identity_not_verified',
+			'suspected_fraud'
+		  )
+	`).Scan(&freeFormReasonCount); err != nil {
+		t.Fatalf("count free-form rejection reasons: %v", err)
+	}
+	if freeFormReasonCount != 0 {
+		t.Fatalf("free-form rejection reason rows = %d, want 0", freeFormReasonCount)
+	}
+}
+
 type verifiedVerdictFixture struct {
 	prerequisite    providerSubmissionSuccessFixture
 	sessionID       uuid.UUID
@@ -192,6 +292,30 @@ func newVerifiedVerdictFixture() verifiedVerdictFixture {
 		submittedAt:     prerequisite.now,
 		processedAt:     prerequisite.now.Add(5 * time.Minute),
 	}
+}
+
+func newRejectedVerdictFixture(index int) verifiedVerdictFixture {
+	fixture := newVerifiedVerdictFixture()
+	fixture.prerequisite.rawToken = fmt.Sprintf("checkpoint-five-rejected-token-%d", index)
+	fixture.prerequisite.sessionID = uuid.New()
+	fixture.prerequisite.identityIntentID = uuid.New()
+	fixture.prerequisite.identityArtifactID = uuid.New()
+	fixture.prerequisite.biometricIntentID = uuid.New()
+	fixture.prerequisite.biometricArtifactID = uuid.New()
+	fixture.prerequisite.outboxID = uuid.New()
+	fixture.sessionID = fixture.prerequisite.sessionID
+	fixture.providerEventID = uuid.New()
+	fixture.processedAt = fixture.processedAt.Add(time.Duration(index) * time.Minute)
+	return fixture
+}
+
+func newProviderVerdictHandler(database *pgx.Conn, now time.Time) http.Handler {
+	verdictTransactor := postgres.NewProviderVerdictTransactions(database)
+	service := providerverdict.NewProviderVerdictService(fixedClock{now: now}, verdictTransactor)
+	return httpapi.NewHandler(nil, nil, nil, nil, &httpapi.VerifiedBody{
+		Service:               service,
+		ProviderWebhookSecret: checkpoint5WebhookSecret,
+	}, nil)
 }
 
 func seedVerifiedVerdictFixture(

@@ -1,9 +1,9 @@
 # Issue 009 Collaboration Plan
 
 Status: disetujui pada 2026-08-21; Checkpoint 1 selesai pada 2026-08-26,
-Checkpoint 2 selesai pada 2026-08-25, Checkpoint 3 selesai pada 2026-08-26, dan
-Checkpoint 4 selesai pada 2026-08-27. Decision gate unknown-session ditutup pada
-2026-08-27 dan Checkpoint 5 signed verdict sekarang aktif.
+Checkpoint 2 selesai pada 2026-08-25, Checkpoint 3 selesai pada 2026-08-26,
+Checkpoint 4 selesai pada 2026-08-27, dan Checkpoint 5 selesai pada 2026-08-28.
+Checkpoint 6 siap dimulai tetapi belum aktif.
 
 Dokumen ini membagi asynchronous Provider Submission dan signed verdict callback
 menjadi delapan checkpoint belajar. Setiap checkpoint menghasilkan satu perilaku

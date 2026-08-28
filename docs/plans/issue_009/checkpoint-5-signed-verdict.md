@@ -1,7 +1,7 @@
 # Checkpoint 5 — Signed Verdict PostgreSQL Outcome
 
-Status: aktif sejak 2026-08-27; review gates Checkpoint 1-2 selesai dan keputusan
-unknown-session callback sudah dibekukan.
+Status: selesai pada 2026-08-28; verified/rejected user slice direview dan seluruh
+signed-input, rollback, unknown-session, SQL-proof, serta quality matrix GREEN.
 
 ## Tujuan
 
@@ -171,3 +171,35 @@ Setelah verified/rejected user paths direview, agent menutup:
 - first verified/rejected callback commit/rollback terbukti atomik;
 - duplicate/late behavior tetap terbuka dan eksplisit dimiliki user di Checkpoint 8;
 - PostgreSQL proof, race detector, `sqlc-diff`, dan migration validation GREEN.
+
+## Completion evidence
+
+Poin user 14 direview dengan exact `verification_failed` action dan bounded domain
+reason. Keempat rejected reasons kemudian dibuktikan melalui signed public HTTP path
+hingga durable PostgreSQL state, exact `verification_failed` Session Event, exact raw
+payload, dan applied Webhook Event. SQL proof terpisah membuktikan masing-masing satu
+verified dan rejected outcome dalam transaction PostgreSQL.
+
+Bagian agent membuktikan malformed JSON, unknown fields, multiple JSON values,
+invalid UUID/verdict/reason combinations, dan invalid signature tidak menyimpan
+Webhook Event. Forced Session Event failure dan forced Webhook Event final-status
+failure masing-masing me-roll back session, normalized event, dan Webhook Event.
+Valid unknown-session callback tersimpan exact sebagai `ignored:unknown_session`,
+mengembalikan exact `200 {"status":"ok"}`, serta tidak membuat Verification Session
+atau Session Event.
+
+Verification GREEN pada 2026-08-28:
+
+- verified tracer dan all-four-rejected-reasons signed PostgreSQL suite;
+- signed malformed/no-persistence, invalid-signature/no-row, forced rollback, dan
+  unknown-session integration suite;
+- `sql/proofs/009_signed_provider_verdicts.sql` melalui disposable PostgreSQL 18.4;
+- existing terminal-state regression suite untuk `verified|rejected|expired` terhadap
+  `verification_passed|verification_failed`;
+- full `make quality`, termasuk `go test -race ./...`; integration package selesai
+  dalam 492.999 detik;
+- `go vet`, Staticcheck, `make sqlc-diff`, `make migration-validate`,
+  `make compose-validate`, dan `git diff --check`.
+
+Duplicate replay dan late/out-of-order callback behavior tidak diimplementasikan atau
+dibekukan di sini; keduanya tetap user-owned di Checkpoint 8.
