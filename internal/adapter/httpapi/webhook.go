@@ -78,7 +78,17 @@ func verifyProviderSubmission(service VerifiedBodyService, providerWebhookSecret
 			return
 		}
 
-		if err := service.HandleVerifiedBody(request.Context(), bytesBody); err != nil {
+		ctx := request.Context()
+		applyInput, err := service.HandleVerifiedBody(ctx, bytesBody)
+		if err != nil {
+			writeJSON(response, http.StatusInternalServerError, APIError{
+				Code: "INTERNAL", Message: "internal server error",
+			})
+			return
+		}
+
+		err = service.Apply(ctx, applyInput)
+		if err != nil {
 			writeJSON(response, http.StatusInternalServerError, APIError{
 				Code: "INTERNAL", Message: "internal server error",
 			})

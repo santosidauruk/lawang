@@ -106,7 +106,9 @@ func run() int {
 	artifactConfirm := artifact.NewService(artifactStore, confirmCoordinator, objectStorage, extractor, tokens, clock)
 
 	uploadIntentService := artifact.NewUploadIntentService(artifactStore, artifactStore, objectStorage, tokens, clock)
-	providerVerdictService := providerverdict.NewProviderVerdictService(clock)
+
+	verdictTransactor := postgresadapter.NewProviderVerdictTransactions(database)
+	providerVerdictService := providerverdict.NewProviderVerdictService(clock, verdictTransactor)
 	verifiedBody := &httpapi.VerifiedBody{
 		Service:               providerVerdictService,
 		ProviderWebhookSecret: cfg.ProviderWebhookSecret,

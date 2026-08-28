@@ -96,32 +96,39 @@ rejected path beserta empat reasons.
 4. `[migration]` User menambahkan `verified_at`, `rejected_at`, dan bounded
    `rejection_reason` ke `verification_sessions` dengan coherent terminal-field
    constraints.
-5. `[sql query][postgres adapter]` User menulis insert-or-detect-duplicate Webhook
-   Event query untuk exact provider `eventId`.
-6. `[sql query][postgres adapter]` User menulis guarded verified update dari
-   `verification_pending` ke `verified` beserta `verified_at`.
-7. `[sql query][postgres adapter]` User menulis guarded rejected update dari
-   `verification_pending` ke `rejected` beserta `rejected_at` dan exact reason.
-8. `[sql query][postgres adapter]` User menulis query untuk menandai event `applied`
-   atau bounded `ignored` di transaction yang sama.
+5. `[sql query]` User menulis insert-or-detect-duplicate Webhook Event query untuk
+   exact provider `eventId`.
+6. `[sql query]` User menulis guarded verified update dari `verification_pending` ke
+   `verified` beserta `verified_at` dan `updated_at`.
+7. `[sql query]` User menulis guarded rejected update dari `verification_pending` ke
+   `rejected` beserta `rejected_at`, `updated_at`, dan exact reason.
+8. `[sql query]` User menulis named query untuk menandai event `applied` atau bounded
+   `ignored` beserta `processed_at`; query ini kelak dijalankan melalui transaction
+   yang sama, bukan membuka transaction sendiri.
 9. `[verification]` User menjalankan `sqlc generate` dan memeriksa generated types
    tanpa manual edit.
-10. `[application service]` User menulis strict event decode/validation setelah
+10. `[postgres adapter]` User menulis `ProviderVerdictTransactions` dan operation
+    minimum yang mengikat generated queries ke satu `pgx.Tx`: insert-or-detect
+    Webhook Event, lock/re-read Verification Session, guarded verified/rejected
+    update, append Session Event, serta mark event `applied|ignored`. Adapter memetakan
+    no-row/rows-affected dan nullable generated types ke application-owned results
+    tanpa membocorkan pgx/SQLC types ke application package.
+11. `[application service]` User menulis strict event decode/validation setelah
     Checkpoint 2 HMAC gate dan menghasilkan application-owned verdict input.
-11. `[application service]` User menulis `VerdictService.Apply` verified transaction:
+12. `[application service]` User menulis `VerdictService.Apply` verified transaction:
     insert first event, lock/re-read session, guard pending, update terminal fields,
     append `verification_passed`, dan mark event applied; duplicate marker belum
     ditangani menjadi replay sampai Checkpoint 8.
-12. `[verification]` User menjalankan agent-provided verified tracer sampai GREEN.
-13. `[application service]` User menambahkan rejected transaction memakai shared
+13. `[verification]` User menjalankan agent-provided verified tracer sampai GREEN.
+14. `[application service]` User menambahkan rejected transaction memakai shared
     orchestration tetapi exact `verification_failed` action dan bounded reason.
-14. `[integration test][application service]` User membuktikan keempat rejected
+15. `[integration test][application service]` User membuktikan keempat rejected
     reasons melalui public signed webhook path dan durable PostgreSQL outcome.
-15. `[verification]` User menjalankan rejected suite sampai GREEN dan memeriksa tidak
+16. `[verification]` User menjalankan rejected suite sampai GREEN dan memeriksa tidak
     ada free-form reason yang tersimpan.
-16. `[sql proof][sql query]` User menulis success proof minimum untuk one verified dan
+17. `[sql proof][sql query]` User menulis success proof minimum untuk one verified dan
     one rejected atomic outcome.
-17. `[review]` User berhenti sebelum malformed/rollback sibling matrix; duplicate dan
+18. `[review]` User berhenti sebelum malformed/rollback sibling matrix; duplicate dan
     late callback tetap user-owned Checkpoint 8.
 
 Kesalahan event type, terminal timestamps, rejection reason bounds, atau partial

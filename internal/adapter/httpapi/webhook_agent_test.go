@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/santosidauruk/lawang-go/internal/adapter/httpapi"
+	"github.com/santosidauruk/lawang-go/internal/application/providerverdict"
 )
 
 func TestWebhookRejectsMissingSignatureWithSafeUnauthorizedError(t *testing.T) {
@@ -252,10 +253,14 @@ type failingWebhookBody struct {
 func (body *failingWebhookBody) Read(_ []byte) (int, error) { return 0, body.err }
 func (body *failingWebhookBody) Close() error               { return nil }
 
-func (service *agentVerifiedBodyService) HandleVerifiedBody(_ context.Context, body []byte) error {
+func (service *agentVerifiedBodyService) HandleVerifiedBody(_ context.Context, body []byte) (providerverdict.ApplyInput, error) {
 	service.calls++
 	service.bodies = append(service.bodies, append([]byte(nil), body...))
-	return service.err
+	return providerverdict.ApplyInput{}, service.err
+}
+
+func (service *agentVerifiedBodyService) Apply(ctx context.Context, input providerverdict.ApplyInput) error {
+	return nil
 }
 
 func newAgentWebhookHandler(service httpapi.VerifiedBodyService) http.Handler {

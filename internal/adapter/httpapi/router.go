@@ -13,6 +13,7 @@ import (
 	"github.com/santosidauruk/lawang-go/internal/application/artifact"
 	"github.com/santosidauruk/lawang-go/internal/application/personaldetails"
 	"github.com/santosidauruk/lawang-go/internal/application/providersubmission"
+	"github.com/santosidauruk/lawang-go/internal/application/providerverdict"
 	"github.com/santosidauruk/lawang-go/internal/application/session"
 )
 
@@ -34,7 +35,8 @@ type ArtifactUploadIntentService interface {
 }
 
 type VerifiedBodyService interface {
-	HandleVerifiedBody(ctx context.Context, body []byte) error
+	HandleVerifiedBody(ctx context.Context, body []byte) (providerverdict.ApplyInput, error)
+	Apply(ctx context.Context, input providerverdict.ApplyInput) error
 }
 
 type VerifiedBody struct {

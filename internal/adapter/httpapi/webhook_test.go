@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/santosidauruk/lawang-go/internal/adapter/httpapi"
+	"github.com/santosidauruk/lawang-go/internal/application/providerverdict"
 )
 
 const checkpoint2WebhookSecret = "checkpoint-2-fixed-webhook-secret"
@@ -28,9 +29,13 @@ type recordingVerifiedBodyService struct {
 	bodies [][]byte
 }
 
-func (service *recordingVerifiedBodyService) HandleVerifiedBody(_ context.Context, body []byte) error {
+func (service *recordingVerifiedBodyService) HandleVerifiedBody(_ context.Context, body []byte) (providerverdict.ApplyInput, error) {
 	service.calls++
 	service.bodies = append(service.bodies, append([]byte(nil), body...))
+	return providerverdict.ApplyInput{}, nil
+}
+
+func (service *recordingVerifiedBodyService) Apply(ctx context.Context, input providerverdict.ApplyInput) error {
 	return nil
 }
 

@@ -75,4 +75,18 @@ type VerificationSession struct {
 	ResumeTokenHash        []byte             `json:"resume_token_hash"`
 	ExpiresAt              time.Time          `json:"expires_at"`
 	VerificationDeadlineAt pgtype.Timestamptz `json:"verification_deadline_at"`
+	VerifiedAt             pgtype.Timestamptz `json:"verified_at"`
+	RejectedAt             pgtype.Timestamptz `json:"rejected_at"`
+	RejectionReason        pgtype.Text        `json:"rejection_reason"`
+}
+
+type WebhookEvent struct {
+	ID                uuid.UUID          `json:"id"`
+	ReportedSessionID uuid.UUID          `json:"reported_session_id"`
+	Payload           []byte             `json:"payload"`
+	CreatedAt         time.Time          `json:"created_at"`
+	ProcessingStatus  pgtype.Text        `json:"processing_status"`
+	IgnoreReason      pgtype.Text        `json:"ignore_reason"`
+	ReceivedAt        time.Time          `json:"received_at"`
+	ProcessedAt       pgtype.Timestamptz `json:"processed_at"`
 }
