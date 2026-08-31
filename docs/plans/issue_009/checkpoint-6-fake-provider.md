@@ -1,6 +1,6 @@
 # Checkpoint 6 — Deterministic Fake Provider Process
 
-Status: siap dimulai setelah Checkpoint 5 selesai pada 2026-08-28; belum aktif.
+Status: aktif sejak 2026-08-29; agent scaffold selesai dan user flow belum dimulai.
 
 ## Tujuan
 
@@ -65,7 +65,7 @@ flow serta seluruh runtime wiring sesuai approval.
    scenario types tanpa memakai Lawang internal PostgreSQL/sqlc models.
 2. `[http handler]` User menulis strict Provider Submission handler yang menerima
    exact approved shape dan memberikan acknowledgement tanpa menunggu callback
-   selesai.
+   selesai. 
 3. `[application service]` User menulis in-memory deterministic scenario selection
    dengan default verified behavior untuk manual demo.
 4. `[http handler]` User menulis test-only scenario handler dengan exact verdict,
@@ -91,6 +91,30 @@ flow serta seluruh runtime wiring sesuai approval.
 Kesalahan signing setelah body berubah, secret/body logging, scenario leakage ke
 public Lawang API, atau duplicate submission yang membuat unbounded effects adalah
 concept-bearing dan dikembalikan kepada user.
+
+## Scaffold handoff
+
+Agent menambahkan
+[`tests/integration/fake_provider_test.go`](../../../tests/integration/fake_provider_test.go)
+sebelum user flow dimulai. Scaffold tersebut menyediakan:
+
+- callback recorder yang menyimpan method, path, header, dan exact raw body serta
+  memberi synchronization channel tanpa correctness sleep;
+- generic fixed scenario store fixture yang belum membekukan production interface
+  atau exact scenario type;
+- HTTP test harness dengan bounded client timeout;
+- repetitive valid/invalid scenario request fixtures; dan
+- executable RED default-verified HTTP tracer untuk first vertical path poin user
+  2–5 dan verification poin 7.
+
+Setelah poin user 1 direview pada 2026-08-31, tracer membekukan named fields
+`personalDetails`, `identityDocument`, dan `biometricCapture`; kedua metadata tetap
+memuat exact `kind`. Tracer tidak lagi memakai `t.Skip`: satu helper construction
+sengaja mengembalikan `501` sampai user menyambungkan scenario store, callback sender,
+application service, dan strict HTTP handler. Nested Personal Details/artifact JSON
+field names dibekukan oleh agent-owned contract assertion berdasarkan types yang
+disetujui user. Same-key replay poin 6 sengaja menjadi RED berikutnya hanya setelah
+first default-verified path GREEN.
 
 ## Review agent
 

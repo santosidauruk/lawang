@@ -25,6 +25,14 @@ type Config struct {
 	ProviderWebhookSecret string
 }
 
+type FakeConfig struct {
+	FakeHttpAddress       string
+	CallbackTimeout       time.Duration
+	ShutdownTimeout       time.Duration
+	LogLevel              slog.Level
+	ProviderWebhookSecret string
+}
+
 // Load reads and validates process configuration from the environment.
 func Load() (Config, error) {
 	databaseURL, ok := os.LookupEnv("DATABASE_URL")
@@ -116,6 +124,35 @@ func Load() (Config, error) {
 	}, nil
 }
 
+func LoadFake() (FakeConfig, error) {
+	callbackTimeout, err := positiveDuration("CALLBACK_TIMEOUT", 2*time.Duration)
+	if err != nil {
+		return FakeConfig{}, nil
+	}
+
+	shutdownTimeout, err := positiveDuration("SHUTDOWN_TIMEOUT", 10*time.Second)
+	if err != nil {
+		return FakeConfig{}, err
+	}
+
+	logLevel, err := parseLogLevel()
+	if err != nil {
+		return FakeConfig{}, err
+	}
+
+	providerWebhookSecret, ok := os.LookupEnv("PROVIDER_WEBHOOK_SECRET")
+	if !ok || providerWebhookSecret == "" {
+		return FakeConfig{}, errors.New("PROVIDER_WEBHOOK_SECRET is required")
+	}
+
+	return FakeConfig{
+		FakeHttpAddress:       lookupOrDefault("FAKE_HTTP_ADDRESS", ":8081"),
+		CallbackTimeout:       callbackTimeout,
+		ShutdownTimeout:       shutdownTimeout,
+		LogLevel:              logLevel,
+		ProviderWebhookSecret: providerWebhookSecret,
+	}, nil
+}
 func lookupOrDefault(key, fallback string) string {
 	value, ok := os.LookupEnv(key)
 	if !ok || value == "" {

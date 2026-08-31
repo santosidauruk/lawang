@@ -3,7 +3,8 @@
 Status: disetujui pada 2026-08-21; Checkpoint 1 selesai pada 2026-08-26,
 Checkpoint 2 selesai pada 2026-08-25, Checkpoint 3 selesai pada 2026-08-26,
 Checkpoint 4 selesai pada 2026-08-27, dan Checkpoint 5 selesai pada 2026-08-28.
-Checkpoint 6 siap dimulai tetapi belum aktif.
+Checkpoint 6 aktif sejak 2026-08-29 dan menunggu user-authored provider
+application/HTTP/callback/runtime flow sampai gate `[review]`.
 
 Dokumen ini membagi asynchronous Provider Submission dan signed verdict callback
 menjadi delapan checkpoint belajar. Setiap checkpoint menghasilkan satu perilaku

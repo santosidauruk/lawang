@@ -34,11 +34,11 @@ func TestFirstSignedVerifiedVerdictCommitsOnePostgreSQLOutcome(t *testing.T) {
 	fixture := newVerifiedVerdictFixture()
 	seedVerifiedVerdictFixture(t, ctx, database, fixture)
 
-	rawBody := []byte(fmt.Sprintf(
+	rawBody := fmt.Appendf(nil,
 		`{"eventId":%q,"sessionId":%q,"verdict":"verified"}`,
 		fixture.providerEventID,
 		fixture.sessionID,
-	))
+	)
 	signature := signCheckpoint5WebhookBody(t, rawBody)
 
 	// ACT — keep the public signed HTTP boundary here. Extend the production
@@ -187,12 +187,11 @@ func TestFirstSignedRejectedVerdictCommitsBoundedPostgreSQLOutcome(t *testing.T)
 		t.Run(reason, func(t *testing.T) {
 			fixture := newRejectedVerdictFixture(index)
 			seedVerifiedVerdictFixture(t, ctx, database, fixture)
-			rawBody := []byte(fmt.Sprintf(
-				`{"eventId":%q,"sessionId":%q,"verdict":"rejected","reason":%q}`,
+			rawBody := fmt.Appendf(nil, `{"eventId":%q,"sessionId":%q,"verdict":"rejected","reason":%q}`,
 				fixture.providerEventID,
 				fixture.sessionID,
 				reason,
-			))
+			)
 
 			handler := newProviderVerdictHandler(database, fixture.processedAt)
 			request := httptest.NewRequest(http.MethodPost, "/webhooks/verification", bytes.NewReader(rawBody))

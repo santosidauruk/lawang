@@ -8,7 +8,7 @@ Source: `docs/plan-go.md` sections 4-5, 6, 8, 10, 12-14, 16 Issue 9, and 17.2
 Approved collaboration plan:
 [`docs/plans/issue_009/README.md`](../plans/issue_009/README.md).
 Active checkpoint:
-[`Checkpoint 4 — Concurrent Outbox Relay`](../plans/issue_009/checkpoint-4-outbox-relay.md).
+[`Checkpoint 6 — Deterministic Fake Provider Process`](../plans/issue_009/checkpoint-6-fake-provider.md).
 
 ## User stories covered
 
