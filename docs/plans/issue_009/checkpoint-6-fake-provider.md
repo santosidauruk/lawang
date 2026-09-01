@@ -44,6 +44,9 @@ Content-Type: application/json
 `duplicateCallbacks: 1` berarti satu callback tambahan dengan exact event ID dan
 body yang sama, bukan verdict event baru.
 
+`duplicateCallbacks` dibatasi dari `0` sampai `10`, inklusif.
+Nilai valid `duplicateCallbacks` dibekukan pada rentang `0..10`.
+
 ## Candidate files
 
 - `internal/application/fakeprovider/`
@@ -65,7 +68,7 @@ flow serta seluruh runtime wiring sesuai approval.
    scenario types tanpa memakai Lawang internal PostgreSQL/sqlc models.
 2. `[http handler]` User menulis strict Provider Submission handler yang menerima
    exact approved shape dan memberikan acknowledgement tanpa menunggu callback
-   selesai. 
+   selesai.
 3. `[application service]` User menulis in-memory deterministic scenario selection
    dengan default verified behavior untuk manual demo.
 4. `[http handler]` User menulis test-only scenario handler dengan exact verdict,

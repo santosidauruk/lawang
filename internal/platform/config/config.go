@@ -4,8 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/url"
 	"os"
+	"strconv"
 	"time"
 )
 
@@ -125,9 +127,9 @@ func Load() (Config, error) {
 }
 
 func LoadFake() (FakeConfig, error) {
-	callbackTimeout, err := positiveDuration("CALLBACK_TIMEOUT", 2*time.Duration)
+	callbackTimeout, err := positiveDuration("CALLBACK_TIMEOUT", 2*time.Second)
 	if err != nil {
-		return FakeConfig{}, nil
+		return FakeConfig{}, err
 	}
 
 	shutdownTimeout, err := positiveDuration("SHUTDOWN_TIMEOUT", 10*time.Second)
@@ -145,8 +147,13 @@ func LoadFake() (FakeConfig, error) {
 		return FakeConfig{}, errors.New("PROVIDER_WEBHOOK_SECRET is required")
 	}
 
+	fakeHTTPAddress := lookupOrDefault("FAKE_HTTP_ADDRESS", ":8081")
+	if err := validateListenAddress("FAKE_HTTP_ADDRESS", fakeHTTPAddress); err != nil {
+		return FakeConfig{}, err
+	}
+
 	return FakeConfig{
-		FakeHttpAddress:       lookupOrDefault("FAKE_HTTP_ADDRESS", ":8081"),
+		FakeHttpAddress:       fakeHTTPAddress,
 		CallbackTimeout:       callbackTimeout,
 		ShutdownTimeout:       shutdownTimeout,
 		LogLevel:              logLevel,
@@ -191,6 +198,26 @@ func validateS3Endpoint(key, rawURL string) error {
 	u, err := url.Parse(rawURL)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 		return fmt.Errorf("%s must be an absolute HTTP or HTTPS URL", key)
+	}
+
+	return nil
+}
+
+func validateListenAddress(key, address string) error {
+	_, rawPort, err := net.SplitHostPort(address)
+	if err != nil {
+		return fmt.Errorf(
+			"%s must be a host:port with port between 1 and 65535",
+			key,
+		)
+	}
+
+	port, err := strconv.Atoi(rawPort)
+	if err != nil || port < 1 || port > 65535 {
+		return fmt.Errorf(
+			"%s must be a host:port with port between 1 and 65535",
+			key,
+		)
 	}
 
 	return nil

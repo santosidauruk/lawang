@@ -35,7 +35,7 @@ type FakeSubmissionService interface {
 func NewFakeProviderScenarioHandler(fakeSubmissionService FakeSubmissionService, scenarios FakeProviderScenarioStore) http.Handler {
 	mux := http.NewServeMux()
 	if fakeSubmissionService != nil {
-		mux.HandleFunc("/", requireMethod(http.MethodPost, handleFakeProviderSubmission(fakeSubmissionService)))
+		mux.HandleFunc("/{$}", requireMethod(http.MethodPost, handleFakeProviderSubmission(fakeSubmissionService)))
 	}
 	if scenarios != nil {
 		mux.HandleFunc("/test/scenarios/{sessionId}", requireMethod(http.MethodPut, handleFakeProviderScenario(scenarios)))
@@ -108,7 +108,7 @@ func handleFakeProviderSubmission(service FakeSubmissionService) http.HandlerFun
 
 type scenarioRequest struct {
 	Verdict            *fakeprovider.Verdict         `json:"verdict"`
-	Reason             *fakeprovider.RejectionReason `json:"reason"`
+	Reason             *fakeprovider.RejectionReason `json:"reason,omitempty"`
 	DelayMs            *int                          `json:"delayMs"`
 	DuplicateCallbacks *int                          `json:"duplicateCallbacks"`
 }
@@ -140,16 +140,24 @@ func handleFakeProviderScenario(scenarios FakeProviderScenarioStore) http.Handle
 			return
 		}
 
-		if body.Verdict == nil || body.Reason == nil || body.DelayMs == nil || body.DuplicateCallbacks == nil {
-			writeJSON(response, http.StatusBadRequest, APIError{Code: "VALIDATION_ERROR", Message: "all Personal Details fields are required"})
+		if body.Verdict == nil || body.DelayMs == nil || body.DuplicateCallbacks == nil {
+			writeJSON(response, http.StatusBadRequest, APIError{Code: "VALIDATION_ERROR", Message: "all required scenario fields must be provided"})
 			return
+		}
+		var reason fakeprovider.RejectionReason
+		if body.Reason != nil {
+			reason = *body.Reason
 		}
 
 		scenario := fakeprovider.Scenario{
 			Verdict:            *body.Verdict,
-			Reason:             *body.Reason,
+			Reason:             reason,
 			DelayMs:            *body.DelayMs,
 			DuplicateCallbacks: *body.DuplicateCallbacks,
+		}
+		if err := scenario.Validate(); err != nil {
+			writeJSON(response, http.StatusBadRequest, APIError{Code: "VALIDATION_ERROR", Message: "invalid fake provider scenario"})
+			return
 		}
 
 		scenarios.Set(sessionID, scenario)

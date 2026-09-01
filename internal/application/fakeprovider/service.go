@@ -3,7 +3,6 @@ package fakeprovider
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sync"
 	"time"
 
@@ -38,6 +37,8 @@ type Verdict string
 const (
 	Verified Verdict = "verified"
 	Rejected Verdict = "rejected"
+
+	MaxDuplicateCallbacks = 10
 )
 
 type RejectionReason string
@@ -56,11 +57,34 @@ type Scenario struct {
 	DuplicateCallbacks int             `json:"duplicateCallbacks"`
 }
 
+func (s Scenario) Validate() error {
+	if s.DelayMs < 0 || s.DuplicateCallbacks < 0 || s.DuplicateCallbacks > MaxDuplicateCallbacks {
+		return ErrInvalidScenario
+	}
+
+	switch s.Verdict {
+	case Verified:
+		if s.Reason != "" {
+			return ErrInvalidScenario
+		}
+	case Rejected:
+		switch s.Reason {
+		case DocumentInvalid, BiometricMismatch, IdentityNotVerified, SuspectedFraud:
+		default:
+			return ErrInvalidScenario
+		}
+	default:
+		return ErrInvalidScenario
+	}
+
+	return nil
+}
+
 type WebhookEvent struct {
 	EventID   uuid.UUID       `json:"eventId"`
 	SessionID uuid.UUID       `json:"sessionId"`
 	Verdict   Verdict         `json:"verdict"`
-	Reason    RejectionReason `json:"reason"`
+	Reason    RejectionReason `json:"reason,omitempty"`
 }
 
 type ScenarioStore interface {
@@ -69,6 +93,16 @@ type ScenarioStore interface {
 
 type Callback interface {
 	Send(ctx context.Context, callbackURL string, event WebhookEvent) error
+}
+
+type CallbackFailure struct {
+	EventID   uuid.UUID
+	SessionID uuid.UUID
+	Err       error
+}
+
+type CallbackFailureReporter interface {
+	ReportCallbackFailure(failure CallbackFailure)
 }
 
 type acceptedSubmission struct {
@@ -83,27 +117,43 @@ type Service struct {
 	scenarios       ScenarioStore
 	callbackSender  Callback
 	callbackTimeout time.Duration
+	failureReporter CallbackFailureReporter
+	callbacks       sync.WaitGroup
+	closing         bool
 }
 
-func NewService(scenarios ScenarioStore, callbackSender Callback, callbackTimeout time.Duration) *Service {
+func NewService(
+	scenarios ScenarioStore,
+	callbackSender Callback,
+	callbackTimeout time.Duration,
+	failureReporter CallbackFailureReporter,
+) *Service {
 	return &Service{
 		submissions:     map[uuid.UUID]*acceptedSubmission{},
 		scenarios:       scenarios,
 		callbackSender:  callbackSender,
 		callbackTimeout: callbackTimeout,
+		failureReporter: failureReporter,
 	}
 }
 
 var (
+	ErrInvalidScenario        = errors.New("invalid fake provider scenario")
 	ErrInvalidSessionID       = errors.New("invalid session id")
 	ErrIdempotencyKeyMismatch = errors.New("idempotency key mismatch")
 	ErrIdempotencyConflict    = errors.New("idempotency conflicted")
+	ErrServiceShuttingDown    = errors.New("fake provider service is shutting down")
 )
 
 func (s *Service) Accept(ctx context.Context, idempotencyKey uuid.UUID, request ProviderSubmissionRequest) (bool, error) {
 	scenario := s.scenarios.Lookup(request.SessionID)
 
 	s.mu.Lock()
+	if s.closing {
+		s.mu.Unlock()
+		return false, ErrServiceShuttingDown
+	}
+
 	existing, found := s.submissions[idempotencyKey]
 	if found {
 		s.mu.Unlock()
@@ -121,6 +171,7 @@ func (s *Service) Accept(ctx context.Context, idempotencyKey uuid.UUID, request 
 
 	s.submissions[idempotencyKey] = accepted
 
+	s.callbacks.Add(1)
 	s.mu.Unlock()
 
 	s.startCallback(accepted)
@@ -130,8 +181,16 @@ func (s *Service) Accept(ctx context.Context, idempotencyKey uuid.UUID, request 
 
 func (s *Service) startCallback(submission *acceptedSubmission) {
 	go func() {
+		defer s.callbacks.Done()
+
 		if err := s.processCallback(submission); err != nil {
-			fmt.Printf("callback Failed: %v", err)
+			if s.failureReporter != nil {
+				s.failureReporter.ReportCallbackFailure(CallbackFailure{
+					EventID:   submission.EventID,
+					SessionID: submission.Request.SessionID,
+					Err:       err,
+				})
+			}
 		}
 	}()
 }
@@ -146,4 +205,23 @@ func (s *Service) processCallback(submission *acceptedSubmission) error {
 		Verdict:   submission.Scenario.Verdict,
 		Reason:    submission.Scenario.Reason,
 	})
+}
+
+func (s *Service) Shutdown(ctx context.Context) error {
+	s.mu.Lock()
+	s.closing = true
+	s.mu.Unlock()
+
+	done := make(chan struct{})
+	go func() {
+		s.callbacks.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }

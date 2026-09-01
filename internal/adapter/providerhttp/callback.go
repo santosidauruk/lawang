@@ -76,26 +76,24 @@ func (c *CallbackSender) Send(ctx context.Context, callbackURL string, event fak
 
 	client := http.Client{}
 	resp, err := client.Do(request)
-	defer resp.Body.Close()
-
 	if err != nil {
 		return err
 	}
+	defer resp.Body.Close()
 	return nil
 }
 
-func setHmacVerifiedBody(secretKey string, message []byte) (string, error) {
+func setHmacVerifiedBody(secretKey string, message []byte) ([]byte, error) {
 	key := []byte(secretKey)
 
 	h := hmac.New(sha256.New, key)
 
 	_, err := h.Write(message)
 	if err != nil {
-		return "", err
+		return []byte(nil), err
 	}
 
 	hashBytes := h.Sum(nil)
-	hashString := hex.EncodeToString(hashBytes)
 
-	return hashString, nil
+	return hashBytes, nil
 }

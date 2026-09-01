@@ -28,6 +28,18 @@ services:
       - "${MINIO_CONSOLE_PORT:-9001}:9001"
     volumes:
       - lawang_go_minio_data:/data
+  fake-provider:
+    build:
+      context: .
+      target: fake-provider
+    environment:
+      FAKE_HTTP_ADDRESS: ":8081"
+      CALLBACK_TIMEOUT: "2s"
+      SHUTDOWN_TIMEOUT: "10s"
+      LOG_LEVEL: "info"
+      PROVIDER_WEBHOOK_SECRET: "${PROVIDER_WEBHOOK_SECRET}"
+    ports:
+      - "${FAKE_PROVIDER_PORT:-8081}:8081"
 
 volumes:
   lawang_go_postgres_data:

@@ -13,7 +13,13 @@ include .env
 export
 endif
 
-.PHONY: tools deps-up deps-down migrate sql proof proof-events run fmt fmt-check vet staticcheck test sqlc-generate sqlc-diff migration-validate compose-validate quality
+IMAGE_TAG ?= local
+IMAGE_REGISTRY ?= local
+
+API_IMAGE := $(IMAGE_REGISTRY)/lawang-api:$(IMAGE_TAG)
+FAKE_PROVIDER_IMAGE := $(IMAGE_REGISTRY)/lawang-fake-provider:$(IMAGE_TAG)
+
+.PHONY: tools deps-up deps-down migrate sql proof proof-events run run-fake-provider fmt fmt-check vet staticcheck test sqlc-generate sqlc-diff migration-validate compose-validate quality docker-build docker-build-api docker-build-fake-provider
 
 tools:
 	GOBIN=$(TOOLS_DIR) $(GO) install github.com/sqlc-dev/sqlc/cmd/sqlc@$(SQLC_VERSION)
@@ -40,6 +46,9 @@ proof-events:
 
 run:
 	$(GO) run ./cmd/api
+
+run-fake-provider:
+	$(GO) run ./cmd/fake-provider
 
 fmt:
 	gofmt -w .
@@ -73,3 +82,17 @@ compose-validate:
 	docker compose config --quiet
 
 quality: fmt-check vet staticcheck test sqlc-diff migration-validate compose-validate
+
+docker-build-api:
+	docker build \
+		--target api \
+		--tag $(API_IMAGE) \
+		.
+
+docker-build-fake-provider:
+	docker build \
+		--target fake-provider \
+		--tag $(FAKE_PROVIDER_IMAGE) \
+		.
+
+docker-build: docker-build-api docker-build-fake-provider

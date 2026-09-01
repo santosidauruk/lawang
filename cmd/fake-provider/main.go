@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net"
 	"os"
@@ -37,18 +38,65 @@ func run() int {
 		logger.Error("HTTP listener failed", "error", err)
 		return 1
 	}
+	if err := serveFakeProvider(ctx, cfg, logger, listener); err != nil {
+		logger.Error("API stopped with error", "error", err)
+		return 1
+	}
+	return 0
+}
 
+func serveFakeProvider(
+	ctx context.Context,
+	cfg config.FakeConfig,
+	logger *slog.Logger,
+	listener net.Listener,
+) error {
 	scenarioStore := providerhttp.NewScenarioStore()
 	callbackSender := providerhttp.NewCallbackSender(cfg.ProviderWebhookSecret)
-	service := fakeprovider.NewService(scenarioStore, callbackSender, cfg.CallbackTimeout)
+	service := fakeprovider.NewService(
+		scenarioStore,
+		callbackSender,
+		cfg.CallbackTimeout,
+		callbackFailureLogger{logger: logger},
+	)
 
 	handler := httpapi.NewFakeProviderScenarioHandler(service, scenarioStore)
 	server := httpserver.New(cfg.FakeHttpAddress, handler)
 	logger.Info("API listening", "address", listener.Addr().String())
-	if err := httpserver.Run(ctx, server, listener, cfg.ShutdownTimeout); err != nil {
-		logger.Error("API stopped with error", "error", err)
-		return 1
+	serveErr := httpserver.Run(ctx, server, listener, cfg.ShutdownTimeout)
+
+	callbackShutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.CallbackTimeout)
+	defer cancel()
+
+	callbackErr := service.Shutdown(callbackShutdownCtx)
+	if err := errors.Join(serveErr, callbackErr); err != nil {
+		return err
 	}
+
 	logger.Info("API stopped")
-	return 0
+	return nil
+}
+
+type callbackFailureLogger struct {
+	logger *slog.Logger
+}
+
+func (l callbackFailureLogger) ReportCallbackFailure(failure fakeprovider.CallbackFailure) {
+	l.logger.Error(
+		"fake provider callback failed",
+		"event_id", failure.EventID,
+		"session_id", failure.SessionID,
+		"error_kind", callbackErrorKind(failure.Err),
+	)
+}
+
+func callbackErrorKind(err error) string {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "timeout"
+	}
+	var networkError net.Error
+	if errors.As(err, &networkError) && networkError.Timeout() {
+		return "timeout"
+	}
+	return "transport"
 }

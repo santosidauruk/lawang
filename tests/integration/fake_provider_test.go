@@ -175,6 +175,35 @@ func TestFakeProviderScenarioEndpointStoresRejectedScenario(t *testing.T) {
 	}
 }
 
+func TestFakeProviderScenarioEndpointStoresVerifiedScenarioWithoutReason(t *testing.T) {
+	sessionID := uuid.MustParse("696a37f8-dba2-4d62-9d75-2b3678928c83")
+	defaultScenario := fakeprovider.Scenario{Verdict: fakeprovider.Rejected, Reason: fakeprovider.SuspectedFraud}
+	scenarios := newFixedScenarioStore(defaultScenario)
+	handler := newFirstFakeProviderScenarioHandler(t, scenarios)
+
+	request := httptest.NewRequest(
+		http.MethodPut,
+		"/test/scenarios/"+sessionID.String(),
+		strings.NewReader(`{"verdict":"verified","delayMs":0,"duplicateCallbacks":0}`),
+	)
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code < http.StatusOK || response.Code >= http.StatusMultipleChoices {
+		t.Fatalf("scenario acknowledgement status = %d, want 2xx", response.Code)
+	}
+	want := fakeprovider.Scenario{
+		Verdict:            fakeprovider.Verified,
+		DelayMs:            0,
+		DuplicateCallbacks: 0,
+	}
+	if got := scenarios.Lookup(sessionID); got != want {
+		t.Fatalf("stored scenario = %#v, want %#v", got, want)
+	}
+}
+
 // newFirstFakeProviderScenarioHandler is the production handoff for Bagian user
 // step 4. Replace this deliberate 501 handler with the user-authored provider-only
 // router and strict scenario handler; do not register it on the Lawang applicant API.
@@ -197,7 +226,7 @@ func newFirstFakeProviderHandler(
 	t.Helper()
 
 	callbackSender := providerhttp.NewCallbackSender(webhookSecret)
-	service := fakeprovider.NewService(scenarios, callbackSender, fakeProviderHarnessTimeout)
+	service := fakeprovider.NewService(scenarios, callbackSender, fakeProviderHarnessTimeout, nil)
 	return httpapi.NewFakeProviderScenarioHandler(service, scenarios)
 }
 
