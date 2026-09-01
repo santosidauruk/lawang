@@ -1,6 +1,7 @@
 # Checkpoint 6 — Deterministic Fake Provider Process
 
-Status: aktif sejak 2026-08-29; agent scaffold selesai dan user flow belum dimulai.
+Status: selesai pada 2026-09-01; user-authored provider flow melewati gate
+`[review]`, lalu agent-owned reliability dan safety matrix selesai.
 
 ## Tujuan
 
@@ -45,7 +46,6 @@ Content-Type: application/json
 body yang sama, bukan verdict event baru.
 
 `duplicateCallbacks` dibatasi dari `0` sampai `10`, inklusif.
-Nilai valid `duplicateCallbacks` dibekukan pada rentang `0..10`.
 
 ## Candidate files
 
@@ -154,3 +154,16 @@ Setelah user wiring direview, agent menutup:
 - deterministic verified/rejected scenarios tersedia;
 - delay/duplicate/idempotency behavior terbukti;
 - tidak ada real-provider atau production-readiness claim.
+
+## Completion evidence
+
+- default verified dan seluruh empat rejected scenario mengirim exact signed callback;
+- zero/non-zero delay, zero/multiple duplicate callbacks, replay, conflict, dan
+  concurrent same-key submissions terbukti secara deterministic;
+- malformed/oversized HTTP, callback non-2xx/timeout, safe logging, config negative
+  matrix, graceful shutdown, health, dan process restart regressions GREEN;
+- focused race suite untuk fake-provider packages GREEN;
+- kedua target multi-stage image berhasil dibangun, dan
+  `docker compose up -d --build --wait fake-provider` mencapai `Healthy`;
+- `make quality` GREEN pada 2026-09-01, termasuk full race suite, SQLC diff,
+  migration validation, dan Compose validation.

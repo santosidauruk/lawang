@@ -40,6 +40,12 @@ services:
       PROVIDER_WEBHOOK_SECRET: "${PROVIDER_WEBHOOK_SECRET}"
     ports:
       - "${FAKE_PROVIDER_PORT:-8081}:8081"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8081/health/live"]
+      interval: 2s
+      timeout: 1s
+      retries: 10
+      start_period: 2s
 
 volumes:
   lawang_go_postgres_data:

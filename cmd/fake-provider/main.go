@@ -39,7 +39,7 @@ func run() int {
 		return 1
 	}
 	if err := serveFakeProvider(ctx, cfg, logger, listener); err != nil {
-		logger.Error("API stopped with error", "error", err)
+		logger.Error("fake provider stopped with error", "error", err)
 		return 1
 	}
 	return 0
@@ -58,11 +58,12 @@ func serveFakeProvider(
 		callbackSender,
 		cfg.CallbackTimeout,
 		callbackFailureLogger{logger: logger},
+		nil,
 	)
 
 	handler := httpapi.NewFakeProviderScenarioHandler(service, scenarioStore)
 	server := httpserver.New(cfg.FakeHttpAddress, handler)
-	logger.Info("API listening", "address", listener.Addr().String())
+	logger.Info("fake provider listening", "address", listener.Addr().String())
 	serveErr := httpserver.Run(ctx, server, listener, cfg.ShutdownTimeout)
 
 	callbackShutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.CallbackTimeout)
@@ -73,7 +74,7 @@ func serveFakeProvider(
 		return err
 	}
 
-	logger.Info("API stopped")
+	logger.Info("fake provider stopped")
 	return nil
 }
 
@@ -91,6 +92,9 @@ func (l callbackFailureLogger) ReportCallbackFailure(failure fakeprovider.Callba
 }
 
 func callbackErrorKind(err error) string {
+	if errors.Is(err, providerhttp.ErrCallbackNonSuccess) {
+		return "non_2xx"
+	}
 	if errors.Is(err, context.DeadlineExceeded) {
 		return "timeout"
 	}

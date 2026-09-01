@@ -95,6 +95,10 @@ type Callback interface {
 	Send(ctx context.Context, callbackURL string, event WebhookEvent) error
 }
 
+type CallbackDelay interface {
+	Wait(ctx context.Context, delay time.Duration) error
+}
+
 type CallbackFailure struct {
 	EventID   uuid.UUID
 	SessionID uuid.UUID
@@ -118,6 +122,7 @@ type Service struct {
 	callbackSender  Callback
 	callbackTimeout time.Duration
 	failureReporter CallbackFailureReporter
+	callbackDelay   CallbackDelay
 	callbacks       sync.WaitGroup
 	closing         bool
 }
@@ -127,13 +132,18 @@ func NewService(
 	callbackSender Callback,
 	callbackTimeout time.Duration,
 	failureReporter CallbackFailureReporter,
+	callbackDelay CallbackDelay,
 ) *Service {
+	if callbackDelay == nil {
+		callbackDelay = timerCallbackDelay{}
+	}
 	return &Service{
 		submissions:     map[uuid.UUID]*acceptedSubmission{},
 		scenarios:       scenarios,
 		callbackSender:  callbackSender,
 		callbackTimeout: callbackTimeout,
 		failureReporter: failureReporter,
+		callbackDelay:   callbackDelay,
 	}
 }
 
@@ -198,13 +208,39 @@ func (s *Service) startCallback(submission *acceptedSubmission) {
 func (s *Service) processCallback(submission *acceptedSubmission) error {
 	ctx, cancel := context.WithTimeout(context.Background(), s.callbackTimeout)
 	defer cancel()
+	if err := s.callbackDelay.Wait(ctx, time.Duration(submission.Scenario.DelayMs)*time.Millisecond); err != nil {
+		return err
+	}
 
-	return s.callbackSender.Send(ctx, submission.Request.CallbackURL, WebhookEvent{
+	event := WebhookEvent{
 		EventID:   submission.EventID,
 		SessionID: submission.Request.SessionID,
 		Verdict:   submission.Scenario.Verdict,
 		Reason:    submission.Scenario.Reason,
-	})
+	}
+	for range submission.Scenario.DuplicateCallbacks + 1 {
+		if err := s.callbackSender.Send(ctx, submission.Request.CallbackURL, event); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type timerCallbackDelay struct{}
+
+func (timerCallbackDelay) Wait(ctx context.Context, delay time.Duration) error {
+	if delay <= 0 {
+		return nil
+	}
+
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (s *Service) Shutdown(ctx context.Context) error {

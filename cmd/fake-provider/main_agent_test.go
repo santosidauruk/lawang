@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/santosidauruk/lawang-go/internal/adapter/providerhttp"
 	"github.com/santosidauruk/lawang-go/internal/application/fakeprovider"
 	"github.com/santosidauruk/lawang-go/internal/platform/config"
 )
@@ -50,6 +51,20 @@ func TestCallbackFailureLoggerDoesNotExposeSensitiveError(t *testing.T) {
 		if !strings.Contains(logLine, want) {
 			t.Fatalf("callback failure log = %s, want field %s", logLine, want)
 		}
+	}
+}
+
+func TestCallbackFailureLoggerClassifiesNonSuccessResponse(t *testing.T) {
+	var output bytes.Buffer
+	reporter := callbackFailureLogger{logger: slog.New(slog.NewJSONHandler(&output, nil))}
+	reporter.ReportCallbackFailure(fakeprovider.CallbackFailure{
+		EventID:   uuid.MustParse("b4416e82-2717-4c85-b388-b8d57d320bc6"),
+		SessionID: uuid.MustParse("f5415e46-d80a-43b1-a5eb-f044cab0fcb4"),
+		Err:       providerhttp.ErrCallbackNonSuccess,
+	})
+
+	if logLine := output.String(); !strings.Contains(logLine, `"error_kind":"non_2xx"`) {
+		t.Fatalf("callback failure log = %s, want non_2xx classification", logLine)
 	}
 }
 
@@ -167,5 +182,66 @@ func TestFakeProviderProcessDefaultVerifiedSubmissionOnActualListener(t *testing
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("fake-provider process did not shut down")
+	}
+}
+
+func TestFakeProviderProcessCanRestartOnSameAddress(t *testing.T) {
+	firstListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("first listen: %v", err)
+	}
+	address := firstListener.Addr().String()
+	runFakeProviderLifecycle(t, firstListener)
+
+	secondListener, err := net.Listen("tcp", address)
+	if err != nil {
+		t.Fatalf("restart listen on %s: %v", address, err)
+	}
+	runFakeProviderLifecycle(t, secondListener)
+}
+
+func runFakeProviderLifecycle(t *testing.T, listener net.Listener) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	results := make(chan error, 1)
+	go func() {
+		results <- serveFakeProvider(
+			ctx,
+			config.FakeConfig{
+				FakeHttpAddress:       listener.Addr().String(),
+				CallbackTimeout:       time.Second,
+				ShutdownTimeout:       time.Second,
+				LogLevel:              slog.LevelInfo,
+				ProviderWebhookSecret: "restart-lifecycle-secret",
+			},
+			slog.New(slog.NewJSONHandler(io.Discard, nil)),
+			listener,
+		)
+	}()
+
+	response, err := (&http.Client{Timeout: time.Second}).Get("http://" + listener.Addr().String() + "/health/live")
+	if err != nil {
+		cancel()
+		t.Fatalf("GET fake-provider health: %v", err)
+	}
+	body, err := io.ReadAll(response.Body)
+	_ = response.Body.Close()
+	if err != nil {
+		cancel()
+		t.Fatalf("read fake-provider health: %v", err)
+	}
+	if response.StatusCode != http.StatusOK || string(body) != "{\"status\":\"ok\"}\n" {
+		cancel()
+		t.Fatalf("health response = %d %q", response.StatusCode, body)
+	}
+
+	cancel()
+	select {
+	case err := <-results:
+		if err != nil {
+			t.Fatalf("fake-provider lifecycle: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("fake-provider lifecycle did not stop")
 	}
 }

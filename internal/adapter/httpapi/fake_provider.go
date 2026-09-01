@@ -34,6 +34,7 @@ type FakeSubmissionService interface {
 
 func NewFakeProviderScenarioHandler(fakeSubmissionService FakeSubmissionService, scenarios FakeProviderScenarioStore) http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("/health/live", requireMethod(http.MethodGet, liveHealth))
 	if fakeSubmissionService != nil {
 		mux.HandleFunc("/{$}", requireMethod(http.MethodPost, handleFakeProviderSubmission(fakeSubmissionService)))
 	}
@@ -54,22 +55,7 @@ func handleFakeProviderSubmission(service FakeSubmissionService) http.HandlerFun
 		}
 
 		var body providerSubmissionRequest
-		request.Body = http.MaxBytesReader(response, request.Body, fakeSubmissionBodyLimit)
-		decoder := json.NewDecoder(request.Body)
-		decoder.DisallowUnknownFields()
-
-		if err := decoder.Decode(&body); err != nil {
-			var typeError *json.UnmarshalTypeError
-			if errors.As(err, &typeError) || strings.HasPrefix(err.Error(), "json: unknown field ") {
-				writeJSON(response, http.StatusBadRequest, APIError{Code: "VALIDATION_ERROR", Message: "invalid Personal Details request"})
-				return
-			}
-			writeJSON(response, http.StatusInternalServerError, APIError{Code: "INTERNAL", Message: "Internal server error"})
-			return
-		}
-		var extra any
-		if err := decoder.Decode(&extra); err != io.EOF {
-			writeJSON(response, http.StatusInternalServerError, APIError{Code: "INTERNAL", Message: "Internal server error"})
+		if !decodeFakeProviderJSON(response, request, &body, "invalid provider submission request") {
 			return
 		}
 
@@ -122,21 +108,7 @@ func handleFakeProviderScenario(scenarios FakeProviderScenarioStore) http.Handle
 		}
 
 		var body scenarioRequest
-		request.Body = http.MaxBytesReader(response, request.Body, 1<<20)
-		decoder := json.NewDecoder(request.Body)
-		decoder.DisallowUnknownFields()
-		if err := decoder.Decode(&body); err != nil {
-			var typeError *json.UnmarshalTypeError
-			if errors.As(err, &typeError) || strings.HasPrefix(err.Error(), "json: unknown field ") {
-				writeJSON(response, http.StatusBadRequest, APIError{Code: "VALIDATION_ERROR", Message: "invalid Personal Details request"})
-				return
-			}
-			writeJSON(response, http.StatusInternalServerError, APIError{Code: "INTERNAL", Message: "Internal server error"})
-			return
-		}
-		var extra any
-		if err := decoder.Decode(&extra); err != io.EOF {
-			writeJSON(response, http.StatusInternalServerError, APIError{Code: "INTERNAL", Message: "Internal server error"})
+		if !decodeFakeProviderJSON(response, request, &body, "invalid fake provider scenario request") {
 			return
 		}
 
@@ -163,4 +135,42 @@ func handleFakeProviderScenario(scenarios FakeProviderScenarioStore) http.Handle
 		scenarios.Set(sessionID, scenario)
 	}
 
+}
+
+func decodeFakeProviderJSON(response http.ResponseWriter, request *http.Request, destination any, invalidMessage string) bool {
+	request.Body = http.MaxBytesReader(response, request.Body, fakeSubmissionBodyLimit)
+	decoder := json.NewDecoder(request.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(destination); err != nil {
+		writeFakeProviderDecodeError(response, err, invalidMessage)
+		return false
+	}
+
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		if err == nil {
+			writeJSON(response, http.StatusBadRequest, APIError{Code: "VALIDATION_ERROR", Message: invalidMessage})
+		} else {
+			writeFakeProviderDecodeError(response, err, invalidMessage)
+		}
+		return false
+	}
+	return true
+}
+
+func writeFakeProviderDecodeError(response http.ResponseWriter, err error, invalidMessage string) {
+	var maxBytesError *http.MaxBytesError
+	if errors.As(err, &maxBytesError) {
+		writeJSON(response, http.StatusRequestEntityTooLarge, APIError{
+			Code: "PAYLOAD_TOO_LARGE", Message: "request body exceeds 1 MiB limit",
+		})
+		return
+	}
+	var typeError *json.UnmarshalTypeError
+	var syntaxError *json.SyntaxError
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.As(err, &typeError) || errors.As(err, &syntaxError) || strings.HasPrefix(err.Error(), "json: unknown field ") {
+		writeJSON(response, http.StatusBadRequest, APIError{Code: "VALIDATION_ERROR", Message: invalidMessage})
+		return
+	}
+	writeJSON(response, http.StatusInternalServerError, APIError{Code: "INTERNAL", Message: "Internal server error"})
 }

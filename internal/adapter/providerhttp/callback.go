@@ -7,11 +7,18 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"sync"
 
 	"github.com/google/uuid"
 	"github.com/santosidauruk/lawang-go/internal/application/fakeprovider"
+)
+
+var (
+	ErrCallbackNonSuccess = errors.New("callback returned non-success status")
+	ErrCallbackTransport  = errors.New("callback transport failed")
+	ErrCallbackRequest    = errors.New("callback request is invalid")
 )
 
 type ScenarioStore struct {
@@ -69,7 +76,7 @@ func (c *CallbackSender) Send(ctx context.Context, callbackURL string, event fak
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, callbackURL, bytes.NewReader(body))
 	if err != nil {
-		return err
+		return ErrCallbackRequest
 	}
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("x-signature", "sha256="+hex.EncodeToString(mac))
@@ -77,9 +84,18 @@ func (c *CallbackSender) Send(ctx context.Context, callbackURL string, event fak
 	client := http.Client{}
 	resp, err := client.Do(request)
 	if err != nil {
-		return err
+		if errors.Is(err, context.DeadlineExceeded) {
+			return context.DeadlineExceeded
+		}
+		if errors.Is(err, context.Canceled) {
+			return context.Canceled
+		}
+		return ErrCallbackTransport
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return ErrCallbackNonSuccess
+	}
 	return nil
 }
 

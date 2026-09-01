@@ -204,6 +204,100 @@ func TestFakeProviderScenarioEndpointStoresVerifiedScenarioWithoutReason(t *test
 	}
 }
 
+func TestFakeProviderSendsEveryExactSignedRejectedScenario(t *testing.T) {
+	tests := []struct {
+		name      string
+		sessionID uuid.UUID
+		reason    fakeprovider.RejectionReason
+	}{
+		{name: "document invalid", sessionID: uuid.MustParse("810a37af-387b-4409-870f-38e8fbbe85ba"), reason: fakeprovider.DocumentInvalid},
+		{name: "biometric mismatch", sessionID: uuid.MustParse("68a230e9-0c1b-472c-89e1-32d7ad5a98bb"), reason: fakeprovider.BiometricMismatch},
+		{name: "identity not verified", sessionID: uuid.MustParse("6ea8acc8-f98b-42ad-9aa8-86b06ede4143"), reason: fakeprovider.IdentityNotVerified},
+		{name: "suspected fraud", sessionID: uuid.MustParse("3d43593f-d7e5-44ba-a4ba-e23a27bb1d5c"), reason: fakeprovider.SuspectedFraud},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			recorder := newCallbackRecorder(t)
+			scenarios := newFixedScenarioStore(fakeprovider.Scenario{Verdict: fakeprovider.Rejected, Reason: tt.reason})
+			provider := newProviderHTTPHarness(t, newFirstFakeProviderHandler(t, scenarios, fakeProviderWebhookSecret))
+
+			submitFakeProviderRequest(t, provider, tt.sessionID, recorder.URL()+"/webhooks/verification")
+			ctx, cancel := context.WithTimeout(context.Background(), fakeProviderHarnessTimeout)
+			defer cancel()
+			callback, err := recorder.Next(ctx)
+			if err != nil {
+				t.Fatalf("receive rejected callback: %v", err)
+			}
+			assertExactSignedRejectedCallback(t, callback, tt.sessionID, tt.reason, fakeProviderWebhookSecret)
+		})
+	}
+}
+
+func TestFakeProviderDuplicateCallbacksReuseExactSignedEvent(t *testing.T) {
+	sessionID := uuid.MustParse("22d74567-6054-42e6-8c36-2b38325af34a")
+	recorder := newCallbackRecorder(t)
+	scenarios := newFixedScenarioStore(fakeprovider.Scenario{
+		Verdict:            fakeprovider.Rejected,
+		Reason:             fakeprovider.DocumentInvalid,
+		DuplicateCallbacks: 2,
+	})
+	provider := newProviderHTTPHarness(t, newFirstFakeProviderHandler(t, scenarios, fakeProviderWebhookSecret))
+
+	submitFakeProviderRequest(t, provider, sessionID, recorder.URL()+"/webhooks/verification")
+	ctx, cancel := context.WithTimeout(context.Background(), fakeProviderHarnessTimeout)
+	defer cancel()
+	callbacks := make([]recordedCallback, 0, 3)
+	for range 3 {
+		callback, err := recorder.Next(ctx)
+		if err != nil {
+			t.Fatalf("receive duplicate callback sequence: %v", err)
+		}
+		callbacks = append(callbacks, callback)
+	}
+	for index, callback := range callbacks {
+		assertExactSignedRejectedCallback(t, callback, sessionID, fakeprovider.DocumentInvalid, fakeProviderWebhookSecret)
+		if index > 0 && (!bytes.Equal(callback.Body, callbacks[0].Body) || callback.Header.Get("x-signature") != callbacks[0].Header.Get("x-signature")) {
+			t.Fatalf("duplicate callback %d differs from first logical event", index)
+		}
+	}
+}
+
+func submitFakeProviderRequest(t *testing.T, provider *providerHTTPHarness, sessionID uuid.UUID, callbackURL string) {
+	t.Helper()
+	submission := fakeprovider.ProviderSubmissionRequest{
+		SessionID:   sessionID,
+		CallbackURL: callbackURL,
+		PersonalDetails: fakeprovider.PersonalDetails{
+			FullName: "Agent Matrix", DateOfBirth: "2000-01-01", IdentityNumber: "3173000000000024", Address: "jalan matrix",
+		},
+		IdentityDocument: fakeprovider.VerificationArtifactMetadata{
+			Kind: "identity_document", StorageKey: "matrix/identity", ContentType: "image/jpeg", SizeBytes: 10, ETag: "identity-matrix-etag",
+		},
+		BiometricCapture: fakeprovider.VerificationArtifactMetadata{
+			Kind: "biometric_capture", StorageKey: "matrix/biometric", ContentType: "image/png", SizeBytes: 10, ETag: "biometric-matrix-etag",
+		},
+	}
+	body, err := json.Marshal(submission)
+	if err != nil {
+		t.Fatalf("marshal provider submission: %v", err)
+	}
+	request, err := http.NewRequest(http.MethodPost, provider.URL(), bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("new provider submission request: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Idempotency-Key", sessionID.String())
+	response, err := provider.Client().Do(request)
+	if err != nil {
+		t.Fatalf("submit to fake provider: %v", err)
+	}
+	_ = response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("submission status = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+}
+
 // newFirstFakeProviderScenarioHandler is the production handoff for Bagian user
 // step 4. Replace this deliberate 501 handler with the user-authored provider-only
 // router and strict scenario handler; do not register it on the Lawang applicant API.
@@ -226,7 +320,7 @@ func newFirstFakeProviderHandler(
 	t.Helper()
 
 	callbackSender := providerhttp.NewCallbackSender(webhookSecret)
-	service := fakeprovider.NewService(scenarios, callbackSender, fakeProviderHarnessTimeout, nil)
+	service := fakeprovider.NewService(scenarios, callbackSender, fakeProviderHarnessTimeout, nil, nil)
 	return httpapi.NewFakeProviderScenarioHandler(service, scenarios)
 }
 
@@ -274,6 +368,45 @@ func assertExactSignedVerifiedCallback(
 	wantSignature := "sha256=" + hex.EncodeToString(mac.Sum(nil))
 	if callback.Header.Get("x-signature") != wantSignature {
 		t.Fatalf("callback signature does not authenticate the exact transmitted body")
+	}
+}
+
+func assertExactSignedRejectedCallback(
+	t *testing.T,
+	callback recordedCallback,
+	sessionID uuid.UUID,
+	reason fakeprovider.RejectionReason,
+	webhookSecret string,
+) {
+	t.Helper()
+	var event struct {
+		EventID   uuid.UUID                    `json:"eventId"`
+		SessionID uuid.UUID                    `json:"sessionId"`
+		Verdict   fakeprovider.Verdict         `json:"verdict"`
+		Reason    fakeprovider.RejectionReason `json:"reason"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(callback.Body))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&event); err != nil {
+		t.Fatalf("decode exact rejected callback: %v", err)
+	}
+	if event.EventID == uuid.Nil || event.SessionID != sessionID || event.Verdict != fakeprovider.Rejected || event.Reason != reason {
+		t.Fatalf("rejected callback = %#v", event)
+	}
+	wantBody := fmt.Sprintf(
+		`{"eventId":"%s","sessionId":"%s","verdict":"rejected","reason":"%s"}`,
+		event.EventID,
+		sessionID,
+		reason,
+	)
+	if string(callback.Body) != wantBody {
+		t.Fatalf("rejected callback body = %s, want exact %s", callback.Body, wantBody)
+	}
+	mac := hmac.New(sha256.New, []byte(webhookSecret))
+	_, _ = mac.Write(callback.Body)
+	wantSignature := "sha256=" + hex.EncodeToString(mac.Sum(nil))
+	if callback.Header.Get("x-signature") != wantSignature {
+		t.Fatal("rejected callback signature does not authenticate exact body")
 	}
 }
 

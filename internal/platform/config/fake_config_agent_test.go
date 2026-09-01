@@ -2,6 +2,7 @@ package config_test
 
 import (
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -127,6 +128,21 @@ func TestLoadFakeRequiresProviderWebhookSecret(t *testing.T) {
 	}
 	if got, want := err.Error(), "PROVIDER_WEBHOOK_SECRET is required"; got != want {
 		t.Fatalf("LoadFake() error = %q, want %q", got, want)
+	}
+}
+
+func TestLoadFakeValidationErrorsDoNotExposeWebhookSecret(t *testing.T) {
+	const sensitiveSecret = "fake-provider-sensitive-secret-marker"
+	setValidFakeProviderEnvironment(t)
+	t.Setenv("PROVIDER_WEBHOOK_SECRET", sensitiveSecret)
+	t.Setenv("CALLBACK_TIMEOUT", "not-a-duration")
+
+	_, err := config.LoadFake()
+	if err == nil {
+		t.Fatal("LoadFake() error = nil, want validation error")
+	}
+	if strings.Contains(err.Error(), sensitiveSecret) {
+		t.Fatalf("LoadFake() error exposes webhook secret: %v", err)
 	}
 }
 
