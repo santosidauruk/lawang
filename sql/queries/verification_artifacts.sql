@@ -28,3 +28,12 @@ SELECT
     AS is_accepted
 FROM verification_artifacts
 WHERE verification_session_id = sqlc.arg(session_id);
+
+-- name: GetVerificationArtifactsBySessionId :many
+select kind, storage_key, content_type, size_bytes, etag
+from verification_artifacts
+where verification_session_id = sqlc.arg(session_id) and kind in ('identity_document', 'biometric_capture')
+order by case kind
+  when 'identity_document' then 1
+  when 'biometric_capture' then 2
+end;
