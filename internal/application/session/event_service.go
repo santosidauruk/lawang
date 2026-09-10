@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/santosidauruk/lawang-go/internal/domain/sessionevent"
-	"github.com/santosidauruk/lawang-go/internal/domain/verificationsession"
+	"github.com/santosidauruk/lawang/internal/domain/sessionevent"
+	"github.com/santosidauruk/lawang/internal/domain/verificationsession"
 )
 
 var ErrSessionTransitionStale = errors.New("verification session transition lost an expected-state race")

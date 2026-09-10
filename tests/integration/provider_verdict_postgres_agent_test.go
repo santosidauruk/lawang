@@ -12,7 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/santosidauruk/lawang-go/internal/adapter/httpapi"
+	"github.com/santosidauruk/lawang/internal/adapter/httpapi"
 )
 
 func TestSignedStructurallyInvalidProviderVerdictsNeverPersist(t *testing.T) {

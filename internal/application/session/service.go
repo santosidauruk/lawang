@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/santosidauruk/lawang-go/internal/domain/verificationsession"
+	"github.com/santosidauruk/lawang/internal/domain/verificationsession"
 )
 
 const applicantSessionTTL = 30 * time.Minute

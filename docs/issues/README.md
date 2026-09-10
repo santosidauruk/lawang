@@ -1,4 +1,4 @@
-# Lawang Go Issues
+# Lawang Issues
 
 This directory is the local Markdown issue tracker for the approved Go rebuild plan.
 Issues are ordered contracts and must be implemented in dependency order.

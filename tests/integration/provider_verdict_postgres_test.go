@@ -12,9 +12,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/santosidauruk/lawang-go/internal/adapter/httpapi"
-	"github.com/santosidauruk/lawang-go/internal/adapter/postgres"
-	"github.com/santosidauruk/lawang-go/internal/application/providerverdict"
+	"github.com/santosidauruk/lawang/internal/adapter/httpapi"
+	"github.com/santosidauruk/lawang/internal/adapter/postgres"
+	"github.com/santosidauruk/lawang/internal/application/providerverdict"
 )
 
 const checkpoint5WebhookSecret = "checkpoint-5-fixed-webhook-secret"

@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/santosidauruk/lawang-go/internal/adapter/httpapi"
-	"github.com/santosidauruk/lawang-go/internal/application/providerverdict"
+	"github.com/santosidauruk/lawang/internal/adapter/httpapi"
+	"github.com/santosidauruk/lawang/internal/application/providerverdict"
 )
 
 func TestWebhookRejectsMissingSignatureWithSafeUnauthorizedError(t *testing.T) {

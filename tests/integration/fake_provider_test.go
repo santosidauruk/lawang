@@ -17,9 +17,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/santosidauruk/lawang-go/internal/adapter/httpapi"
-	"github.com/santosidauruk/lawang-go/internal/adapter/providerhttp"
-	"github.com/santosidauruk/lawang-go/internal/application/fakeprovider"
+	"github.com/santosidauruk/lawang/internal/adapter/httpapi"
+	"github.com/santosidauruk/lawang/internal/adapter/providerhttp"
+	"github.com/santosidauruk/lawang/internal/application/fakeprovider"
 )
 
 const fakeProviderHarnessTimeout = 2 * time.Second

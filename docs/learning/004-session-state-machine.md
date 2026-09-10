@@ -54,8 +54,8 @@ both state and event history unchanged.
 Focused domain and application tests:
 
 ```text
-ok github.com/santosidauruk/lawang-go/internal/domain/verificationsession
-ok github.com/santosidauruk/lawang-go/internal/application/session
+ok github.com/santosidauruk/lawang/internal/domain/verificationsession
+ok github.com/santosidauruk/lawang/internal/application/session
 ```
 
 The disposable PostgreSQL proof starts two callers on separate connections behind a

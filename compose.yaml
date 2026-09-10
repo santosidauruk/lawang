@@ -1,4 +1,4 @@
-name: lawang-go
+name: lawang
 
 services:
   postgres:
@@ -16,7 +16,7 @@ services:
       retries: 15
       start_period: 5s
     volumes:
-      - lawang_go_postgres_data:/var/lib/postgresql
+      - lawang_postgres_data:/var/lib/postgresql
   minio:
     image: minio/minio:RELEASE.2024-01-16T16-07-38Z
     command: server /data --console-address ":9001"
@@ -27,7 +27,7 @@ services:
       - "${MINIO_API_PORT:-9000}:9000"
       - "${MINIO_CONSOLE_PORT:-9001}:9001"
     volumes:
-      - lawang_go_minio_data:/data
+      - lawang_minio_data:/data
   fake-provider:
     build:
       context: .
@@ -48,7 +48,7 @@ services:
       start_period: 2s
 
 volumes:
-  lawang_go_postgres_data:
-    name: lawang_go_postgres_data
-  lawang_go_minio_data:
-    name: lawang_go_minio_data
+  lawang_postgres_data:
+    name: lawang_postgres_data
+  lawang_minio_data:
+    name: lawang_minio_data

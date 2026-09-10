@@ -11,8 +11,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/santosidauruk/lawang-go/internal/adapter/httpapi"
-	"github.com/santosidauruk/lawang-go/internal/application/providerverdict"
+	"github.com/santosidauruk/lawang/internal/adapter/httpapi"
+	"github.com/santosidauruk/lawang/internal/application/providerverdict"
 )
 
 const checkpoint2WebhookSecret = "checkpoint-2-fixed-webhook-secret"

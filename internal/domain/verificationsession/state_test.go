@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/santosidauruk/lawang-go/internal/domain/sessionevent"
-	"github.com/santosidauruk/lawang-go/internal/domain/verificationsession"
+	"github.com/santosidauruk/lawang/internal/domain/sessionevent"
+	"github.com/santosidauruk/lawang/internal/domain/verificationsession"
 )
 
 func TestTransitionFollowsRequiredForwardPath(t *testing.T) {

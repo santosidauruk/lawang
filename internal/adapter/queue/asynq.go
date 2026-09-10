@@ -8,7 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
-	"github.com/santosidauruk/lawang-go/internal/application/outbox"
+	"github.com/santosidauruk/lawang/internal/application/outbox"
 )
 
 type Publisher struct {

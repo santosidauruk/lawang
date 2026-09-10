@@ -1,4 +1,4 @@
-module github.com/santosidauruk/lawang-go
+module github.com/santosidauruk/lawang
 
 go 1.26.5
 

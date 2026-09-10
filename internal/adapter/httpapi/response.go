@@ -6,10 +6,10 @@ import (
 	"net/http"
 
 	"github.com/google/uuid"
-	"github.com/santosidauruk/lawang-go/internal/application/artifact"
-	"github.com/santosidauruk/lawang-go/internal/application/personaldetails"
-	"github.com/santosidauruk/lawang-go/internal/application/providersubmission"
-	"github.com/santosidauruk/lawang-go/internal/application/session"
+	"github.com/santosidauruk/lawang/internal/application/artifact"
+	"github.com/santosidauruk/lawang/internal/application/personaldetails"
+	"github.com/santosidauruk/lawang/internal/application/providersubmission"
+	"github.com/santosidauruk/lawang/internal/application/session"
 )
 
 type APIError struct {

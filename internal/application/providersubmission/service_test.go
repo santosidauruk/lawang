@@ -6,9 +6,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/santosidauruk/lawang-go/internal/application/providersubmission"
-	"github.com/santosidauruk/lawang-go/internal/application/session"
-	"github.com/santosidauruk/lawang-go/internal/domain/sessionevent"
+	"github.com/santosidauruk/lawang/internal/application/providersubmission"
+	"github.com/santosidauruk/lawang/internal/application/session"
+	"github.com/santosidauruk/lawang/internal/domain/sessionevent"
 )
 
 func TestSubmitFirstEligibleSessionReturnsPendingAndCommitsOneOutcome(t *testing.T) {

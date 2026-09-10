@@ -130,21 +130,21 @@ go test -race ./internal/application/artifact -run 'UploadIntent' -count=1
 Verification evidence pada 2026-08-13:
 
 ```text
-GOCACHE=/tmp/lawang-go-build go test ./internal/application/artifact -run 'UploadIntent' -count=1
-ok github.com/santosidauruk/lawang-go/internal/application/artifact
+GOCACHE=/tmp/lawang-build go test ./internal/application/artifact -run 'UploadIntent' -count=1
+ok github.com/santosidauruk/lawang/internal/application/artifact
 
-GOCACHE=/tmp/lawang-go-build go test -race ./internal/application/artifact -run 'UploadIntent' -count=1
-ok github.com/santosidauruk/lawang-go/internal/application/artifact
+GOCACHE=/tmp/lawang-build go test -race ./internal/application/artifact -run 'UploadIntent' -count=1
+ok github.com/santosidauruk/lawang/internal/application/artifact
 
-GOCACHE=/tmp/lawang-go-build go vet ./internal/application/artifact
+GOCACHE=/tmp/lawang-build go vet ./internal/application/artifact
 PASS
 
-GOCACHE=/tmp/lawang-go-build go test -race ./internal/application/artifact -count=1
-ok github.com/santosidauruk/lawang-go/internal/application/artifact
+GOCACHE=/tmp/lawang-build go test -race ./internal/application/artifact -count=1
+ok github.com/santosidauruk/lawang/internal/application/artifact
 
-GOCACHE=/tmp/lawang-go-build go vet ./...
+GOCACHE=/tmp/lawang-build go vet ./...
 PASS
 
-GOCACHE=/tmp/lawang-go-build STATICCHECK_CACHE=/tmp/lawang-go-staticcheck make staticcheck
+GOCACHE=/tmp/lawang-build STATICCHECK_CACHE=/tmp/lawang-staticcheck make staticcheck
 PASS
 ```

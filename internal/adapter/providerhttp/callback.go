@@ -12,7 +12,7 @@ import (
 	"sync"
 
 	"github.com/google/uuid"
-	"github.com/santosidauruk/lawang-go/internal/application/fakeprovider"
+	"github.com/santosidauruk/lawang/internal/application/fakeprovider"
 )
 
 var (

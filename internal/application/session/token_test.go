@@ -6,7 +6,7 @@ import (
 	"encoding/base64"
 	"testing"
 
-	"github.com/santosidauruk/lawang-go/internal/application/session"
+	"github.com/santosidauruk/lawang/internal/application/session"
 )
 
 func TestCryptoTokensIssuesThirtyTwoRandomBytesAndHashesDeterministically(t *testing.T) {

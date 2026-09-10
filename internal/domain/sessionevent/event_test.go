@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/santosidauruk/lawang-go/internal/domain/sessionevent"
+	"github.com/santosidauruk/lawang/internal/domain/sessionevent"
 )
 
 func TestParseTypeAdmitsOnlySessionEventActionVerbs(t *testing.T) {

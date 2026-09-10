@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/santosidauruk/lawang-go/internal/adapter/httpapi"
-	postgresadapter "github.com/santosidauruk/lawang-go/internal/adapter/postgres"
-	"github.com/santosidauruk/lawang-go/internal/application/providersubmission"
-	"github.com/santosidauruk/lawang-go/internal/application/session"
+	"github.com/santosidauruk/lawang/internal/adapter/httpapi"
+	postgresadapter "github.com/santosidauruk/lawang/internal/adapter/postgres"
+	"github.com/santosidauruk/lawang/internal/application/providersubmission"
+	"github.com/santosidauruk/lawang/internal/application/session"
 )
 
 func TestProviderSubmissionInitialAndReplayOverHTTPWithPostgreSQL(t *testing.T) {

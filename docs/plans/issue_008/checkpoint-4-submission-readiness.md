@@ -62,7 +62,7 @@ dua accepted Verification Artifact milik session yang sama, lalu memanggil produ
 Focused command:
 
 ```sh
-GOCACHE=/tmp/lawang-go-build go test ./tests/integration \
+GOCACHE=/tmp/lawang-build go test ./tests/integration \
   -run '^TestAcceptedIdentityAndBiometricArtifactsMakeSessionSubmissionReady$' \
   -count=1 -v
 ```
@@ -160,23 +160,23 @@ Minimum verification harus memakai nama test/proof aktual dan PostgreSQL disposa
 Verification evidence pada 2026-08-14:
 
 ```text
-GOCACHE=/tmp/lawang-go-build go test ./tests/integration ./tests/schema \
+GOCACHE=/tmp/lawang-build go test ./tests/integration ./tests/schema \
   -run 'SubmissionReadiness|AcceptedIdentityAndBiometricArtifactsMakeSessionSubmissionReady|VerificationArtifactMigrationAndConstraintProof' \
   -count=1
 PASS
 
-GOCACHE=/tmp/lawang-go-build go test -race ./internal/adapter/postgres -count=1
-ok github.com/santosidauruk/lawang-go/internal/adapter/postgres
+GOCACHE=/tmp/lawang-build go test -race ./internal/adapter/postgres -count=1
+ok github.com/santosidauruk/lawang/internal/adapter/postgres
 
-GOCACHE=/tmp/lawang-go-build go vet \
+GOCACHE=/tmp/lawang-build go vet \
   ./internal/adapter/postgres ./tests/integration ./tests/schema
 PASS
 
-GOCACHE=/tmp/lawang-go-build make sqlc-diff
+GOCACHE=/tmp/lawang-build make sqlc-diff
 PASS: no generated diff
 
-GOCACHE=/tmp/lawang-go-build \
-  STATICCHECK_CACHE=/tmp/lawang-go-staticcheck make quality
+GOCACHE=/tmp/lawang-build \
+  STATICCHECK_CACHE=/tmp/lawang-staticcheck make quality
 PASS: fmt-check, vet, staticcheck, full race suite, sqlc-diff,
 migration-validate, and compose-validate
 ```

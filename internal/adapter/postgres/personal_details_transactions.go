@@ -7,10 +7,10 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	generated "github.com/santosidauruk/lawang-go/internal/adapter/postgres/sqlc"
-	"github.com/santosidauruk/lawang-go/internal/application/personaldetails"
-	"github.com/santosidauruk/lawang-go/internal/application/session"
-	"github.com/santosidauruk/lawang-go/internal/domain/verificationsession"
+	generated "github.com/santosidauruk/lawang/internal/adapter/postgres/sqlc"
+	"github.com/santosidauruk/lawang/internal/application/personaldetails"
+	"github.com/santosidauruk/lawang/internal/application/session"
+	"github.com/santosidauruk/lawang/internal/domain/verificationsession"
 )
 
 type PersonalDetailsTransactions struct {

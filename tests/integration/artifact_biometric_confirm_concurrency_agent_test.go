@@ -10,9 +10,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
-	postgresadapter "github.com/santosidauruk/lawang-go/internal/adapter/postgres"
-	"github.com/santosidauruk/lawang-go/internal/application/artifact"
-	"github.com/santosidauruk/lawang-go/internal/application/session"
+	postgresadapter "github.com/santosidauruk/lawang/internal/adapter/postgres"
+	"github.com/santosidauruk/lawang/internal/application/artifact"
+	"github.com/santosidauruk/lawang/internal/application/session"
 )
 
 func TestPostgresBiometricConfirmedReplayReturnsRecordedSuccessWithoutExternalWork(t *testing.T) {

@@ -51,7 +51,7 @@ details.
 Mulai dari RED application slice:
 
 ```sh
-GOCACHE=/tmp/lawang-go-build go test ./internal/application/providersubmission \
+GOCACHE=/tmp/lawang-build go test ./internal/application/providersubmission \
   -run 'TestSubmit(FirstEligible|Pending)' -count=1
 ```
 

@@ -75,10 +75,10 @@ The application tests now prove:
 Verification evidence on 2026-07-22:
 
 ```text
-GOCACHE=/tmp/lawang-go-build go test ./internal/application/artifact -count=1
+GOCACHE=/tmp/lawang-build go test ./internal/application/artifact -count=1
 28 tests passed
 
-GOCACHE=/tmp/lawang-go-build go test -race ./internal/application/artifact -count=1
+GOCACHE=/tmp/lawang-build go test -race ./internal/application/artifact -count=1
 28 tests passed
 ```
 
@@ -108,16 +108,16 @@ return explicit errors rather than zero values.
 Verification evidence on 2026-07-28:
 
 ```text
-GOCACHE=/tmp/lawang-go-build go test ./internal/adapter/httpapi ./cmd/api -count=1
+GOCACHE=/tmp/lawang-build go test ./internal/adapter/httpapi ./cmd/api -count=1
 98 tests passed
 
-GOCACHE=/tmp/lawang-go-build go test ./tests/integration -run 'HTTP|Artifact' -count=1
+GOCACHE=/tmp/lawang-build go test ./tests/integration -run 'HTTP|Artifact' -count=1
 7 tests passed
 
-GOCACHE=/tmp/lawang-go-build go test -race ./internal/adapter/httpapi -count=1
+GOCACHE=/tmp/lawang-build go test -race ./internal/adapter/httpapi -count=1
 98 tests passed
 
-GOCACHE=/tmp/lawang-go-build go test -race ./tests/integration \
+GOCACHE=/tmp/lawang-build go test -race ./tests/integration \
   -run '^TestIdentityDocumentUploadAndConfirmOverHTTPWithPostgreSQL$' -count=1
 1 test passed
 ```
@@ -173,10 +173,10 @@ once.
 Verification evidence on 2026-08-11:
 
 ```text
-GOCACHE=/tmp/lawang-go-build go test -race ./tests/integration -run <Checkpoint-6 tests> -count=1
-ok github.com/santosidauruk/lawang-go/tests/integration 12.583s
+GOCACHE=/tmp/lawang-build go test -race ./tests/integration -run <Checkpoint-6 tests> -count=1
+ok github.com/santosidauruk/lawang/tests/integration 12.583s
 
-GOCACHE=/tmp/lawang-go-build make quality
-ok github.com/santosidauruk/lawang-go/tests/integration 167.299s
+GOCACHE=/tmp/lawang-build make quality
+ok github.com/santosidauruk/lawang/tests/integration 167.299s
 format, vet, staticcheck, all race tests, sqlc diff, migrations, and compose passed
 ```

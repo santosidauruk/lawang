@@ -37,22 +37,22 @@ change was introduced.
 Verification evidence on 2026-08-13:
 
 ```text
-GOCACHE=/tmp/lawang-go-build go test ./internal/application/artifact -run 'UploadIntent' -count=1
-ok github.com/santosidauruk/lawang-go/internal/application/artifact
+GOCACHE=/tmp/lawang-build go test ./internal/application/artifact -run 'UploadIntent' -count=1
+ok github.com/santosidauruk/lawang/internal/application/artifact
 
-GOCACHE=/tmp/lawang-go-build go test -race ./internal/application/artifact -run 'UploadIntent' -count=1
-ok github.com/santosidauruk/lawang-go/internal/application/artifact
+GOCACHE=/tmp/lawang-build go test -race ./internal/application/artifact -run 'UploadIntent' -count=1
+ok github.com/santosidauruk/lawang/internal/application/artifact
 
-GOCACHE=/tmp/lawang-go-build go vet ./internal/application/artifact
+GOCACHE=/tmp/lawang-build go vet ./internal/application/artifact
 PASS
 
-GOCACHE=/tmp/lawang-go-build go test -race ./internal/application/artifact -count=1
-ok github.com/santosidauruk/lawang-go/internal/application/artifact
+GOCACHE=/tmp/lawang-build go test -race ./internal/application/artifact -count=1
+ok github.com/santosidauruk/lawang/internal/application/artifact
 
-GOCACHE=/tmp/lawang-go-build go vet ./...
+GOCACHE=/tmp/lawang-build go vet ./...
 PASS
 
-GOCACHE=/tmp/lawang-go-build STATICCHECK_CACHE=/tmp/lawang-go-staticcheck make staticcheck
+GOCACHE=/tmp/lawang-build STATICCHECK_CACHE=/tmp/lawang-staticcheck make staticcheck
 PASS
 ```
 
@@ -86,18 +86,18 @@ rejects that change as `CONFIRMATION_STALE` before loading Personal Details.
 Verification evidence on 2026-08-13:
 
 ```text
-GOCACHE=/tmp/lawang-go-build go test ./internal/application/artifact -count=1
-ok github.com/santosidauruk/lawang-go/internal/application/artifact
+GOCACHE=/tmp/lawang-build go test ./internal/application/artifact -count=1
+ok github.com/santosidauruk/lawang/internal/application/artifact
 
-GOCACHE=/tmp/lawang-go-build go test -race ./internal/application/artifact -count=1
-ok github.com/santosidauruk/lawang-go/internal/application/artifact
+GOCACHE=/tmp/lawang-build go test -race ./internal/application/artifact -count=1
+ok github.com/santosidauruk/lawang/internal/application/artifact
 
-GOCACHE=/tmp/lawang-go-build STATICCHECK_CACHE=/tmp/lawang-go-staticcheck make quality
+GOCACHE=/tmp/lawang-build STATICCHECK_CACHE=/tmp/lawang-staticcheck make quality
 PASS: fmt-check, vet, staticcheck, full race suite, sqlc-diff,
 migration-validate, and compose-validate
 
-ok github.com/santosidauruk/lawang-go/tests/integration
-ok github.com/santosidauruk/lawang-go/tests/schema
+ok github.com/santosidauruk/lawang/tests/integration
+ok github.com/santosidauruk/lawang/tests/schema
 ```
 
 ## Checkpoint 3: PostgreSQL atomic biometric outcome
@@ -128,15 +128,15 @@ GREEN.
 Verification evidence on 2026-08-14:
 
 ```text
-GOCACHE=/tmp/lawang-go-build go test ./tests/integration \
+GOCACHE=/tmp/lawang-build go test ./tests/integration \
   -run 'Biometric.*Postgres|Postgres.*Biometric' -count=1 -v
-ok github.com/santosidauruk/lawang-go/tests/integration 21.794s
+ok github.com/santosidauruk/lawang/tests/integration 21.794s
 
-GOCACHE=/tmp/lawang-go-build go test ./tests/schema \
+GOCACHE=/tmp/lawang-build go test ./tests/schema \
   -run '^TestVerificationArtifactMigrationAndConstraintProof$' -count=1 -v
-ok github.com/santosidauruk/lawang-go/tests/schema 8.656s
+ok github.com/santosidauruk/lawang/tests/schema 8.656s
 
-GOCACHE=/tmp/lawang-go-build STATICCHECK_CACHE=/tmp/lawang-go-staticcheck make quality
+GOCACHE=/tmp/lawang-build STATICCHECK_CACHE=/tmp/lawang-staticcheck make quality
 PASS: fmt-check, vet, staticcheck, full race suite, sqlc-diff,
 migration-validate, and compose-validate
 ```
@@ -169,23 +169,23 @@ constraints remain sufficient, so Checkpoint 4 adds no migration.
 Verification evidence on 2026-08-14:
 
 ```text
-GOCACHE=/tmp/lawang-go-build go test ./tests/integration ./tests/schema \
+GOCACHE=/tmp/lawang-build go test ./tests/integration ./tests/schema \
   -run 'SubmissionReadiness|AcceptedIdentityAndBiometricArtifactsMakeSessionSubmissionReady|VerificationArtifactMigrationAndConstraintProof' \
   -count=1
 PASS
 
-GOCACHE=/tmp/lawang-go-build go test -race ./internal/adapter/postgres -count=1
-ok github.com/santosidauruk/lawang-go/internal/adapter/postgres
+GOCACHE=/tmp/lawang-build go test -race ./internal/adapter/postgres -count=1
+ok github.com/santosidauruk/lawang/internal/adapter/postgres
 
-GOCACHE=/tmp/lawang-go-build go vet \
+GOCACHE=/tmp/lawang-build go vet \
   ./internal/adapter/postgres ./tests/integration ./tests/schema
 PASS
 
-GOCACHE=/tmp/lawang-go-build make sqlc-diff
+GOCACHE=/tmp/lawang-build make sqlc-diff
 PASS: no generated diff
 
-GOCACHE=/tmp/lawang-go-build \
-  STATICCHECK_CACHE=/tmp/lawang-go-staticcheck make quality
+GOCACHE=/tmp/lawang-build \
+  STATICCHECK_CACHE=/tmp/lawang-staticcheck make quality
 PASS: fmt-check, vet, staticcheck, full race suite, sqlc-diff,
 migration-validate, and compose-validate
 ```
@@ -217,15 +217,15 @@ Verification evidence on 2026-08-21:
 Focused HTTP/PostgreSQL/MinIO biometric and Identity Document suite
 PASS: tests/integration, 38.084s
 
-GOCACHE=/tmp/lawang-go-build go test -race \
+GOCACHE=/tmp/lawang-build go test -race \
   ./internal/application/artifact ./internal/adapter/httpapi \
   ./internal/adapter/postgres -count=1
 PASS
 
-GOCACHE=/tmp/lawang-go-build STATICCHECK_CACHE=/tmp/lawang-go-staticcheck make quality
+GOCACHE=/tmp/lawang-build STATICCHECK_CACHE=/tmp/lawang-staticcheck make quality
 PASS: fmt-check, vet, staticcheck, full race suite, sqlc-diff,
 migration-validate, and compose-validate
-ok github.com/santosidauruk/lawang-go/tests/integration 266.288s
+ok github.com/santosidauruk/lawang/tests/integration 266.288s
 ```
 
 ## Checkpoint 6: replay, concurrency, and Identity regression
@@ -261,7 +261,7 @@ was needed.
 Verification evidence on 2026-08-21:
 
 ```text
-GOCACHE=/tmp/lawang-go-build go test -race ./tests/integration \
+GOCACHE=/tmp/lawang-build go test -race ./tests/integration \
   -run '^(TestConcurrentBiometricPostgresConfirmReturnsRecordedSuccessAndRunsExternalWorkOnce|TestPostgresBiometric.*|TestPostgresCreateBiometric.*|TestPostgresConcurrentCreateKeeps.*)$' \
   -count=1 -v
 PASS: 8 tests, tests/integration 74.124s
@@ -269,8 +269,8 @@ PASS: 8 tests, tests/integration 74.124s
 Focused Identity Document replay/mismatch/extractor/concurrency suite
 PASS: 10 tests, tests/integration 83.574s
 
-GOCACHE=/tmp/lawang-go-build STATICCHECK_CACHE=/tmp/lawang-go-staticcheck make quality
+GOCACHE=/tmp/lawang-build STATICCHECK_CACHE=/tmp/lawang-staticcheck make quality
 PASS: fmt-check, vet, staticcheck, full race suite, sqlc-diff,
 migration-validate, and compose-validate
-ok github.com/santosidauruk/lawang-go/tests/integration 601.513s
+ok github.com/santosidauruk/lawang/tests/integration 601.513s
 ```

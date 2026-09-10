@@ -12,9 +12,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/santosidauruk/lawang-go/internal/adapter/httpapi"
-	"github.com/santosidauruk/lawang-go/internal/application/artifact"
-	"github.com/santosidauruk/lawang-go/internal/application/session"
+	"github.com/santosidauruk/lawang/internal/adapter/httpapi"
+	"github.com/santosidauruk/lawang/internal/application/artifact"
+	"github.com/santosidauruk/lawang/internal/application/session"
 )
 
 // artifactConfirmServiceStub is the HTTP-boundary fake for Checkpoint 4.

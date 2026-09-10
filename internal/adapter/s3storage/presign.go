@@ -8,7 +8,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/santosidauruk/lawang-go/internal/application/artifact"
+	"github.com/santosidauruk/lawang/internal/application/artifact"
 )
 
 type Adapter struct {

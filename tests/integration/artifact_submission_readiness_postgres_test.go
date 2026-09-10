@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/santosidauruk/lawang-go/internal/adapter/postgres"
-	"github.com/santosidauruk/lawang-go/internal/application/session"
+	"github.com/santosidauruk/lawang/internal/adapter/postgres"
+	"github.com/santosidauruk/lawang/internal/application/session"
 )
 
 // TestAcceptedIdentityAndBiometricArtifactsMakeSessionSubmissionReady is the

@@ -75,12 +75,12 @@ func TestPersonalDetailsApplicationQueriesNeverUpdateOrDeleteDetails(t *testing.
 func TestOnlyCommandPackagesComposeRuntimeComponents(t *testing.T) {
 	root := repositoryRoot(t)
 	compositionOnly := map[string]struct{}{
-		"github.com/jackc/pgx/v5/pgxpool":                                 {},
-		"github.com/santosidauruk/lawang-go/internal/adapter/httpapi":     {},
-		"github.com/santosidauruk/lawang-go/internal/adapter/postgres":    {},
-		"github.com/santosidauruk/lawang-go/internal/platform/config":     {},
-		"github.com/santosidauruk/lawang-go/internal/platform/httpserver": {},
-		"github.com/santosidauruk/lawang-go/internal/platform/logging":    {},
+		"github.com/jackc/pgx/v5/pgxpool":                              {},
+		"github.com/santosidauruk/lawang/internal/adapter/httpapi":     {},
+		"github.com/santosidauruk/lawang/internal/adapter/postgres":    {},
+		"github.com/santosidauruk/lawang/internal/platform/config":     {},
+		"github.com/santosidauruk/lawang/internal/platform/httpserver": {},
+		"github.com/santosidauruk/lawang/internal/platform/logging":    {},
 	}
 
 	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {

@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/santosidauruk/lawang-go/internal/application/outbox"
+	"github.com/santosidauruk/lawang/internal/application/outbox"
 )
 
 func TestRelayRunOnceTreatsNoAvailableRowAsIdle(t *testing.T) {

@@ -18,9 +18,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/santosidauruk/lawang-go/internal/adapter/providerhttp"
-	"github.com/santosidauruk/lawang-go/internal/application/fakeprovider"
-	"github.com/santosidauruk/lawang-go/internal/platform/config"
+	"github.com/santosidauruk/lawang/internal/adapter/providerhttp"
+	"github.com/santosidauruk/lawang/internal/application/fakeprovider"
+	"github.com/santosidauruk/lawang/internal/platform/config"
 )
 
 func TestCallbackFailureLoggerDoesNotExposeSensitiveError(t *testing.T) {

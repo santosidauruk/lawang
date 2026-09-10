@@ -109,7 +109,7 @@ go test -race ./internal/application/artifact -count=1
 ```
 
 Jika Go build cache tidak writable di environment agent, arahkan `GOCACHE` ke
-`/tmp/lawang-go-build`; itu masalah environment, bukan kegagalan test produk.
+`/tmp/lawang-build`; itu masalah environment, bukan kegagalan test produk.
 
 Hasil aktual pada 2026-07-22: kedua command minimum lulus dengan 28 test. Typed error,
 file-constraint mapping, short-circuit, rollback, dan stale re-read dicatat di

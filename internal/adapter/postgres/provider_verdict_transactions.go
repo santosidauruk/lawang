@@ -8,11 +8,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/santosidauruk/lawang-go/internal/adapter/postgres/sqlc"
-	"github.com/santosidauruk/lawang-go/internal/application/providerverdict"
-	"github.com/santosidauruk/lawang-go/internal/application/session"
-	"github.com/santosidauruk/lawang-go/internal/domain/verdict"
-	"github.com/santosidauruk/lawang-go/internal/domain/verificationsession"
+	"github.com/santosidauruk/lawang/internal/adapter/postgres/sqlc"
+	"github.com/santosidauruk/lawang/internal/application/providerverdict"
+	"github.com/santosidauruk/lawang/internal/application/session"
+	"github.com/santosidauruk/lawang/internal/domain/verdict"
+	"github.com/santosidauruk/lawang/internal/domain/verificationsession"
 )
 
 type ProviderVerdictTransactions struct {

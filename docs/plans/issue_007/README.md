@@ -101,8 +101,8 @@ berada di `internal/application/artifact/service_test.go`, dengan implementasi d
 cache build diarahkan ke lokasi writable:
 
 ```sh
-GOCACHE=/tmp/lawang-go-build go test ./internal/application/artifact -count=1
-GOCACHE=/tmp/lawang-go-build go test -race ./internal/application/artifact -count=1
+GOCACHE=/tmp/lawang-build go test ./internal/application/artifact -count=1
+GOCACHE=/tmp/lawang-build go test -race ./internal/application/artifact -count=1
 ```
 
 Checkpoint 3, Checkpoint 4, dan Checkpoint 5 selesai. Strict HTTP contracts,

@@ -55,7 +55,7 @@ berubah. Belum ada query, adapter, migration, atau generated SQLC yang diubah.
 Focused command selama bagian user:
 
 ```sh
-GOCACHE=/tmp/lawang-go-build go test ./tests/integration \
+GOCACHE=/tmp/lawang-build go test ./tests/integration \
   -run '^TestBiometricConfirmPersistsPostgresOutcomeAtomically$' -count=1 -v
 ```
 
@@ -66,11 +66,11 @@ adapter, schema, atau query paralel sebelum RED nyata membuktikan gap.
 Verification evidence poin 9 pada 2026-08-14:
 
 ```text
-GOCACHE=/tmp/lawang-go-build go test ./tests/integration \
+GOCACHE=/tmp/lawang-build go test ./tests/integration \
   -run '^TestBiometricConfirmPersistsPostgresOutcomeAtomically$' -count=1 -v
 --- PASS: TestBiometricConfirmPersistsPostgresOutcomeAtomically (7.47s)
 PASS
-ok github.com/santosidauruk/lawang-go/tests/integration 8.581s
+ok github.com/santosidauruk/lawang/tests/integration 8.581s
 ```
 
 Keputusan sesudah direct GREEN:
@@ -187,29 +187,29 @@ hipotetis sebagai completion evidence.
 Final verification evidence pada 2026-08-14:
 
 ```text
-GOCACHE=/tmp/lawang-go-build go test ./tests/integration \
+GOCACHE=/tmp/lawang-build go test ./tests/integration \
   -run 'Biometric.*Postgres|Postgres.*Biometric' -count=1 -v
 PASS: success, forced rollback, create/supersede isolation, and three stale re-reads
-ok github.com/santosidauruk/lawang-go/tests/integration 21.794s
+ok github.com/santosidauruk/lawang/tests/integration 21.794s
 
-GOCACHE=/tmp/lawang-go-build go test ./tests/schema \
+GOCACHE=/tmp/lawang-build go test ./tests/schema \
   -run '^TestVerificationArtifactMigrationAndConstraintProof$' -count=1 -v
 NOTICE: proof passed: Verification Artifact constraints
-ok github.com/santosidauruk/lawang-go/tests/schema 8.656s
+ok github.com/santosidauruk/lawang/tests/schema 8.656s
 
-GOCACHE=/tmp/lawang-go-build go test -race \
+GOCACHE=/tmp/lawang-build go test -race \
   ./internal/application/artifact ./internal/adapter/postgres -count=1
-ok github.com/santosidauruk/lawang-go/internal/application/artifact
-ok github.com/santosidauruk/lawang-go/internal/adapter/postgres
+ok github.com/santosidauruk/lawang/internal/application/artifact
+ok github.com/santosidauruk/lawang/internal/adapter/postgres
 
-GOCACHE=/tmp/lawang-go-build go vet \
+GOCACHE=/tmp/lawang-build go vet \
   ./internal/application/artifact ./internal/adapter/postgres ./tests/integration
 PASS
 
-GOCACHE=/tmp/lawang-go-build make sqlc-diff
+GOCACHE=/tmp/lawang-build make sqlc-diff
 PASS: no generated diff
 
-GOCACHE=/tmp/lawang-go-build STATICCHECK_CACHE=/tmp/lawang-go-staticcheck make quality
+GOCACHE=/tmp/lawang-build STATICCHECK_CACHE=/tmp/lawang-staticcheck make quality
 PASS: fmt-check, vet, staticcheck, full race suite, sqlc-diff,
 migration-validate, and compose-validate
 ```

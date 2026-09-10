@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/santosidauruk/lawang-go/internal/domain/sessionevent"
+	"github.com/santosidauruk/lawang/internal/domain/sessionevent"
 )
 
 var (

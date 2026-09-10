@@ -1,6 +1,6 @@
-# Lawang Go
+# Lawang
 
-Lawang Go is an independent, learning-first Go/PostgreSQL implementation of the
+Lawang is an independent, learning-first Go/PostgreSQL implementation of the
 Lawang Verification bounded context. This repository does not share migrations,
 dependencies, generated files, or a database with the TypeScript project.
 

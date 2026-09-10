@@ -9,10 +9,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	postgresadapter "github.com/santosidauruk/lawang-go/internal/adapter/postgres"
-	"github.com/santosidauruk/lawang-go/internal/application/artifact"
-	"github.com/santosidauruk/lawang-go/internal/application/session"
-	"github.com/santosidauruk/lawang-go/internal/domain/sessionevent"
+	postgresadapter "github.com/santosidauruk/lawang/internal/adapter/postgres"
+	"github.com/santosidauruk/lawang/internal/application/artifact"
+	"github.com/santosidauruk/lawang/internal/application/session"
+	"github.com/santosidauruk/lawang/internal/domain/sessionevent"
 )
 
 // TestBiometricConfirmPersistsPostgresOutcomeAtomically is the Issue 008

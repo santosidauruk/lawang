@@ -1,8 +1,8 @@
-# Lawang Go Project Context
+# Lawang Project Context
 
 ## Purpose
 
-Lawang Go is an independent Go implementation of the Lawang Verification bounded
+Lawang is an independent Go implementation of the Lawang Verification bounded
 context. It reproduces the observable TypeScript behavior delivered through the old
 project's issues 1-6, then extends the service through direct uploads, deterministic
 local validation, asynchronous provider submission, signed webhooks, expiry,
@@ -34,7 +34,7 @@ tighten the public API or infer a new domain rule.
 
 - Go baseline and minimum required version: Go 1.26.5, the latest stable release
   verified when the project baseline was upgraded on 2026-07-28.
-- Module path: `github.com/santosidauruk/lawang-go`, explicitly approved by the user
+- Module path: `github.com/santosidauruk/lawang`, explicitly approved by the user
   for this independent repository.
 - Local development database:
   `postgresql://lawang:lawang@localhost:5432/lawang_db_go`.

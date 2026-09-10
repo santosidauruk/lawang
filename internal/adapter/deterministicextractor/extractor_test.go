@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/santosidauruk/lawang-go/internal/adapter/deterministicextractor"
-	"github.com/santosidauruk/lawang-go/internal/application/artifact"
+	"github.com/santosidauruk/lawang/internal/adapter/deterministicextractor"
+	"github.com/santosidauruk/lawang/internal/application/artifact"
 )
 
 func TestExtractorReturnsConfiguredResult(t *testing.T) {

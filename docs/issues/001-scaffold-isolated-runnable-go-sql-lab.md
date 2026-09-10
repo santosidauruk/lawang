@@ -19,7 +19,7 @@ exercise, and sqlc configuration. A fresh contributor can migrate a zero-state
 database, prove PostgreSQL-generated Verification Session defaults, and run
 `GET /health/live`.
 
-The human approved `github.com/santosidauruk/lawang-go` as the Go module path. Do not
+The human approved `github.com/santosidauruk/lawang` as the Go module path. Do not
 change that remote identity without another explicit decision.
 
 ## Scope boundaries
@@ -111,4 +111,4 @@ migrations.
 
 ## Resolved blocker
 
-- Human-approved Go module path: `github.com/santosidauruk/lawang-go`.
+- Human-approved Go module path: `github.com/santosidauruk/lawang`.

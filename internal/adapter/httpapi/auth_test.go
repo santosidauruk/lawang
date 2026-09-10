@@ -3,7 +3,7 @@ package httpapi_test
 import (
 	"testing"
 
-	"github.com/santosidauruk/lawang-go/internal/adapter/httpapi"
+	"github.com/santosidauruk/lawang/internal/adapter/httpapi"
 )
 
 func TestParseBearerContract(t *testing.T) {

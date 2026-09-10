@@ -11,11 +11,11 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/santosidauruk/lawang-go/internal/adapter/httpapi"
-	postgresadapter "github.com/santosidauruk/lawang-go/internal/adapter/postgres"
-	s3storageadapter "github.com/santosidauruk/lawang-go/internal/adapter/s3storage"
-	"github.com/santosidauruk/lawang-go/internal/application/artifact"
-	"github.com/santosidauruk/lawang-go/internal/application/session"
+	"github.com/santosidauruk/lawang/internal/adapter/httpapi"
+	postgresadapter "github.com/santosidauruk/lawang/internal/adapter/postgres"
+	s3storageadapter "github.com/santosidauruk/lawang/internal/adapter/s3storage"
+	"github.com/santosidauruk/lawang/internal/application/artifact"
+	"github.com/santosidauruk/lawang/internal/application/session"
 )
 
 func TestBiometricPNGConfirmOverHTTPWithPostgreSQLAndMinIOChangesReadiness(t *testing.T) {

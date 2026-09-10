@@ -7,9 +7,9 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/santosidauruk/lawang-go/internal/adapter/httpapi"
-	"github.com/santosidauruk/lawang-go/internal/application/providersubmission"
-	"github.com/santosidauruk/lawang-go/internal/application/session"
+	"github.com/santosidauruk/lawang/internal/adapter/httpapi"
+	"github.com/santosidauruk/lawang/internal/application/providersubmission"
+	"github.com/santosidauruk/lawang/internal/application/session"
 )
 
 func TestProviderSubmissionInitialAndReplayHaveExactAcceptedContract(t *testing.T) {

@@ -120,17 +120,17 @@ go test -race ./internal/application/artifact -count=1
 Verification evidence pada 2026-08-13:
 
 ```text
-GOCACHE=/tmp/lawang-go-build go test ./internal/application/artifact -count=1
-ok github.com/santosidauruk/lawang-go/internal/application/artifact
+GOCACHE=/tmp/lawang-build go test ./internal/application/artifact -count=1
+ok github.com/santosidauruk/lawang/internal/application/artifact
 
-GOCACHE=/tmp/lawang-go-build go test -race ./internal/application/artifact -count=1
-ok github.com/santosidauruk/lawang-go/internal/application/artifact
+GOCACHE=/tmp/lawang-build go test -race ./internal/application/artifact -count=1
+ok github.com/santosidauruk/lawang/internal/application/artifact
 
-GOCACHE=/tmp/lawang-go-build STATICCHECK_CACHE=/tmp/lawang-go-staticcheck make quality
+GOCACHE=/tmp/lawang-build STATICCHECK_CACHE=/tmp/lawang-staticcheck make quality
 PASS: fmt-check, vet, staticcheck, full race suite, sqlc-diff,
 migration-validate, and compose-validate
 
 Full race integration packages:
-ok github.com/santosidauruk/lawang-go/tests/integration
-ok github.com/santosidauruk/lawang-go/tests/schema
+ok github.com/santosidauruk/lawang/tests/integration
+ok github.com/santosidauruk/lawang/tests/schema
 ```

@@ -191,11 +191,11 @@ Kerjakan urutan berikut satu per satu:
 Urutan command user:
 
 ```sh
-GOCACHE=/tmp/lawang-go-build go test ./tests/integration \
+GOCACHE=/tmp/lawang-build go test ./tests/integration \
   -run '^TestConcurrentPostgresConfirmReturnsRecordedSuccessAndRunsExternalWorkOnce$' \
   -count=1
 
-GOCACHE=/tmp/lawang-go-build go test -race ./tests/integration \
+GOCACHE=/tmp/lawang-build go test -race ./tests/integration \
   -run '^TestConcurrentPostgresConfirmReturnsRecordedSuccessAndRunsExternalWorkOnce$' \
   -count=1
 ```

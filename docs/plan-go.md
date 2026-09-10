@@ -1,4 +1,4 @@
-# Lawang Go Rebuild Plan
+# Lawang Rebuild Plan
 
 Status: approved implementation plan  
 Audience: an implementation agent starting from an empty, separate repository  
@@ -22,7 +22,7 @@ defined in this document.
 
 ### 1.1 Fixed project boundary
 
-- Suggested repository name: `lawang-go`.
+- Suggested repository name: `lawang`.
 - Determine the Go module path from the new repository's Git remote. If there is no
   remote, ask the user for the module path. Do not invent a GitHub account or module
   path.
@@ -460,7 +460,7 @@ and wires them together.
 ### 6.2 Target layout
 
 ```text
-lawang-go/
+lawang/
 ├── cmd/
 │   ├── api/main.go
 │   ├── worker/main.go

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/santosidauruk/lawang-go/internal/platform/httpserver"
+	"github.com/santosidauruk/lawang/internal/platform/httpserver"
 )
 
 type notifyingListener struct {

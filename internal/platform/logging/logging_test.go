@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/santosidauruk/lawang-go/internal/platform/logging"
+	"github.com/santosidauruk/lawang/internal/platform/logging"
 )
 
 func TestNewWritesLevelledJSON(t *testing.T) {

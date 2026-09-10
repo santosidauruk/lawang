@@ -8,7 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/santosidauruk/lawang-go/internal/application/artifact"
+	"github.com/santosidauruk/lawang/internal/application/artifact"
 )
 
 func TestArtifactConfirmCoordinatorDiscardsConnectionWhenUnlockFails(t *testing.T) {

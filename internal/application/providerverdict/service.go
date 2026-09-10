@@ -11,10 +11,10 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/santosidauruk/lawang-go/internal/application/session"
-	"github.com/santosidauruk/lawang-go/internal/domain/sessionevent"
-	"github.com/santosidauruk/lawang-go/internal/domain/verdict"
-	"github.com/santosidauruk/lawang-go/internal/domain/verificationsession"
+	"github.com/santosidauruk/lawang/internal/application/session"
+	"github.com/santosidauruk/lawang/internal/domain/sessionevent"
+	"github.com/santosidauruk/lawang/internal/domain/verdict"
+	"github.com/santosidauruk/lawang/internal/domain/verificationsession"
 )
 
 type InsertWebhookEventOutcome uint8

@@ -105,12 +105,12 @@ membuktikan `400 VALIDATION_ERROR` serta service tidak dipanggil.
 Verifikasi terakhir sebelum handoff:
 
 ```sh
-GOCACHE=/tmp/lawang-go-build go test ./internal/adapter/httpapi \
+GOCACHE=/tmp/lawang-build go test ./internal/adapter/httpapi \
   -run '^TestConfirmIdentityDocument(HTTPContract|RejectsUnknownField)$' \
   -count=1 -v
 # 2 tests passed
 
-GOCACHE=/tmp/lawang-go-build go test ./internal/adapter/httpapi -count=1
+GOCACHE=/tmp/lawang-build go test ./internal/adapter/httpapi -count=1
 # 56 tests passed
 ```
 
@@ -351,20 +351,20 @@ Checkpoint 4 selesai dengan bukti berikut:
 Verifikasi 2026-07-28:
 
 ```text
-GOCACHE=/tmp/lawang-go-build go test ./internal/adapter/httpapi ./cmd/api -count=1
+GOCACHE=/tmp/lawang-build go test ./internal/adapter/httpapi ./cmd/api -count=1
 98 tests passed
 
-GOCACHE=/tmp/lawang-go-build go test -race ./internal/adapter/httpapi -count=1
+GOCACHE=/tmp/lawang-build go test -race ./internal/adapter/httpapi -count=1
 98 tests passed
 
-GOCACHE=/tmp/lawang-go-build go test ./tests/integration -run 'HTTP|Artifact' -count=1
+GOCACHE=/tmp/lawang-build go test ./tests/integration -run 'HTTP|Artifact' -count=1
 7 tests passed
 
-GOCACHE=/tmp/lawang-go-build go test -race ./tests/integration \
+GOCACHE=/tmp/lawang-build go test -race ./tests/integration \
   -run '^TestIdentityDocumentUploadAndConfirmOverHTTPWithPostgreSQL$' -count=1
 1 test passed
 
-GOCACHE=/tmp/lawang-go-build go vet \
+GOCACHE=/tmp/lawang-build go vet \
   ./internal/adapter/httpapi ./cmd/api ./tests/integration
 No issues found
 ```

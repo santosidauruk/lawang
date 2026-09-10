@@ -51,7 +51,7 @@ zero extractor call. Review agent menerima tracer tanpa menggantinya.
 Tracer dapat dijalankan dengan:
 
 ```sh
-GOCACHE=/tmp/lawang-go-build go test ./tests/integration \
+GOCACHE=/tmp/lawang-build go test ./tests/integration \
   -run '^TestBiometricCaptureUploadPutAndConfirmOverHTTPWithPostgreSQLAndMinIO$' \
   -count=1 -v
 ```
@@ -157,7 +157,7 @@ dengan hasil `HeadObject` nyata. Sibling agent menambahkan:
 
 Focused suite yang juga memuat Identity Document HTTP/PostgreSQL/MinIO regression
 GREEN dalam 38.084s. Docker Desktop berstatus running. Final
-`GOCACHE=/tmp/lawang-go-build STATICCHECK_CACHE=/tmp/lawang-go-staticcheck make quality`
+`GOCACHE=/tmp/lawang-build STATICCHECK_CACHE=/tmp/lawang-staticcheck make quality`
 GREEN: formatting, vet, staticcheck, full race suite, sqlc drift, migration, dan
 Compose validation; package integration dengan race detector selesai dalam 266.288s.
 

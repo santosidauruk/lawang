@@ -47,7 +47,7 @@ atau memanggil advisory-lock query langsung dari test.
 Jalankan dengan:
 
 ```sh
-GOCACHE=/tmp/lawang-go-build go test -race ./tests/integration \
+GOCACHE=/tmp/lawang-build go test -race ./tests/integration \
   -run '^TestConcurrentBiometricPostgresConfirmReturnsRecordedSuccessAndRunsExternalWorkOnce$' \
   -count=1 -v
 ```
@@ -159,7 +159,7 @@ diterapkan pada test fixture, bukan production coordinator/adapter.
 Verification aktual pada 2026-08-21:
 
 ```text
-GOCACHE=/tmp/lawang-go-build go test -race ./tests/integration \
+GOCACHE=/tmp/lawang-build go test -race ./tests/integration \
   -run '^(TestConcurrentBiometricPostgresConfirmReturnsRecordedSuccessAndRunsExternalWorkOnce|TestPostgresBiometric.*|TestPostgresCreateBiometric.*|TestPostgresConcurrentCreateKeeps.*)$' \
   -count=1 -v
 PASS: 8 tests, tests/integration 74.124s
@@ -167,10 +167,10 @@ PASS: 8 tests, tests/integration 74.124s
 Focused Identity Document replay/mismatch/extractor/concurrency suite
 PASS: 10 tests, tests/integration 83.574s
 
-GOCACHE=/tmp/lawang-go-build STATICCHECK_CACHE=/tmp/lawang-go-staticcheck make quality
+GOCACHE=/tmp/lawang-build STATICCHECK_CACHE=/tmp/lawang-staticcheck make quality
 PASS: fmt-check, vet, staticcheck, full race suite, sqlc-diff,
 migration-validate, and compose-validate
-ok github.com/santosidauruk/lawang-go/tests/integration 601.513s
+ok github.com/santosidauruk/lawang/tests/integration 601.513s
 ```
 
 Docker integration tests berjalan nyata tanpa `t.Skip`. Tidak ada production code,

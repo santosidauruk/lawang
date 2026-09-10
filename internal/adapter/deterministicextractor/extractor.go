@@ -6,7 +6,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/santosidauruk/lawang-go/internal/application/artifact"
+	"github.com/santosidauruk/lawang/internal/application/artifact"
 )
 
 // ErrMissingExtraction is returned when no configured result or error exists for
