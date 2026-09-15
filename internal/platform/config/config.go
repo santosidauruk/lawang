@@ -35,6 +35,22 @@ type FakeConfig struct {
 	ProviderWebhookSecret string
 }
 
+type WorkerConfig struct {
+	DatabaseURL           string
+	RedisAddress          string
+	RedisPassword         string
+	RedisDatabase         int
+	ProviderBaseURL       string
+	ProviderCallbackURL   string
+	ProviderTimeout       time.Duration
+	ProviderWebhookSecret string
+	Concurrency           int
+	RelayInterval         time.Duration
+	OutboxClaimLease      time.Duration
+	ShutdownTimeout       time.Duration
+	LogLevel              slog.Level
+}
+
 // Load reads and validates process configuration from the environment.
 func Load() (Config, error) {
 	databaseURL, ok := os.LookupEnv("DATABASE_URL")
@@ -221,4 +237,110 @@ func validateListenAddress(key, address string) error {
 	}
 
 	return nil
+}
+
+func LoadWorker() (WorkerConfig, error) {
+	databaseURL, err := required("DATABASE_URL")
+	if err != nil {
+		return WorkerConfig{}, err
+	}
+	redisAddress, err := required("REDIS_ADDRESS")
+	if err != nil {
+		return WorkerConfig{}, err
+	}
+	if err := validateListenAddress("REDIS_ADDRESS", redisAddress); err != nil {
+		return WorkerConfig{}, err
+	}
+	providerBaseURL, err := requiredHTTPURL("PROVIDER_BASE_URL")
+	if err != nil {
+		return WorkerConfig{}, err
+	}
+	providerCallbackURL, err := requiredHTTPURL("PROVIDER_CALLBACK_URL")
+	if err != nil {
+		return WorkerConfig{}, err
+	}
+	providerWebhookSecret, err := required("PROVIDER_WEBHOOK_SECRET")
+	if err != nil {
+		return WorkerConfig{}, err
+	}
+	redisDatabase, err := nonNegativeInt("REDIS_DATABASE", 0)
+	if err != nil {
+		return WorkerConfig{}, err
+	}
+	concurrency, err := positiveInt("WORKER_CONCURRENCY", 4)
+	if err != nil {
+		return WorkerConfig{}, err
+	}
+	providerTimeout, err := positiveDuration("PROVIDER_TIMEOUT", 5*time.Second)
+	if err != nil {
+		return WorkerConfig{}, err
+	}
+	relayInterval, err := positiveDuration("RELAY_INTERVAL", 250*time.Millisecond)
+	if err != nil {
+		return WorkerConfig{}, err
+	}
+	claimLease, err := positiveDuration("OUTBOX_CLAIM_LEASE", 30*time.Second)
+	if err != nil {
+		return WorkerConfig{}, err
+	}
+	shutdownTimeout, err := positiveDuration("SHUTDOWN_TIMEOUT", 10*time.Second)
+	if err != nil {
+		return WorkerConfig{}, err
+	}
+	logLevel, err := parseLogLevel()
+	if err != nil {
+		return WorkerConfig{}, err
+	}
+	return WorkerConfig{
+		DatabaseURL: databaseURL, RedisAddress: redisAddress,
+		RedisPassword: os.Getenv("REDIS_PASSWORD"), RedisDatabase: redisDatabase,
+		ProviderBaseURL: providerBaseURL, ProviderCallbackURL: providerCallbackURL,
+		ProviderTimeout: providerTimeout, ProviderWebhookSecret: providerWebhookSecret,
+		Concurrency: concurrency, RelayInterval: relayInterval, OutboxClaimLease: claimLease,
+		ShutdownTimeout: shutdownTimeout, LogLevel: logLevel,
+	}, nil
+}
+
+func required(key string) (string, error) {
+	value, ok := os.LookupEnv(key)
+	if !ok || value == "" {
+		return "", fmt.Errorf("%s is required", key)
+	}
+	return value, nil
+}
+
+func requiredHTTPURL(key string) (string, error) {
+	value, err := required(key)
+	if err != nil {
+		return "", err
+	}
+	parsed, parseErr := url.ParseRequestURI(value)
+	if parseErr != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return "", fmt.Errorf("%s must be an absolute HTTP or HTTPS URL", key)
+	}
+	return value, nil
+}
+
+func positiveInt(key string, fallback int) (int, error) {
+	raw := os.Getenv(key)
+	if raw == "" {
+		return fallback, nil
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value <= 0 {
+		return 0, fmt.Errorf("%s must be a positive integer", key)
+	}
+	return value, nil
+}
+
+func nonNegativeInt(key string, fallback int) (int, error) {
+	raw := os.Getenv(key)
+	if raw == "" {
+		return fallback, nil
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < 0 {
+		return 0, fmt.Errorf("%s must be a non-negative integer", key)
+	}
+	return value, nil
 }

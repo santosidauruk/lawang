@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -17,16 +19,20 @@ import (
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/santosidauruk/lawang-go/internal/adapter/httpapi"
+	"github.com/santosidauruk/lawang-go/internal/adapter/postgres"
+	"github.com/santosidauruk/lawang-go/internal/adapter/providerhttp"
+	"github.com/santosidauruk/lawang-go/internal/adapter/queue"
+	"github.com/santosidauruk/lawang-go/internal/application/fakeprovider"
+	"github.com/santosidauruk/lawang-go/internal/application/providersubmission"
 	"github.com/testcontainers/testcontainers-go"
 	tcredis "github.com/testcontainers/testcontainers-go/modules/redis"
 )
 
 const providerTaskHarnessTimeout = 3 * time.Second
 
-var errCheckpoint7UserWiringRequired = errors.New("checkpoint 7 user wiring is not connected")
-
 // TestProviderTaskLoadsImmutableRecordsAndSubmitsExactRequest is the agent-owned
-// RED success tracer for Issue 009 Checkpoint 7, Bagian user points 1-8.
+// success tracer for Issue 009 Checkpoint 7, Bagian user points 1-8.
 //
 // Keep this as one observable behavior: real Redis hands an identifier-only task to
 // the queue adapter, the task service loads immutable records from PostgreSQL at
@@ -64,8 +70,6 @@ func TestProviderTaskLoadsImmutableRecordsAndSubmitsExactRequest(t *testing.T) {
 
 	var request recordedProviderSubmission
 	select {
-	case err := <-fixture.userWiringAttempted:
-		t.Fatalf("provider task reached intentional user-owned wiring seam: %v", err)
 	case result := <-providerResults:
 		if result.err != nil {
 			t.Fatalf("provider did not receive first task submission: %v", result.err)
@@ -78,17 +82,186 @@ func TestProviderTaskLoadsImmutableRecordsAndSubmitsExactRequest(t *testing.T) {
 	assertExactProviderTaskRequest(t, request, fixture)
 }
 
+// TestProviderWorkerRelaysDurableOutboxToFakeProvider proves the Checkpoint 7
+// process boundary: one worker lifecycle relays a durable identifier-only outbox
+// task through Redis/Asynq to the real fake-provider handler. Provider
+// acknowledgement alone must not apply a verdict to the Verification Session.
+func TestProviderWorkerRelaysDurableOutboxToFakeProvider(t *testing.T) {
+	fixture := openProviderTaskFixture(t)
+	seedProviderTaskImmutableRecords(t, fixture)
+
+	callbackRecorder := newCallbackRecorder(t)
+	fixture.callbackURL = callbackRecorder.URL() + "/webhooks/verification"
+	scenarios := providerhttp.NewScenarioStore()
+	fakeProviderService := fakeprovider.NewService(
+		scenarios,
+		providerhttp.NewCallbackSender(fakeProviderWebhookSecret),
+		providerTaskHarnessTimeout,
+		nil,
+		nil,
+	)
+	fakeProvider := newProviderHTTPHarness(
+		t,
+		httpapi.NewFakeProviderScenarioHandler(fakeProviderService, scenarios),
+	)
+	fakeProviderStopped := false
+	t.Cleanup(func() {
+		if fakeProviderStopped {
+			return
+		}
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), providerTaskHarnessTimeout)
+		defer cancel()
+		if err := fakeProviderService.Shutdown(shutdownCtx); err != nil {
+			t.Errorf("shutdown fake provider: %v", err)
+		}
+	})
+
+	outboxID := uuid.MustParse("71368e37-9ed7-49f1-98c6-363b0e44a287")
+	if _, err := fixture.database.Exec(fixture.ctx, `
+		INSERT INTO outbox (
+			id, verification_session_id, task_type, payload, created_at
+		) VALUES (
+			$1, $2, 'provider:submit',
+			jsonb_build_object('sessionId', $2::uuid), $3
+		)
+	`, outboxID, fixture.sessionID, fixture.now); err != nil {
+		t.Fatalf("seed durable provider outbox: %v", err)
+	}
+
+	workerBinary := filepath.Join(t.TempDir(), "lawang-worker")
+	buildWorker := exec.CommandContext(
+		fixture.ctx,
+		"go",
+		"build",
+		"-o",
+		workerBinary,
+		"../../cmd/worker",
+	)
+	if output, err := buildWorker.CombinedOutput(); err != nil {
+		t.Fatalf("build worker process: %v: %s", err, output)
+	}
+
+	workerProcess := exec.Command(workerBinary)
+	workerProcess.Env = append(os.Environ(),
+		"DATABASE_URL="+fixture.databaseURL,
+		"REDIS_ADDRESS="+fixture.redisAddress,
+		"REDIS_PASSWORD=",
+		"REDIS_DATABASE=0",
+		"PROVIDER_BASE_URL="+fakeProvider.URL(),
+		"PROVIDER_CALLBACK_URL="+fixture.callbackURL,
+		"PROVIDER_TIMEOUT=3s",
+		"PROVIDER_WEBHOOK_SECRET="+fakeProviderWebhookSecret,
+		"WORKER_CONCURRENCY=1",
+		"RELAY_INTERVAL=10ms",
+		"OUTBOX_CLAIM_LEASE=1m",
+		"SHUTDOWN_TIMEOUT=3s",
+		"LOG_LEVEL=error",
+	)
+	var workerOutput bytes.Buffer
+	workerProcess.Stdout = &workerOutput
+	workerProcess.Stderr = &workerOutput
+	if err := workerProcess.Start(); err != nil {
+		t.Fatalf("start worker process: %v", err)
+	}
+	workerDone := make(chan error, 1)
+	go func() { workerDone <- workerProcess.Wait() }()
+	workerStopped := false
+	t.Cleanup(func() {
+		if workerStopped {
+			return
+		}
+		_ = workerProcess.Process.Kill()
+		select {
+		case <-workerDone:
+		case <-time.After(providerTaskHarnessTimeout):
+		}
+	})
+
+	callbackCtx, cancel := context.WithTimeout(
+		context.Background(),
+		providerTaskHarnessTimeout,
+	)
+	defer cancel()
+	callback, err := callbackRecorder.Next(callbackCtx)
+	if err != nil {
+		t.Fatalf("fake provider did not acknowledge and callback: %v", err)
+	}
+	assertExactSignedVerifiedCallback(
+		t,
+		callback,
+		fixture.sessionID,
+		fakeProviderWebhookSecret,
+	)
+
+	if err := workerProcess.Process.Signal(os.Interrupt); err != nil {
+		t.Fatalf("signal worker shutdown: %v", err)
+	}
+	select {
+	case err := <-workerDone:
+		if err != nil {
+			t.Fatalf("worker process shutdown: %v: %s", err, workerOutput.String())
+		}
+		workerStopped = true
+	case <-time.After(providerTaskHarnessTimeout):
+		_ = workerProcess.Process.Kill()
+		<-workerDone
+		workerStopped = true
+		t.Fatalf("worker process did not stop before deadline: %s", workerOutput.String())
+	}
+	shutdownCtx, shutdownCancel := context.WithTimeout(
+		context.Background(),
+		providerTaskHarnessTimeout,
+	)
+	defer shutdownCancel()
+	if err := fakeProviderService.Shutdown(shutdownCtx); err != nil {
+		t.Fatalf("drain fake-provider callback: %v", err)
+	}
+	fakeProviderStopped = true
+
+	var status string
+	var published bool
+	var verdictEvents int
+	if err := fixture.database.QueryRow(fixture.ctx, `
+		SELECT
+			vs.status,
+			o.published_at IS NOT NULL,
+			(
+				SELECT count(*)
+				FROM session_events
+				WHERE session_id = vs.id
+				  AND event_type IN ('verification_passed', 'verification_failed')
+			)
+		FROM verification_sessions vs
+		JOIN outbox o ON o.verification_session_id = vs.id
+		WHERE vs.id = $1 AND o.id = $2
+	`, fixture.sessionID, outboxID).Scan(
+		&status,
+		&published,
+		&verdictEvents,
+	); err != nil {
+		t.Fatalf("inspect provider acknowledgement outcome: %v", err)
+	}
+	if status != "verification_pending" || !published || verdictEvents != 0 {
+		t.Fatalf(
+			"provider acknowledgement = status:%s published:%v verdict-events:%d",
+			status,
+			published,
+			verdictEvents,
+		)
+	}
+}
+
 type providerTaskFixture struct {
-	ctx                 context.Context
-	database            *pgxpool.Pool
-	redisAddress        string
-	provider            *providerSubmissionRecorder
-	sessionID           uuid.UUID
-	callbackURL         string
-	now                 time.Time
-	identityIntent      uuid.UUID
-	biometricIntent     uuid.UUID
-	userWiringAttempted chan error
+	ctx             context.Context
+	databaseURL     string
+	database        *pgxpool.Pool
+	redisAddress    string
+	provider        *providerSubmissionRecorder
+	sessionID       uuid.UUID
+	callbackURL     string
+	now             time.Time
+	identityIntent  uuid.UUID
+	biometricIntent uuid.UUID
 }
 
 func openProviderTaskFixture(t *testing.T) providerTaskFixture {
@@ -127,16 +300,16 @@ func openProviderTaskFixture(t *testing.T) providerTaskFixture {
 	provider := newProviderSubmissionRecorder(t)
 	sessionID := uuid.MustParse("63a6068d-888a-4cac-9f5e-bac2bdb859dd")
 	return providerTaskFixture{
-		ctx:                 ctx,
-		database:            database,
-		redisAddress:        parsedRedisURL.Host,
-		provider:            provider,
-		sessionID:           sessionID,
-		callbackURL:         "http://lawang-api:8080/webhooks/verification",
-		now:                 time.Date(2026, 9, 1, 9, 0, 0, 0, time.UTC),
-		identityIntent:      uuid.MustParse("1e07d796-9178-4bb3-bd10-400cc9382a2a"),
-		biometricIntent:     uuid.MustParse("7459ca4a-a6cd-44b9-9364-f90664894baa"),
-		userWiringAttempted: make(chan error, 1),
+		ctx:             ctx,
+		databaseURL:     databaseURL,
+		database:        database,
+		redisAddress:    parsedRedisURL.Host,
+		provider:        provider,
+		sessionID:       sessionID,
+		callbackURL:     "http://lawang-api:8080/webhooks/verification",
+		now:             time.Date(2026, 9, 1, 9, 0, 0, 0, time.UTC),
+		identityIntent:  uuid.MustParse("1e07d796-9178-4bb3-bd10-400cc9382a2a"),
+		biometricIntent: uuid.MustParse("7459ca4a-a6cd-44b9-9364-f90664894baa"),
 	}
 }
 
@@ -225,19 +398,26 @@ func enqueueFirstProviderTask(t *testing.T, f providerTaskFixture) {
 	}
 }
 
-// newFirstProviderTaskHandler is the only intentional RED seam. Replace this
-// test-only construction with the user-authored PostgreSQL reader, application task
-// service, provider HTTP client, and queue handler. Do not put production behavior in
-// this helper and do not move provider I/O into a PostgreSQL transaction.
+// newFirstProviderTaskHandler composes the production PostgreSQL reader,
+// application task service, provider HTTP client, and queue handler for the focused
+// tracer. Provider I/O remains outside a PostgreSQL transaction.
 func newFirstProviderTaskHandler(t *testing.T, fixture providerTaskFixture) asynq.Handler {
 	t.Helper()
-	return asynq.HandlerFunc(func(context.Context, *asynq.Task) error {
-		select {
-		case fixture.userWiringAttempted <- errCheckpoint7UserWiringRequired:
-		default:
-		}
-		return errCheckpoint7UserWiringRequired
-	})
+
+	reader := postgres.NewProviderSubmissionReader(fixture.database)
+	client, err := providerhttp.NewClient(
+		fixture.provider.URL(),
+		providerTaskHarnessTimeout,
+	)
+	if err != nil {
+		t.Fatalf("create Checkpoint 7 provider client: %v", err)
+	}
+
+	service, err := providersubmission.NewTaskService(reader, client, fixture.callbackURL)
+	if err != nil {
+		t.Fatalf("create Checkpoint 7 task service: %v", err)
+	}
+	return queue.NewProviderSubmissionHandler(service)
 }
 
 type recordedProviderSubmission struct {

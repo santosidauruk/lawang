@@ -27,7 +27,55 @@ services:
       - "${MINIO_API_PORT:-9000}:9000"
       - "${MINIO_CONSOLE_PORT:-9001}:9001"
     volumes:
+<<<<<<< HEAD
       - lawang_minio_data:/data
+=======
+      - lawang_go_minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+      start_period: 3s
+  redis:
+    image: redis:7.4-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+      start_period: 2s
+  api:
+    build:
+      context: .
+      target: api
+    environment:
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-lawang}:${POSTGRES_PASSWORD:-lawang}@postgres:5432/${POSTGRES_DB:-lawang_db_go}?sslmode=disable"
+      HTTP_ADDRESS: ":8080"
+      SHUTDOWN_TIMEOUT: "10s"
+      LOG_LEVEL: "info"
+      S3_INTERNAL_ENDPOINT: "http://minio:9000"
+      S3_PUBLIC_ENDPOINT: "http://localhost:${MINIO_API_PORT:-9000}"
+      S3_REGION: "${S3_REGION:-us-east-1}"
+      S3_ACCESS_KEY: "${S3_ACCESS_KEY:-lawang-minio}"
+      S3_SECRET_KEY: "${S3_SECRET_KEY:-lawang-minio-password}"
+      S3_BUCKET: "${S3_BUCKET:-test-artifacts}"
+      S3_USE_PATH_STYLE: "true"
+      PROVIDER_WEBHOOK_SECRET: "${PROVIDER_WEBHOOK_SECRET}"
+    ports:
+      - "${HTTP_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8080/health/live"]
+      interval: 2s
+      timeout: 1s
+      retries: 10
+      start_period: 2s
+>>>>>>> 3716e01 (feat(#9): add provider submission task and add worker)
   fake-provider:
     build:
       context: .
@@ -46,6 +94,32 @@ services:
       timeout: 1s
       retries: 10
       start_period: 2s
+  worker:
+    build:
+      context: .
+      target: worker
+    environment:
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-lawang}:${POSTGRES_PASSWORD:-lawang}@postgres:5432/${POSTGRES_DB:-lawang_db_go}?sslmode=disable"
+      REDIS_ADDRESS: "redis:6379"
+      REDIS_DATABASE: "0"
+      PROVIDER_BASE_URL: "http://fake-provider:8081/"
+      PROVIDER_CALLBACK_URL: "http://api:8080/webhooks/verification"
+      PROVIDER_TIMEOUT: "5s"
+      PROVIDER_WEBHOOK_SECRET: "${PROVIDER_WEBHOOK_SECRET}"
+      WORKER_CONCURRENCY: "4"
+      RELAY_INTERVAL: "250ms"
+      OUTBOX_CLAIM_LEASE: "30s"
+      SHUTDOWN_TIMEOUT: "10s"
+      LOG_LEVEL: "info"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+      fake-provider:
+        condition: service_healthy
 
 volumes:
   lawang_postgres_data:

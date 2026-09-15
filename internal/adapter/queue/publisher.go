@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 	"github.com/santosidauruk/lawang/internal/application/outbox"
 )
@@ -15,14 +14,15 @@ type Publisher struct {
 	client *asynq.Client
 }
 
-type providerSubmitPayload struct {
-	SessionID uuid.UUID `json:"sessionId"`
-}
-
 func NewPublisher(client *asynq.Client) *Publisher {
 	return &Publisher{client: client}
 }
 
+func NewPublisherForRedis(config RedisConfig) *Publisher {
+	return NewPublisher(asynq.NewClient(redisClientOpt(config)))
+}
+
+func (p *Publisher) Close() error { return p.client.Close() }
 func (p *Publisher) Enqueue(
 	ctx context.Context,
 	task outbox.Task,
@@ -40,7 +40,7 @@ func (p *Publisher) Enqueue(
 
 	asynqTask := asynq.NewTask(task.Type, payload)
 
-	_, err = p.client.EnqueueContext(ctx, asynqTask, asynq.TaskID(task.ID.String()))
+	_, err = p.client.EnqueueContext(ctx, asynqTask, asynq.TaskID(task.ID.String()), asynq.MaxRetry(MaxProviderRetries))
 	switch {
 	case errors.Is(err, asynq.ErrTaskIDConflict):
 		return nil

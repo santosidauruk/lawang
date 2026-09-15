@@ -2,9 +2,18 @@ package providersubmission
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"net/url"
 
 	"github.com/google/uuid"
-	"github.com/santosidauruk/lawang-go/internal/application/session"
+)
+
+var (
+	ErrImmutableRecordsMissing = errors.New("provider submission records are incomplete")
+	ErrTransientProvider       = errors.New("provider submission temporarily failed")
+	ErrPermanentProvider       = errors.New("provider submission permanently failed")
+	ErrInvalidTask             = errors.New("invalid provider submission task")
 )
 
 type ProviderSubmissionRequest struct {
@@ -37,38 +46,45 @@ type PersonalDetailsAndArtifacts struct {
 }
 
 type Reader interface {
-	LoadPersonalDataAndArtifacts(sessionID uuid.UUID) (PersonalDetailsAndArtifacts, error)
+	LoadPersonalDataAndArtifacts(ctx context.Context, sessionID uuid.UUID) (PersonalDetailsAndArtifacts, error)
 }
 
 type Provider interface {
-	Send(request ProviderSubmissionRequest) error
+	Send(ctx context.Context, request ProviderSubmissionRequest) error
 }
 
 type TaskService struct {
-	provider Provider
-	reader   Reader
-	clock    session.Clock
+	provider    Provider
+	reader      Reader
+	callbackURL string
 }
 
-func NewTaskService(reader Reader, provider Provider, clock session.Clock) *TaskService {
-	return &TaskService{
-		reader:   reader,
-		provider: provider,
-		clock:    clock,
+func NewTaskService(reader Reader, provider Provider, callbackURL string) (*TaskService, error) {
+	parsedURL, err := url.ParseRequestURI(callbackURL)
+	if err != nil || parsedURL.Scheme == "" || parsedURL.Host == "" || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") {
+		return nil, fmt.Errorf("%w: callback URL", ErrPermanentProvider)
 	}
+	return &TaskService{
+		reader:      reader,
+		provider:    provider,
+		callbackURL: callbackURL,
+	}, nil
 }
 
-func (t *TaskService) SendToProvider(ctx context.Context, sessionID uuid.UUID, callbackURL string) error {
+func (t *TaskService) SendToProvider(ctx context.Context, sessionID uuid.UUID) error {
 	// manggil adapter 2 dan 3
 	// manggil adapter 5
-	detailArtifacts, err := t.reader.LoadPersonalDataAndArtifacts(sessionID)
+	if sessionID == uuid.Nil {
+		return fmt.Errorf("missing session ID: %w", ErrInvalidTask)
+	}
+	detailArtifacts, err := t.reader.LoadPersonalDataAndArtifacts(ctx, sessionID)
 	if err != nil {
 		return err
 	}
 
 	providerReq := ProviderSubmissionRequest{
 		SessionID:   sessionID,
-		CallbackURL: callbackURL,
+		CallbackURL: t.callbackURL,
 		PersonalDetails: PersonalDetails{
 			FullName:       detailArtifacts.PersonalDetails.FullName,
 			DateOfBirth:    detailArtifacts.PersonalDetails.DateOfBirth,
@@ -91,11 +107,5 @@ func (t *TaskService) SendToProvider(ctx context.Context, sessionID uuid.UUID, c
 		},
 	}
 
-	err = t.provider.Send(providerReq)
-	if err != nil {
-		return err
-	}
-
-	return nil
-
+	return t.provider.Send(ctx, providerReq)
 }
