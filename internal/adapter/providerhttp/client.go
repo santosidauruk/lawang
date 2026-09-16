@@ -11,7 +11,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/santosidauruk/lawang-go/internal/application/providersubmission"
+	"github.com/santosidauruk/lawang/internal/application/providersubmission"
 )
 
 const maxProviderResponseBytes = 64 << 10

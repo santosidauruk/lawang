@@ -4,8 +4,9 @@ Status: disetujui pada 2026-08-21; Checkpoint 1 selesai pada 2026-08-26,
 Checkpoint 2 selesai pada 2026-08-25, Checkpoint 3 selesai pada 2026-08-26,
 Checkpoint 4 selesai pada 2026-08-27, Checkpoint 5 selesai pada 2026-08-28,
 Checkpoint 6 selesai pada 2026-09-01, dan Checkpoint 7 selesai pada 2026-09-16.
-Keduanya selesai setelah user-authored flow melewati gate `[review]` dan
-agent-owned reliability/safety matrix GREEN.
+Checkpoint 8 dan parent Issue 009 selesai pada 2026-09-16 setelah user-authored flow
+melewati gate `[review]`, agent-owned reliability/safety matrix GREEN, dan full
+quality gate exit `0`.
 
 Dokumen ini membagi asynchronous Provider Submission dan signed verdict callback
 menjadi delapan checkpoint belajar. Setiap checkpoint menghasilkan satu perilaku
@@ -165,6 +166,10 @@ parent Issue 009, bukan delapan issue tracker baru.
     menerima empat rejection reasons pada poin 5. Nilainya disimpan sebagai
     `verification_sessions.rejection_reason`; field ini bukan bagian Provider
     Submission dan berbeda dari internal Webhook Event `ignore_reason`.
+13. Callback signature-valid dan structurally-valid dengan event ID berbeda setelah
+    session terminal disimpan tepat sekali sebagai `ignored:terminal_session`,
+    mengembalikan exact `200 {"status":"ok"}`, serta tidak mengubah terminal state,
+    terminal timestamp, atau Session Event.
 
 ## Keputusan unknown-session yang dibekukan
 
@@ -225,3 +230,14 @@ Issue 009 selesai hanya bila:
   GREEN;
 - [`docs/learning/009-outbox-and-signed-webhooks.md`](../../learning/009-outbox-and-signed-webhooks.md)
   mencatat keputusan serta command/output aktual tanpa klaim exactly-once.
+
+Completion evidence pada 2026-09-16:
+
+- user-owned Redis/provider restart dan duplicate/late replay suite GREEN dengan
+  race detector;
+- verified serta seluruh empat rejected full E2E scenarios GREEN;
+- relay crash-window, concurrent processing, lifecycle, invalid-signature, dan safe
+  logging regressions GREEN;
+- `make sqlc-diff migration-validate compose-validate` dan `make quality` exit `0`;
+- evidence lengkap ada di
+  [`docs/learning/009-outbox-and-signed-webhooks.md`](../../learning/009-outbox-and-signed-webhooks.md).

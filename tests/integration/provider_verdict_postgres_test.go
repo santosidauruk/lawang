@@ -371,8 +371,8 @@ func openProviderVerdictDatabase(t *testing.T) (context.Context, *pgx.Conn) {
 	t.Helper()
 	ctx, container, databaseURL := openUploadIntentDatabase(t)
 
-	// This runner deliberately applies the user-owned migration even while it is an
-	// empty scaffold, so the focused test turns GREEN only after real schema exists.
+	// Apply the forward migrations required by the Provider Verdict transaction,
+	// including the bounded terminal-session ignored outcome used by replay tests.
 	for _, migration := range []struct {
 		hostPath      string
 		containerPath string
@@ -380,6 +380,7 @@ func openProviderVerdictDatabase(t *testing.T) (context.Context, *pgx.Conn) {
 		{"../../sql/migrations/00006_create_verification_artifacts.sql", "/tmp/00006.sql"},
 		{"../../sql/migrations/00007_add_provider_submission_outbox.sql", "/tmp/00007.sql"},
 		{"../../sql/migrations/00008_create_webhook_events.sql", "/tmp/00008.sql"},
+		{"../../sql/migrations/00009_allow_terminal_provider_callback_ignore.sql", "/tmp/00009.sql"},
 	} {
 		runPSQLFile(t, ctx, container, migration.hostPath, migration.containerPath)
 	}

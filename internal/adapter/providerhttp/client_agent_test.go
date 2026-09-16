@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/santosidauruk/lawang-go/internal/application/providersubmission"
+	"github.com/santosidauruk/lawang/internal/application/providersubmission"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)

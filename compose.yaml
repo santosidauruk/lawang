@@ -27,10 +27,7 @@ services:
       - "${MINIO_API_PORT:-9000}:9000"
       - "${MINIO_CONSOLE_PORT:-9001}:9001"
     volumes:
-<<<<<<< HEAD
       - lawang_minio_data:/data
-=======
-      - lawang_go_minio_data:/data
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
       interval: 2s
@@ -75,7 +72,6 @@ services:
       timeout: 1s
       retries: 10
       start_period: 2s
->>>>>>> 3716e01 (feat(#9): add provider submission task and add worker)
   fake-provider:
     build:
       context: .

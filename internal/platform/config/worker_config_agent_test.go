@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/santosidauruk/lawang-go/internal/platform/config"
+	"github.com/santosidauruk/lawang/internal/platform/config"
 )
 
 func setValidWorkerEnvironment(t *testing.T) {

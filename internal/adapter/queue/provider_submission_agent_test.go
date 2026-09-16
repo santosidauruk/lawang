@@ -8,9 +8,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
-	"github.com/santosidauruk/lawang-go/internal/adapter/queue"
-	"github.com/santosidauruk/lawang-go/internal/application/outbox"
-	"github.com/santosidauruk/lawang-go/internal/application/providersubmission"
+	"github.com/santosidauruk/lawang/internal/adapter/queue"
+	"github.com/santosidauruk/lawang/internal/application/outbox"
+	"github.com/santosidauruk/lawang/internal/application/providersubmission"
 )
 
 type providerTaskServiceStub struct {

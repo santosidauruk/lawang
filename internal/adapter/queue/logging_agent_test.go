@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/hibiken/asynq"
-	"github.com/santosidauruk/lawang-go/internal/application/outbox"
+	"github.com/santosidauruk/lawang/internal/application/outbox"
 )
 
 type failingTaskHandler struct{ err error }

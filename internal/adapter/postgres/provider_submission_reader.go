@@ -6,8 +6,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/santosidauruk/lawang-go/internal/adapter/postgres/sqlc"
-	"github.com/santosidauruk/lawang-go/internal/application/providersubmission"
+	"github.com/santosidauruk/lawang/internal/adapter/postgres/sqlc"
+	"github.com/santosidauruk/lawang/internal/application/providersubmission"
 )
 
 type ProviderSubmissionReader struct {

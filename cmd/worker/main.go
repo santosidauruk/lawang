@@ -9,13 +9,13 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/santosidauruk/lawang-go/internal/adapter/postgres"
-	"github.com/santosidauruk/lawang-go/internal/adapter/providerhttp"
-	queueadapter "github.com/santosidauruk/lawang-go/internal/adapter/queue"
-	"github.com/santosidauruk/lawang-go/internal/application/outbox"
-	"github.com/santosidauruk/lawang-go/internal/application/providersubmission"
-	"github.com/santosidauruk/lawang-go/internal/platform/config"
-	"github.com/santosidauruk/lawang-go/internal/platform/logging"
+	"github.com/santosidauruk/lawang/internal/adapter/postgres"
+	"github.com/santosidauruk/lawang/internal/adapter/providerhttp"
+	queueadapter "github.com/santosidauruk/lawang/internal/adapter/queue"
+	"github.com/santosidauruk/lawang/internal/application/outbox"
+	"github.com/santosidauruk/lawang/internal/application/providersubmission"
+	"github.com/santosidauruk/lawang/internal/platform/config"
+	"github.com/santosidauruk/lawang/internal/platform/logging"
 )
 
 func main() {

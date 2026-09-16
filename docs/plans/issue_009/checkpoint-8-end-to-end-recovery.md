@@ -1,6 +1,7 @@
 # Checkpoint 8 — Full Asynchronous Loop dan Failure Recovery
 
-Status: menunggu Checkpoint 3, 5, dan 7.
+Status: selesai pada 2026-09-16; user-owned recovery/replay gate dan agent-owned
+full E2E/reliability matrix GREEN, diikuti full quality gate tanpa silent skip.
 
 ## Tujuan
 
@@ -117,3 +118,16 @@ Setelah recovery/replay user scenarios direview, agent menutup:
 - no dependency-backed test silently skips;
 - full quality gate dan learning note selesai;
 - Issue 009 siap ditutup dan Issue 010 menjadi urutan berikutnya.
+
+## Completion evidence
+
+- verified dan seluruh empat rejected reasons melewati PostgreSQL, MinIO,
+  Redis/Asynq, API, worker, provider HTTP boundary, signed callback, dan terminal
+  persistence;
+- Redis restart, provider/worker restart, exact duplicate, dan late callback suite
+  GREEN dengan race detector (`4 passed`, `43.553s`);
+- relay crash-window, concurrent relay/callback, lifecycle, invalid-signature, dan
+  safe-log matrix GREEN;
+- `make sqlc-diff migration-validate compose-validate` dan `make quality` exit `0`;
+- command, dependency versions, trace IDs, dan batas klaim at-least-once dicatat di
+  [`docs/learning/009-outbox-and-signed-webhooks.md`](../../learning/009-outbox-and-signed-webhooks.md).

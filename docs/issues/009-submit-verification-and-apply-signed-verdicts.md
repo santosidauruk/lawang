@@ -1,14 +1,14 @@
 # Submit Verification and Apply Signed Verdicts
 
-Status: ready-for-human
+Status: done
 Type: HITL  
-Labels: ready-for-human
+Labels: done
 Source: `docs/plan-go.md` sections 4-5, 6, 8, 10, 12-14, 16 Issue 9, and 17.2
 
 Approved collaboration plan:
 [`docs/plans/issue_009/README.md`](../plans/issue_009/README.md).
-Active checkpoint:
-[`Checkpoint 7 — Provider Submission Task dan Worker Wiring`](../plans/issue_009/checkpoint-7-provider-task.md).
+Completed checkpoint:
+[`Checkpoint 8 — Full Asynchronous Loop dan Failure Recovery`](../plans/issue_009/checkpoint-8-end-to-end-recovery.md).
 
 ## User stories covered
 
@@ -69,29 +69,29 @@ agent unless the proof technique itself is the learning concept.
 
 ## Acceptance criteria
 
-- [ ] User-authored outbox proof and HMAC test pass critical review.
-- [ ] `POST /verification-sessions/{id}/submit` requires both accepted artifacts,
+- [x] User-authored outbox proof and HMAC test pass critical review.
+- [x] `POST /verification-sessions/{id}/submit` requires both accepted artifacts,
       commits pending state, `submit_session`, and outbox atomically, and returns
       `202` without waiting for Redis/provider.
-- [ ] Exact replay while already pending is idempotent; its status and response body
+- [x] Exact replay while already pending is idempotent; its status and response body
       are frozen by a contract test before implementation.
-- [ ] Relay supports concurrent workers, stable TaskID, duplicate enqueue, retry, and
+- [x] Relay supports concurrent workers, stable TaskID, duplicate enqueue, retry, and
       crash between enqueue/mark-published without lost or repeated domain effect.
-- [ ] Provider task loads immutable records at execution time, uses the stable
+- [x] Provider task loads immutable records at execution time, uses the stable
       idempotency key, retries transient failures exponentially up to ten attempts,
       and keeps exhausted sessions pending.
-- [ ] Fake provider supports deterministic verified/rejected scenarios, bounded
+- [x] Fake provider supports deterministic verified/rejected scenarios, bounded
       reasons, delay, and duplicate callback count.
-- [ ] Webhook accepts lowercase/uppercase hex signatures, rejects malformed/invalid
+- [x] Webhook accepts lowercase/uppercase hex signatures, rejects malformed/invalid
       signatures before decoding, and never logs/stores invalid bodies.
-- [ ] A valid signed callback for an unknown `sessionId` persists exactly one
+- [x] A valid signed callback for an unknown `sessionId` persists exactly one
       `ignored:unknown_session` Webhook Event, returns exact `200 {"status":"ok"}`,
       and creates no Verification Session or Session Event mutation.
-- [ ] Valid callback atomically deduplicates event, guards state, applies verified or
+- [x] Valid callback atomically deduplicates event, guards state, applies verified or
       rejected verdict, appends exactly one `verification_passed` or
       `verification_failed` Session Event, and marks the event applied.
-- [ ] Duplicate and late callbacks return `200` with no repeated transition/event.
-- [ ] Full successful and rejected API-worker-provider E2E flows pass using disposable
+- [x] Duplicate and late callbacks return `200` with no repeated transition/event.
+- [x] Full successful and rejected API-worker-provider E2E flows pass using disposable
       PostgreSQL, MinIO, and Redis.
 
 ## API examples
@@ -150,7 +150,7 @@ failure-recovery commands.
 
 Retain reviewed checkpoint files, atomic SQL output, invalid-signature no-row proof,
 relay crash/retry output, stable IDs, and both E2E scenarios. Add
-`docs/learning/009-outbox-and-signed-webhooks.md`.
+[`docs/learning/009-outbox-and-signed-webhooks.md`](../learning/009-outbox-and-signed-webhooks.md).
 
 ## Blocked by
 
