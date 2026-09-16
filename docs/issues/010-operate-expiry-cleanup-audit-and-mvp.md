@@ -1,9 +1,14 @@
 # Operate Expiry, Cleanup, Audit, and the Complete MVP
 
-Status: needs-triage  
+Status: ready-for-human  
 Type: HITL  
-Labels: needs-triage  
+Labels: ready-for-human  
 Source: `docs/plan-go.md` sections 5.3, 9.5, 10-16, 16 Issue 10, 17.2, and 20
+
+Approved collaboration plan:
+[`docs/plans/issue_010/README.md`](../plans/issue_010/README.md).
+Active checkpoint:
+[`Checkpoint 1 — Guarded Expiry Operation`](../plans/issue_010/checkpoint-1-guarded-expiry-operation.md).
 
 ## User stories covered
 
@@ -19,9 +24,9 @@ gate, and a fresh-clone full demo. Production deployment remains out of scope.
 
 ## Required learning checkpoint
 
-The user writes the first expiry race test or cleanup-safety SQL proof and reviews the
-OpenAPI contract. The agent reviews race/selection correctness and contract drift,
-then completes repetitive endpoint/schema documentation and sibling cases.
+The user writes the first cleanup-safety SQL proof and reviews the OpenAPI contract.
+The agent writes repetitive unit, integration, race, and regression tests; reviews
+race/selection correctness and contract drift; then completes sibling cases.
 
 ## Scope boundaries
 
@@ -46,7 +51,8 @@ then completes repetitive endpoint/schema documentation and sibling cases.
 
 ## Acceptance criteria
 
-- [ ] User-authored expiry race test or cleanup proof receives critical review.
+- [ ] User-authored cleanup-safety SQL proof receives critical review; expiry race
+      tests are agent-owned.
 - [ ] Lazy applicant operations and scheduled Asynq sweep use the same idempotent
       expiry operation and produce one `expired` state plus one `expire` event under
       a race.
@@ -103,7 +109,8 @@ query/use case proven here.
 
 ## Tests
 
-- User-authored expiry race test or cleanup-safety proof and sibling cases.
+- User-authored cleanup-safety SQL proof; agent-authored expiry race tests and
+  sibling cases.
 - Fixed-clock lazy/scheduled expiry application and PostgreSQL concurrency tests.
 - Real MinIO cleanup success, not-found idempotency, transient retry, and safety tests.
 - Audit redaction fixtures.
