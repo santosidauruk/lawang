@@ -36,6 +36,16 @@ RUN CGO_ENABLED=0 \
     -o /out/fake-provider \
     ./cmd/fake-provider
 
+FROM build-base AS build-worker
+
+RUN CGO_ENABLED=0 \
+    GOOS=${TARGETOS:-linux} \
+    GOARCH=${TARGETARCH} \
+    go build \
+    -trimpath \
+    -ldflags="-s -w" \
+    -o /out/lawang-worker \
+    ./cmd/worker
 
 FROM alpine:3.23.5 AS runtime-base
 
@@ -62,3 +72,10 @@ COPY --from=build-fake-provider /out/fake-provider /usr/local/bin/fake-provider
 EXPOSE 8081
 
 ENTRYPOINT ["/usr/local/bin/fake-provider"]
+
+
+FROM runtime-base as worker
+
+COPY --from=build-worker /out/lawang-worker /usr/local/bin/lawang-worker
+
+ENTRYPOINT ["/usr/local/bin/lawang-worker"]

@@ -27,7 +27,8 @@ const (
 type IgnoreReason string
 
 const (
-	IgnoreReasonUnknownSession IgnoreReason = "unknown_session"
+	IgnoreReasonUnknownSession  IgnoreReason = "unknown_session"
+	IgnoreReasonTerminalSession IgnoreReason = "terminal_session"
 )
 
 type Transaction interface {
@@ -156,7 +157,7 @@ func (s *Service) Apply(ctx context.Context, input ApplyInput) error {
 			return err
 		}
 		if insertedOutcome == WebhookEventDuplicate {
-			return ErrDuplicateWebhookEvent
+			return nil
 		}
 
 		now := s.clock.Now()
@@ -172,6 +173,12 @@ func (s *Service) Apply(ctx context.Context, input ApplyInput) error {
 
 		if err != nil {
 			return err
+		}
+
+		if lockedSession.Status == verificationsession.Verified ||
+			lockedSession.Status == verificationsession.Rejected ||
+			lockedSession.Status == verificationsession.Expired {
+			return t.MarkEventIgnored(ctx, input.EventID, now, IgnoreReasonTerminalSession)
 		}
 
 		inputVerdict := input.ProviderVerdict.Verdict()

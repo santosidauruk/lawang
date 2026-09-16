@@ -18,8 +18,9 @@ IMAGE_REGISTRY ?= local
 
 API_IMAGE := $(IMAGE_REGISTRY)/lawang-api:$(IMAGE_TAG)
 FAKE_PROVIDER_IMAGE := $(IMAGE_REGISTRY)/lawang-fake-provider:$(IMAGE_TAG)
+WORKER_IMAGE := $(IMAGE_REGISTRY)/lawang-worker:$(IMAGE_TAG)
 
-.PHONY: tools deps-up deps-down migrate sql proof proof-events run run-fake-provider fmt fmt-check vet staticcheck test sqlc-generate sqlc-diff migration-validate compose-validate quality docker-build docker-build-api docker-build-fake-provider
+.PHONY: tools deps-up deps-down migrate sql proof proof-events run run-fake-provider run-worker fmt fmt-check vet staticcheck test sqlc-generate sqlc-diff migration-validate compose-validate quality docker-build docker-build-api docker-build-fake-provider docker-build-worker
 
 tools:
 	GOBIN=$(TOOLS_DIR) $(GO) install github.com/sqlc-dev/sqlc/cmd/sqlc@$(SQLC_VERSION)
@@ -27,7 +28,7 @@ tools:
 	GOBIN=$(TOOLS_DIR) $(GO) install honnef.co/go/tools/cmd/staticcheck@$(STATICCHECK_VERSION)
 
 deps-up:
-	docker compose up -d --wait postgres
+	docker compose up -d --wait postgres minio redis
 
 deps-down:
 	docker compose down
@@ -50,6 +51,9 @@ run:
 run-fake-provider:
 	$(GO) run ./cmd/fake-provider
 
+run-worker:
+	$(GO) run ./cmd/worker
+
 fmt:
 	gofmt -w .
 
@@ -63,7 +67,7 @@ staticcheck:
 	$(STATICCHECK) ./...
 
 test:
-	$(GO) test -race ./...
+	$(GO) test -race -timeout=20m ./...
 
 sqlc-generate:
 	$(SQLC) generate
@@ -95,4 +99,10 @@ docker-build-fake-provider:
 		--tag $(FAKE_PROVIDER_IMAGE) \
 		.
 
-docker-build: docker-build-api docker-build-fake-provider
+docker-build-worker:
+	docker build \
+        --target worker \
+        --tag $(WORKER_IMAGE) \
+        .
+
+docker-build: docker-build-api docker-build-fake-provider docker-build-worker

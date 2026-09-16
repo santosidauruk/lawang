@@ -22,6 +22,50 @@ func (q *Queries) AcquireArtifactConfirmLock(ctx context.Context, lockKey int64)
 	return err
 }
 
+const getVerificationArtifactsBySessionId = `-- name: GetVerificationArtifactsBySessionId :many
+select kind, storage_key, content_type, size_bytes, etag
+from verification_artifacts
+where verification_session_id = $1 and kind in ('identity_document', 'biometric_capture')
+order by case kind
+  when 'identity_document' then 1
+  when 'biometric_capture' then 2
+end
+`
+
+type GetVerificationArtifactsBySessionIdRow struct {
+	Kind        string `json:"kind"`
+	StorageKey  string `json:"storage_key"`
+	ContentType string `json:"content_type"`
+	SizeBytes   int64  `json:"size_bytes"`
+	Etag        string `json:"etag"`
+}
+
+func (q *Queries) GetVerificationArtifactsBySessionId(ctx context.Context, sessionID uuid.UUID) ([]GetVerificationArtifactsBySessionIdRow, error) {
+	rows, err := q.db.Query(ctx, getVerificationArtifactsBySessionId, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetVerificationArtifactsBySessionIdRow
+	for rows.Next() {
+		var i GetVerificationArtifactsBySessionIdRow
+		if err := rows.Scan(
+			&i.Kind,
+			&i.StorageKey,
+			&i.ContentType,
+			&i.SizeBytes,
+			&i.Etag,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const hasRequiredAcceptedArtifacts = `-- name: HasRequiredAcceptedArtifacts :one
 SELECT
     COUNT(*) FILTER (WHERE kind = 'identity_document') = 1
