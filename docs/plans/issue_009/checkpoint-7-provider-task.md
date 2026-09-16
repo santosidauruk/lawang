@@ -1,6 +1,7 @@
 # Checkpoint 7 — Provider Submission Task dan Worker Wiring
 
-Status: aktif sejak 2026-09-01; Checkpoint 6 selesai pada 2026-09-01.
+Status: selesai pada 2026-09-16; user-authored provider task dan worker wiring
+melewati gate `[review]`, lalu agent-owned reliability/safety matrix GREEN.
 
 ## Tujuan
 
@@ -206,3 +207,24 @@ Setelah user worker wiring direview, agent menutup:
 - retry maksimal sepuluh dan exhaustion bukan rejection;
 - one worker process menjalankan relay serta provider handler;
 - real PostgreSQL + Redis + fake-provider suite GREEN.
+
+## Completion evidence
+
+- user-authored application contract, immutable-record query/reader, provider HTTP
+  client, strict queue handler, typed config, worker composition, dan process-level
+  tracer melewati gate `[review]`;
+- identifier-only task memuat immutable records saat execution dan mengirim exact
+  Checkpoint 6 request dengan session UUID sebagai stable `Idempotency-Key`;
+- malformed payload dan missing immutable records berhenti sebagai permanent
+  failure, sedangkan transient HTTP/network failures tetap retryable;
+- `MaxRetry=9` terbukti menghasilkan tepat sepuluh total provider attempts dengan
+  deterministic retry delay, tanpa attempt kesebelas;
+- retry exhaustion mempertahankan session `verification_pending` tanpa
+  `verification_failed`, sedangkan repeated execution dan active-task recovery
+  mempertahankan stable idempotency key;
+- worker cancellation/restart, safe logging/redaction, dan config negative matrix
+  GREEN;
+- process-level worker tracer GREEN di bawah race detector; dan
+- `make quality` GREEN pada 2026-09-16, termasuk formatting, vet, Staticcheck,
+  `go test -race -timeout=20m ./...`, SQLC drift, migration validation, serta Compose
+  validation. Integration package selesai dalam 634.078 detik.

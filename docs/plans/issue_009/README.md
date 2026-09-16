@@ -3,8 +3,9 @@
 Status: disetujui pada 2026-08-21; Checkpoint 1 selesai pada 2026-08-26,
 Checkpoint 2 selesai pada 2026-08-25, Checkpoint 3 selesai pada 2026-08-26,
 Checkpoint 4 selesai pada 2026-08-27, Checkpoint 5 selesai pada 2026-08-28,
-dan Checkpoint 6 selesai pada 2026-09-01 setelah user-authored provider flow
-melewati gate `[review]` dan agent-owned reliability/safety matrix GREEN.
+Checkpoint 6 selesai pada 2026-09-01, dan Checkpoint 7 selesai pada 2026-09-16.
+Keduanya selesai setelah user-authored flow melewati gate `[review]` dan
+agent-owned reliability/safety matrix GREEN.
 
 Dokumen ini membagi asynchronous Provider Submission dan signed verdict callback
 menjadi delapan checkpoint belajar. Setiap checkpoint menghasilkan satu perilaku
@@ -157,6 +158,13 @@ parent Issue 009, bukan delapan issue tracker baru.
     Verification Session mutation atau Session Event. Provider-reported UUID disimpan
     sebagai `reported_session_id UUID NOT NULL` tanpa foreign key; ignored outcome
     bersifat final dan tidak otomatis diterapkan bila session muncul kemudian.
+12. Field conditional `reason` ditambahkan ke signed Webhook Event agar provider
+    rejection diterjemahkan menjadi alasan domain yang bounded, bukan free-form
+    provider message. Field ini wajib dan hanya boleh ada ketika
+    `verdict: "rejected"`, tidak boleh ada ketika `verdict: "verified"`, serta hanya
+    menerima empat rejection reasons pada poin 5. Nilainya disimpan sebagai
+    `verification_sessions.rejection_reason`; field ini bukan bagian Provider
+    Submission dan berbeda dari internal Webhook Event `ignore_reason`.
 
 ## Keputusan unknown-session yang dibekukan
 

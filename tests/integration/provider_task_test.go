@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -29,7 +30,10 @@ import (
 	tcredis "github.com/testcontainers/testcontainers-go/modules/redis"
 )
 
-const providerTaskHarnessTimeout = 3 * time.Second
+const (
+	providerTaskHarnessTimeout    = 3 * time.Second
+	providerProcessHarnessTimeout = 20 * time.Second
+)
 
 // TestProviderTaskLoadsImmutableRecordsAndSubmitsExactRequest is the agent-owned
 // success tracer for Issue 009 Checkpoint 7, Bagian user points 1-8.
@@ -109,7 +113,7 @@ func TestProviderWorkerRelaysDurableOutboxToFakeProvider(t *testing.T) {
 		if fakeProviderStopped {
 			return
 		}
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), providerTaskHarnessTimeout)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), providerProcessHarnessTimeout)
 		defer cancel()
 		if err := fakeProviderService.Shutdown(shutdownCtx); err != nil {
 			t.Errorf("shutdown fake provider: %v", err)
@@ -173,13 +177,13 @@ func TestProviderWorkerRelaysDurableOutboxToFakeProvider(t *testing.T) {
 		_ = workerProcess.Process.Kill()
 		select {
 		case <-workerDone:
-		case <-time.After(providerTaskHarnessTimeout):
+		case <-time.After(providerProcessHarnessTimeout):
 		}
 	})
 
 	callbackCtx, cancel := context.WithTimeout(
 		context.Background(),
-		providerTaskHarnessTimeout,
+		providerProcessHarnessTimeout,
 	)
 	defer cancel()
 	callback, err := callbackRecorder.Next(callbackCtx)
@@ -202,7 +206,7 @@ func TestProviderWorkerRelaysDurableOutboxToFakeProvider(t *testing.T) {
 			t.Fatalf("worker process shutdown: %v: %s", err, workerOutput.String())
 		}
 		workerStopped = true
-	case <-time.After(providerTaskHarnessTimeout):
+	case <-time.After(providerProcessHarnessTimeout):
 		_ = workerProcess.Process.Kill()
 		<-workerDone
 		workerStopped = true
@@ -210,7 +214,7 @@ func TestProviderWorkerRelaysDurableOutboxToFakeProvider(t *testing.T) {
 	}
 	shutdownCtx, shutdownCancel := context.WithTimeout(
 		context.Background(),
-		providerTaskHarnessTimeout,
+		providerProcessHarnessTimeout,
 	)
 	defer shutdownCancel()
 	if err := fakeProviderService.Shutdown(shutdownCtx); err != nil {
@@ -251,6 +255,196 @@ func TestProviderWorkerRelaysDurableOutboxToFakeProvider(t *testing.T) {
 	}
 }
 
+func TestProviderTaskMissingImmutableRecordIsPermanentAndDoesNotCallProvider(t *testing.T) {
+	fixture := openProviderTaskFixture(t)
+	seedProviderTaskImmutableRecords(t, fixture)
+	if _, err := fixture.database.Exec(fixture.ctx, `
+		DELETE FROM verification_artifacts
+		WHERE verification_session_id = $1 AND kind = 'biometric_capture'
+	`, fixture.sessionID); err != nil {
+		t.Fatalf("remove required immutable record: %v", err)
+	}
+
+	payload, err := json.Marshal(map[string]uuid.UUID{"sessionId": fixture.sessionID})
+	if err != nil {
+		t.Fatalf("marshal task payload: %v", err)
+	}
+	err = newFirstProviderTaskHandler(t, fixture).ProcessTask(
+		fixture.ctx,
+		asynq.NewTask("provider:submit", payload),
+	)
+	if !errors.Is(err, providersubmission.ErrImmutableRecordsMissing) || !errors.Is(err, asynq.SkipRetry) {
+		t.Fatalf("expected permanent missing-record error, got %v", err)
+	}
+	if got := fixture.provider.Count(); got != 0 {
+		t.Fatalf("provider must not be called for incomplete records, got %d requests", got)
+	}
+}
+
+func TestProviderTaskRepeatedExecutionKeepsStableIdempotencyKey(t *testing.T) {
+	fixture := openProviderTaskFixture(t)
+	seedProviderTaskImmutableRecords(t, fixture)
+	payload, err := json.Marshal(map[string]uuid.UUID{"sessionId": fixture.sessionID})
+	if err != nil {
+		t.Fatalf("marshal task payload: %v", err)
+	}
+	task := asynq.NewTask("provider:submit", payload)
+	handler := newFirstProviderTaskHandler(t, fixture)
+
+	for attempt := 1; attempt <= 2; attempt++ {
+		if err := handler.ProcessTask(fixture.ctx, task); err != nil {
+			t.Fatalf("provider task attempt %d: %v", attempt, err)
+		}
+		request, err := fixture.provider.Next(fixture.ctx)
+		if err != nil {
+			t.Fatalf("read provider request %d: %v", attempt, err)
+		}
+		if got := request.Header.Get("Idempotency-Key"); got != fixture.sessionID.String() {
+			t.Fatalf("attempt %d key = %q, want %q", attempt, got, fixture.sessionID)
+		}
+	}
+}
+
+func TestProviderTaskExhaustsAfterExactlyTenAttemptsWithoutChangingSession(t *testing.T) {
+	fixture := openProviderTaskFixture(t)
+	seedProviderTaskImmutableRecords(t, fixture)
+
+	var providerMu sync.Mutex
+	var idempotencyKeys []string
+	providerAttempted := make(chan struct{}, queue.MaxProviderRetries+1)
+	failingProvider := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		providerMu.Lock()
+		idempotencyKeys = append(idempotencyKeys, request.Header.Get("Idempotency-Key"))
+		providerMu.Unlock()
+		providerAttempted <- struct{}{}
+		writer.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer failingProvider.Close()
+	fixture.provider.server.Close()
+	fixture.provider.server = failingProvider
+
+	handler := newFirstProviderTaskHandler(t, fixture)
+	worker := asynq.NewServer(
+		asynq.RedisClientOpt{Addr: fixture.redisAddress},
+		asynq.Config{
+			Concurrency:              1,
+			TaskCheckInterval:        10 * time.Millisecond,
+			DelayedTaskCheckInterval: 10 * time.Millisecond,
+			RetryDelayFunc: func(int, error, *asynq.Task) time.Duration {
+				return 0
+			},
+		},
+	)
+	mux := asynq.NewServeMux()
+	mux.Handle("provider:submit", handler)
+	if err := worker.Start(mux); err != nil {
+		t.Fatalf("start exhaustion worker: %v", err)
+	}
+	t.Cleanup(worker.Shutdown)
+	enqueueFirstProviderTask(t, fixture)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	for attempt := 1; attempt <= queue.MaxProviderRetries+1; attempt++ {
+		select {
+		case <-providerAttempted:
+		case <-ctx.Done():
+			t.Fatalf("waiting for provider attempt %d: %v", attempt, ctx.Err())
+		}
+	}
+
+	inspector := asynq.NewInspector(asynq.RedisClientOpt{Addr: fixture.redisAddress})
+	defer inspector.Close()
+	for {
+		archived, err := inspector.ListArchivedTasks("default", asynq.PageSize(20))
+		if err != nil {
+			t.Fatalf("inspect exhausted task: %v", err)
+		}
+		if len(archived) == 1 {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatalf("task was not archived after retry exhaustion: %v", ctx.Err())
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+
+	providerMu.Lock()
+	gotKeys := append([]string(nil), idempotencyKeys...)
+	providerMu.Unlock()
+	if len(gotKeys) != queue.MaxProviderRetries+1 {
+		t.Fatalf("provider attempts = %d, want exactly %d", len(gotKeys), queue.MaxProviderRetries+1)
+	}
+	for attempt, key := range gotKeys {
+		if key != fixture.sessionID.String() {
+			t.Fatalf("attempt %d key = %q, want %q", attempt+1, key, fixture.sessionID)
+		}
+	}
+
+	assertProviderSessionStillPendingWithoutVerdict(t, fixture)
+}
+
+func TestProviderWorkerRestartRecoversActiveTaskWithStableIdempotencyKey(t *testing.T) {
+	fixture := openProviderTaskFixture(t)
+	seedProviderTaskImmutableRecords(t, fixture)
+
+	firstAttemptStarted := make(chan struct{})
+	releaseFirstAttempt := make(chan struct{})
+	handler := &recoverActiveTaskHandler{
+		next:         newFirstProviderTaskHandler(t, fixture),
+		firstStarted: firstAttemptStarted,
+		releaseFirst: releaseFirstAttempt,
+	}
+	newWorker := func(shutdownTimeout time.Duration) *asynq.Server {
+		return asynq.NewServer(
+			asynq.RedisClientOpt{Addr: fixture.redisAddress},
+			asynq.Config{
+				Concurrency:              1,
+				ShutdownTimeout:          shutdownTimeout,
+				TaskCheckInterval:        10 * time.Millisecond,
+				DelayedTaskCheckInterval: 10 * time.Millisecond,
+				RetryDelayFunc:           queue.ProviderRetryDelay,
+			},
+		)
+	}
+	startWorker := func(worker *asynq.Server) {
+		t.Helper()
+		mux := asynq.NewServeMux()
+		mux.Handle("provider:submit", handler)
+		if err := worker.Start(mux); err != nil {
+			t.Fatalf("start provider worker: %v", err)
+		}
+	}
+
+	firstWorker := newWorker(50 * time.Millisecond)
+	startWorker(firstWorker)
+	enqueueFirstProviderTask(t, fixture)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	select {
+	case <-firstAttemptStarted:
+	case <-ctx.Done():
+		firstWorker.Shutdown()
+		t.Fatalf("first active provider attempt did not start: %v", ctx.Err())
+	}
+	firstWorker.Shutdown()
+	close(releaseFirstAttempt)
+
+	secondWorker := newWorker(time.Second)
+	startWorker(secondWorker)
+	t.Cleanup(secondWorker.Shutdown)
+	request, err := fixture.provider.Next(ctx)
+	if err != nil {
+		t.Fatalf("replacement worker did not recover active task: %v", err)
+	}
+	if key := request.Header.Get("Idempotency-Key"); key != fixture.sessionID.String() {
+		t.Fatalf("recovered task key = %q, want %q", key, fixture.sessionID)
+	}
+	assertProviderSessionStillPendingWithoutVerdict(t, fixture)
+}
+
 type providerTaskFixture struct {
 	ctx             context.Context
 	databaseURL     string
@@ -262,6 +456,27 @@ type providerTaskFixture struct {
 	now             time.Time
 	identityIntent  uuid.UUID
 	biometricIntent uuid.UUID
+}
+
+type recoverActiveTaskHandler struct {
+	mu           sync.Mutex
+	attempts     int
+	next         asynq.Handler
+	firstStarted chan struct{}
+	releaseFirst chan struct{}
+}
+
+func (h *recoverActiveTaskHandler) ProcessTask(ctx context.Context, task *asynq.Task) error {
+	h.mu.Lock()
+	h.attempts++
+	attempt := h.attempts
+	h.mu.Unlock()
+	if attempt == 1 {
+		close(h.firstStarted)
+		<-h.releaseFirst
+		return nil
+	}
+	return h.next.ProcessTask(ctx, task)
 }
 
 func openProviderTaskFixture(t *testing.T) providerTaskFixture {
@@ -463,6 +678,12 @@ func newProviderSubmissionRecorder(t *testing.T) *providerSubmissionRecorder {
 
 func (r *providerSubmissionRecorder) URL() string { return r.server.URL }
 
+func (r *providerSubmissionRecorder) Count() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.requests)
+}
+
 func (r *providerSubmissionRecorder) Next(ctx context.Context) (recordedProviderSubmission, error) {
 	for {
 		r.mu.Lock()
@@ -499,5 +720,29 @@ func assertExactProviderTaskRequest(t *testing.T, got recordedProviderSubmission
 	)
 	if !bytes.Equal(got.Body, []byte(want)) {
 		t.Fatalf("provider body = %s, want exact %s", got.Body, want)
+	}
+}
+
+func assertProviderSessionStillPendingWithoutVerdict(t *testing.T, fixture providerTaskFixture) {
+	t.Helper()
+
+	var status string
+	var verdictEvents int
+	if err := fixture.database.QueryRow(fixture.ctx, `
+		SELECT
+			vs.status,
+			(
+				SELECT count(*)
+				FROM session_events
+				WHERE session_id = vs.id
+				  AND event_type IN ('verification_passed', 'verification_failed')
+			)
+		FROM verification_sessions vs
+		WHERE vs.id = $1
+	`, fixture.sessionID).Scan(&status, &verdictEvents); err != nil {
+		t.Fatalf("inspect session after provider attempts: %v", err)
+	}
+	if status != "verification_pending" || verdictEvents != 0 {
+		t.Fatalf("provider attempts changed session: status=%s verdict-events=%d", status, verdictEvents)
 	}
 }
