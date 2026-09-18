@@ -1,7 +1,7 @@
 # Issue 010 Collaboration Plan
 
-Status: disetujui pada 2026-09-16; Checkpoint 1 aktif dan menunggu scaffold agent
-sebelum Bagian user dimulai.
+Status: disetujui pada 2026-09-16; Checkpoint 1 aktif dan scaffold agent RED sudah
+siap untuk Bagian user.
 
 Dokumen ini membagi operability MVP menjadi delapan checkpoint belajar. Setiap
 checkpoint menghasilkan satu perilaku yang dapat diamati dan memiliki `Bagian user`,

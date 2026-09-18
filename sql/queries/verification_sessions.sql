@@ -23,3 +23,8 @@ SELECT id, status, resume_token_hash, expires_at, created_at, updated_at, verifi
 FROM verification_sessions
 WHERE id = $1
 FOR UPDATE;
+
+-- name: ExpireSessionByID :execrows
+update verification_sessions
+set status = 'expired', updated_at = sqlc.arg(updated_at)
+where id = sqlc.arg(id) and status not in ('verified', 'rejected', 'expired') and status = sqlc.arg(current_state);

@@ -47,6 +47,26 @@ func (q *Queries) CreateVerificationSession(ctx context.Context, arg CreateVerif
 	return i, err
 }
 
+const expireSessionByID = `-- name: ExpireSessionByID :execrows
+update verification_sessions
+set status = 'expired', updated_at = $1
+where id = $2 and status not in ('verified', 'rejected', 'expired') and status = $3
+`
+
+type ExpireSessionByIDParams struct {
+	UpdatedAt    time.Time `json:"updated_at"`
+	ID           uuid.UUID `json:"id"`
+	CurrentState string    `json:"current_state"`
+}
+
+func (q *Queries) ExpireSessionByID(ctx context.Context, arg ExpireSessionByIDParams) (int64, error) {
+	result, err := q.db.Exec(ctx, expireSessionByID, arg.UpdatedAt, arg.ID, arg.CurrentState)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getAuthorizedVerificationSession = `-- name: GetAuthorizedVerificationSession :one
 SELECT id, status, resume_token_hash, expires_at, created_at, updated_at
 FROM verification_sessions

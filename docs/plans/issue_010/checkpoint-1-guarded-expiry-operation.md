@@ -1,7 +1,7 @@
 # Checkpoint 1 — Guarded Expiry Operation
 
-Status: aktif; menunggu scaffold agent, lalu Bagian user harus berhenti pada gate
-`[review]`.
+Status: aktif; scaffold agent RED siap pada 2026-09-16, lalu Bagian user harus
+berhenti pada gate `[review]`.
 
 ## Tujuan
 
@@ -49,6 +49,38 @@ operation tidak boleh diam-diam kembali memakai applicant `expires_at`.
 
 Nama package dapat menyesuaikan domain language yang muncul dari tracer. Jangan
 membuat generic unit-of-work framework.
+
+## Scaffold agent sebelum Bagian user
+
+- `internal/application/expiry/service_test.go` membekukan satu fixed-clock
+  application behavior untuk session `verification_pending` tepat pada
+  `verification_deadline_at`; applicant `expires_at` yang lebih lama mencerminkan
+  timeline durable, sedangkan proof no-fallback tetap sibling Bagian agent setelah
+  review;
+- `tests/integration/expiry_postgres_test.go` menyediakan fixture disposable
+  PostgreSQL untuk dua caller serentak terhadap session `created` tepat pada
+  `expires_at`, lalu mengassert satu changed result, satu durable state `expired`,
+  dan satu safe event `expire` pada application time;
+- `internal/application/expiry/doc.go` hanya membuka package boundary dan tidak
+  mengisi service, port, result, SQL, atau adapter production milik user.
+
+Mulai dari RED application slice:
+
+```sh
+GOCACHE=/tmp/lawang-go-build go test ./internal/application/expiry \
+  -run '^TestExpirePendingSessionAtItsProviderDeadline$' -count=1
+```
+
+Expected RED awal adalah `undefined: expiry.NewService`, `expiry.Input`, dan
+`expiry.Transaction`. Setelah application tracer GREEN, jalankan tracer PostgreSQL:
+
+```sh
+GOCACHE=/tmp/lawang-go-build go test ./tests/integration \
+  -run '^TestConcurrentGuardedExpiryCommitsOneStateAndOneEvent$' -count=1 -v
+```
+
+Expected RED PostgreSQL juga menunggu `postgres.NewExpiryTransactions`; jangan
+mengubah assertion menjadi raw-SQL ACT untuk melewati application/adapter boundary.
 
 ## Bagian user
 
