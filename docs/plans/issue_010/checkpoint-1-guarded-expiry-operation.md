@@ -1,7 +1,7 @@
 # Checkpoint 1 — Guarded Expiry Operation
 
-Status: aktif; scaffold agent RED siap pada 2026-09-16, lalu Bagian user harus
-berhenti pada gate `[review]`.
+Status: selesai pada 2026-09-19; Bagian user direview dan lulus, seluruh sibling
+Bagian agent serta focused quality gate GREEN.
 
 ## Tujuan
 
@@ -146,7 +146,18 @@ Agent memeriksa:
 - expired replay menjadi no-op, sedangkan verified/rejected tetap terminal;
 - generated SQLC hanya berasal dari handwritten query.
 
-## Bagian agent
+## Hasil review gate
+
+Bagian user lulus setelah guarded update memakai locked current state dan application
+time, query membandingkan exact durable state, nullable provider deadline dipetakan
+tanpa panic, stale affected-row menjadi bounded outcome, dan success baru dikembalikan
+setelah commit. Application tracer serta real PostgreSQL concurrency tracer GREEN.
+
+Implementation dipindahkan dari package-only `doc.go` ke `service.go` saat refactor
+agent tanpa mengubah behavior. Tidak ada HTTP, Asynq, scheduled scan, atau runtime
+wiring Checkpoint 2 yang ditambahkan.
+
+## Bagian agent — selesai
 
 Setelah gate `[review]` lulus, agent menutup satu behavior per RED → GREEN:
 
@@ -158,8 +169,47 @@ Setelah gate `[review]` lulus, agent menutup satu behavior per RED → GREEN:
 6. repeated expiry, verified, serta rejected calls tidak menambah event;
 7. focused race detector, SQLC diff, migration validation, dan `git diff --check`.
 
+Coverage yang ditambahkan:
+
+- applicant-stage dan pending-provider not-due memakai applicable deadline masing-
+  masing tanpa fallback;
+- pending-provider deadline `NULL` gagal aman pada application fake dan PostgreSQL
+  nyata tanpa write atau panic;
+- zero-row guarded update menjadi `ErrSessionTransitionStale` tanpa event;
+- forced guarded-update dan event-append errors mengembalikan result kosong serta
+  rollback seluruh effect pada application transaction;
+- event append failure me-rollback guarded state update dan timestamp di PostgreSQL;
+- commit failure mengembalikan result kosong dan tidak mempublikasikan effect;
+- expired replay menjadi no-op, sedangkan verified/rejected tetap terminal tanpa
+  event tambahan;
+- existing two-caller PostgreSQL tracer tetap menghasilkan satu changed result, satu
+  durable state `expired`, dan satu safe event `expire`.
+
+Focused evidence pada 2026-09-19:
+
+```text
+GOCACHE=/tmp/lawang-go-build go test -race ./internal/application/expiry -count=1 -v
+PASS
+ok github.com/santosidauruk/lawang/internal/application/expiry 1.903s
+
+GOCACHE=/tmp/lawang-go-build GOFLAGS=-timeout=20m \
+  go test -race ./tests/integration -run 'Expiry' -count=1 -v
+PASS
+ok github.com/santosidauruk/lawang/tests/integration 26.859s
+```
+
+Gate tambahan GREEN:
+
+- `go test -race ./internal/application/expiry ./internal/adapter/postgres -count=1`;
+- scoped `go vet` dan bundled `./bin/staticcheck 2026.1`;
+- `make sqlc-diff` dan `make migration-validate`;
+- focused `gofmt -l` kosong dan `git diff --check` bersih.
+
+Full repository quality tetap mengikuti keputusan plan dan dijalankan pada
+Checkpoint 8, bukan diperluas diam-diam pada checkpoint ini.
+
 ## Stop point
 
-Checkpoint selesai ketika focused application/PostgreSQL suites GREEN dan review
-ownership lulus. Jangan menyambungkan HTTP, Asynq, atau scheduled scan sebelum
-Checkpoint 2 dimulai.
+Checkpoint selesai: focused application/PostgreSQL suites GREEN dan review ownership
+lulus. Jangan menyambungkan HTTP, Asynq, atau scheduled scan sebelum Checkpoint 2
+dimulai.
