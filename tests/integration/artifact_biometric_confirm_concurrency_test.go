@@ -60,8 +60,7 @@ func TestConcurrentBiometricPostgresConfirmReturnsRecordedSuccessAndRunsExternal
 		objectStorage,
 		extractor,
 		session.NewProductionCryptoTokens(),
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, nil)
 
 	// ACT — release two ready callers on one start edge. The first HeadObject remains
 	// blocked until both coordinator calls hold distinct pool connections, which makes

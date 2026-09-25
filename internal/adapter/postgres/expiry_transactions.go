@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/santosidauruk/lawang/internal/adapter/postgres/sqlc"
 	"github.com/santosidauruk/lawang/internal/application/expiry"
 	"github.com/santosidauruk/lawang/internal/application/session"
@@ -102,4 +103,14 @@ func (t *expiryTransaction) GuardExpiry(ctx context.Context, sessionID uuid.UUID
 
 func (t *expiryTransaction) AppendEvent(ctx context.Context, event session.AppendEventParams) error {
 	return t.events.AppendEvent(ctx, event)
+}
+
+func (t *ExpiryTransactions) FindDueSessionIDs(ctx context.Context, deadline time.Time, batchSize int) ([]uuid.UUID, error) {
+	return t.queries.GetDueSessionIDs(ctx, sqlc.GetDueSessionIDsParams{
+		Deadline: pgtype.Timestamptz{
+			Time:  deadline,
+			Valid: true,
+		},
+		BatchSize: int32(batchSize),
+	})
 }

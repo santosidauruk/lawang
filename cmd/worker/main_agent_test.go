@@ -29,6 +29,39 @@ type taskServerStub struct {
 	stopped  bool
 }
 
+type expirySchedulerStub struct {
+	mu      sync.Mutex
+	started bool
+	stopped bool
+}
+
+func (s *expirySchedulerStub) Start() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.started = true
+	return nil
+}
+
+func (s *expirySchedulerStub) Shutdown() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.stopped = true
+}
+
+type expiryEnqueuerStub struct {
+	mu       sync.Mutex
+	enqueued bool
+}
+
+func (s *expiryEnqueuerStub) EnqueueImmediate(context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.enqueued = true
+	return nil
+}
+
+func (*expiryEnqueuerStub) Close() error { return nil }
+
 func (s *taskServerStub) Start() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -48,6 +81,8 @@ func TestServeWorkerRunsRelayAndStopsServerOnCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	relayRan := make(chan struct{}, 1)
 	server := &taskServerStub{}
+	scheduler := &expirySchedulerStub{}
+	enqueuer := &expiryEnqueuerStub{}
 	done := make(chan error, 1)
 	go func() {
 		done <- serveWorker(
@@ -55,6 +90,8 @@ func TestServeWorkerRunsRelayAndStopsServerOnCancellation(t *testing.T) {
 			relayRunnerStub{run: relayRan},
 			server,
 			time.Hour,
+			scheduler,
+			enqueuer,
 			slog.New(slog.NewTextHandler(io.Discard, nil)),
 		)
 	}()
@@ -80,6 +117,18 @@ func TestServeWorkerRunsRelayAndStopsServerOnCancellation(t *testing.T) {
 	if !server.started || !server.stopped {
 		t.Fatalf("expected server start and shutdown, got started=%t stopped=%t", server.started, server.stopped)
 	}
+
+	scheduler.mu.Lock()
+	defer scheduler.mu.Unlock()
+	if !scheduler.started || !scheduler.stopped {
+		t.Fatalf("expected scheduler start and shutdown, got started=%t stopped=%t", scheduler.started, scheduler.stopped)
+	}
+
+	enqueuer.mu.Lock()
+	defer enqueuer.mu.Unlock()
+	if !enqueuer.enqueued {
+		t.Fatal("expected one immediate expiry enqueue before the worker loop")
+	}
 }
 
 func TestServeWorkerReturnsServerStartFailureWithoutShutdown(t *testing.T) {
@@ -87,11 +136,15 @@ func TestServeWorkerReturnsServerStartFailureWithoutShutdown(t *testing.T) {
 
 	startErr := errors.New("redis unavailable")
 	server := &taskServerStub{startErr: startErr}
+	scheduler := &expirySchedulerStub{}
+	enqueuer := &expiryEnqueuerStub{}
 	err := serveWorker(
 		context.Background(),
 		relayRunnerStub{run: make(chan struct{}, 1)},
 		server,
 		time.Hour,
+		scheduler,
+		enqueuer,
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 	)
 	if !errors.Is(err, startErr) {

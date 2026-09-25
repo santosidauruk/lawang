@@ -57,8 +57,7 @@ func TestBiometricPostgresConfirmRollsBackWhenEventWriteFails(t *testing.T) {
 		}},
 		&biometricPostgresFailFastExtractor{t: t},
 		session.NewProductionCryptoTokens(),
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, nil)
 
 	got, err := service.Confirm(
 		ctx,
@@ -170,8 +169,7 @@ func TestBiometricPostgresCreateSupersedesOnlyPendingBiometricIntent(t *testing.
 		postgresArtifacts,
 		presigner,
 		session.NewProductionCryptoTokens(),
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, nil)
 
 	created, err := service.Create(
 		ctx,
@@ -389,8 +387,7 @@ func TestBiometricPostgresConfirmRejectsStaleRereadWithoutPartialWrites(t *testi
 				objectStorage,
 				&biometricPostgresFailFastExtractor{t: t},
 				session.NewProductionCryptoTokens(),
-				fixedClock{now: now},
-			)
+				fixedClock{now: now}, nil)
 
 			got, err := service.Confirm(
 				ctx,

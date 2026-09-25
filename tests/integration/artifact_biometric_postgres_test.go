@@ -199,8 +199,7 @@ func TestBiometricConfirmPersistsPostgresOutcomeAtomically(t *testing.T) {
 		objectStorage,
 		extractor,
 		tokens,
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, nil)
 
 	// ACT
 	got, err := service.Confirm(ctx, sessionID, rawToken, biometricIntentID)

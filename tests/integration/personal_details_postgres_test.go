@@ -77,8 +77,7 @@ func TestPostgresPersonalDetailsSubmitCommitsDetailsStateAndSafeEvent(t *testing
 	service := personaldetails.NewService(
 		postgresadapter.NewPersonalDetailsTransactions(database),
 		tokens,
-		integrationClock{now: now},
-	)
+		integrationClock{now: now}, nil)
 
 	got, err := service.Submit(ctx, stored.ID, "raw-resume-token", personaldetails.Input{
 		FullName: "Alice Applicant", DateOfBirth: time.Date(1990, 1, 2, 0, 0, 0, 0, time.UTC),
@@ -191,8 +190,8 @@ func TestConcurrentIdenticalPersonalDetailsSubmissionsConverge(t *testing.T) {
 			service := personaldetails.NewService(
 				postgresadapter.NewPersonalDetailsTransactions(connection),
 				tokens,
-				integrationClock{now: now},
-			)
+				integrationClock{now: now}, nil)
+
 			ready.Done()
 			<-start
 			_, submitErr := service.Submit(ctx, stored.ID, "concurrent-identical-token", input)
@@ -243,8 +242,8 @@ func TestConcurrentDifferentPersonalDetailsSubmissionsProduceOneConflict(t *test
 		input := inputs[index]
 		go func(connection *pgx.Conn) {
 			service := personaldetails.NewService(
-				postgresadapter.NewPersonalDetailsTransactions(connection), tokens, integrationClock{now: now},
-			)
+				postgresadapter.NewPersonalDetailsTransactions(connection), tokens, integrationClock{now: now}, nil)
+
 			ready.Done()
 			<-start
 			_, submitErr := service.Submit(ctx, stored.ID, "concurrent-different-token", input)
@@ -290,8 +289,8 @@ func TestApplicantSubmitsPersonalDetailsOverHTTPWithPostgreSQL(t *testing.T) {
 	now := time.Date(2026, 7, 16, 10, 0, 0, 0, time.UTC)
 	tokens := session.NewProductionCryptoTokens()
 	clock := integrationClock{now: now}
-	sessions := session.NewService(postgresadapter.NewSessionStore(database), tokens, clock)
-	details := personaldetails.NewService(postgresadapter.NewPersonalDetailsTransactions(database), tokens, clock)
+	sessions := session.NewService(postgresadapter.NewSessionStore(database), tokens, clock, nil)
+	details := personaldetails.NewService(postgresadapter.NewPersonalDetailsTransactions(database), tokens, clock, nil)
 	handler := httpapi.NewHandler(sessions, details, nil, nil, nil, nil)
 
 	createRequest := httptest.NewRequest(http.MethodPost, "/verification-sessions", nil)

@@ -1,7 +1,7 @@
 # Issue 010 Collaboration Plan
 
 Status: disetujui pada 2026-09-16; Checkpoint 1 selesai pada 2026-09-19 dan
-Checkpoint 2 belum dimulai.
+Checkpoint 2 aktif dengan Bagian user poin 1-6 sudah melewati focused review.
 
 Dokumen ini membagi operability MVP menjadi delapan checkpoint belajar. Setiap
 checkpoint menghasilkan satu perilaku yang dapat diamati dan memiliki `Bagian user`,
@@ -179,6 +179,17 @@ yang tertulis di panduan masing-masing.
     memperbesar outbox atau task payload dengan data sensitif.
 14. Fresh-clone proof membutuhkan seluruh checkpoint sebelumnya sudah berada dalam
     commit; agent tidak membuat commit tanpa instruksi user.
+15. Composition root memiliki dependency runtime per process: `cmd/api` membuat satu
+    expiry service untuk seluruh lazy applicant services, sedangkan `cmd/worker`
+    membuat expiry service dan sweep service terpisah untuk process worker.
+16. Satu worker process memakai satu shared sweep limiter berkapasitas 10 untuk
+    seluruh overlapping expiry task. Replica worker lain memiliki limitnya sendiri;
+    tidak ada distributed singleton, distributed sweep lock, atau Asynq `Unique`
+    sebagai correctness dependency.
+17. Worker shutdown selalu mengikuti arah masuknya pekerjaan: hentikan seluruh
+    scheduler, hentikan relay ticker, drain active Asynq handlers secara bounded,
+    lalu tutup queue clients dan PostgreSQL pool. Checkpoint scheduled berikutnya
+    memperluas lifecycle yang sama dan tidak membuat task server kedua.
 
 ## Scope antark-checkpoint
 

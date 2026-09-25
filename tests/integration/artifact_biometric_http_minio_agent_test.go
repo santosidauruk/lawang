@@ -365,8 +365,8 @@ func (h biometricHTTPMinIOAgentHarness) confirmHandler(
 		storage,
 		&biometricAgentFailFastExtractor{t: t},
 		session.NewProductionCryptoTokens(),
-		fixedClock{now: h.now},
-	)
+		fixedClock{now: h.now}, nil)
+
 	return httpapi.NewHandler(nil, nil, service, nil, nil, nil)
 }
 

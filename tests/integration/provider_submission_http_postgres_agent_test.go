@@ -27,8 +27,8 @@ func TestConcurrentProviderSubmissionsOverHTTPConvergeToOneDurableOutcome(t *tes
 	service := providersubmission.NewService(
 		postgresadapter.NewProviderSubmissionTransactions(pool),
 		session.NewProductionCryptoTokens(),
-		fixedClock{now: fixture.now},
-	)
+		fixedClock{now: fixture.now}, nil)
+
 	handler := httpapi.NewHandler(nil, nil, nil, nil, nil, service)
 
 	type result struct {

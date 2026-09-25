@@ -101,6 +101,47 @@ func (q *Queries) GetAuthorizedVerificationSession(ctx context.Context, arg GetA
 	return i, err
 }
 
+const getDueSessionIDs = `-- name: GetDueSessionIDs :many
+select id
+from verification_sessions
+where
+  ( status = 'verification_pending' and verification_deadline_at is not null and verification_deadline_at <= $1 )
+  or
+  ( status in ( 'created', 'personal_details_submitted', 'identity_document_uploaded', 'biometric_capture_uploaded') and expires_at <= $1 )
+order by
+  case
+    when status = 'verification_pending' then verification_deadline_at
+    else expires_at
+  end asc,
+  id asc
+limit $2
+`
+
+type GetDueSessionIDsParams struct {
+	Deadline  pgtype.Timestamptz `json:"deadline"`
+	BatchSize int32              `json:"batch_size"`
+}
+
+func (q *Queries) GetDueSessionIDs(ctx context.Context, arg GetDueSessionIDsParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, getDueSessionIDs, arg.Deadline, arg.BatchSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getVerificationSessionByID = `-- name: GetVerificationSessionByID :one
 SELECT id, status, resume_token_hash, expires_at, created_at, updated_at
 FROM verification_sessions

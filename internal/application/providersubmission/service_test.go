@@ -23,8 +23,7 @@ func TestSubmitFirstEligibleSessionReturnsPendingAndCommitsOneOutcome(t *testing
 	service := providersubmission.NewService(
 		transactions,
 		&stubTokenIssuer{hash: []byte("stored-token-hash"), equal: true},
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, nil)
 
 	got, err := service.Submit(context.Background(), sessionID, "raw-resume-token")
 	if err != nil {
@@ -75,8 +74,7 @@ func TestSubmitPendingSessionReturnsDurableReplayWithoutMutation(t *testing.T) {
 	service := providersubmission.NewService(
 		transactions,
 		&stubTokenIssuer{hash: []byte("stored-token-hash"), equal: true},
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, nil)
 
 	got, err := service.Submit(context.Background(), sessionID, "raw-resume-token")
 	if err != nil {

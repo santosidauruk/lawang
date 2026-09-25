@@ -6,9 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"log/slog"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
@@ -28,7 +25,6 @@ type providerSubmitPayload struct {
 	SessionID uuid.UUID `json:"sessionId"`
 }
 
-// [queue adapter] TODO: checkpoint 7 no 6
 type ProviderSubmissionTaskService interface {
 	SendToProvider(ctx context.Context, sessionID uuid.UUID) error
 }
@@ -64,46 +60,5 @@ func (h *ProviderSubmissionHandler) ProcessTask(ctx context.Context, task *asynq
 		return errors.Join(asynq.SkipRetry, err)
 	}
 
-	return err
-}
-
-func ensureTaskJSONEOF(decoder *json.Decoder) error {
-	var extra any
-	err := decoder.Decode(&extra)
-	if errors.Is(err, io.EOF) {
-		return nil
-	}
-	return errors.New("task payload has trailing JSON")
-}
-
-type safeTaskHandler struct {
-	next   asynq.Handler
-	logger *slog.Logger
-}
-
-func (h safeTaskHandler) ProcessTask(ctx context.Context, task *asynq.Task) error {
-	startedAt := time.Now()
-	err := h.next.ProcessTask(ctx, task)
-	taskID, _ := asynq.GetTaskID(ctx)
-	retryCount, _ := asynq.GetRetryCount(ctx)
-	maxRetry, _ := asynq.GetMaxRetry(ctx)
-	outcome := "success"
-
-	switch {
-	case errors.Is(err, asynq.SkipRetry):
-		outcome = "permanent_failure"
-	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
-		outcome = "cancelled"
-	case err != nil:
-		outcome = "retry"
-	}
-
-	h.logger.Info("provider task completed",
-		"task_id", taskID,
-		"task_type", task.Type(),
-		"attempt", retryCount+1,
-		"max_attempts", maxRetry+1,
-		"duration", time.Since(startedAt),
-		"outcome", outcome)
 	return err
 }

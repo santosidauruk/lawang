@@ -119,8 +119,7 @@ func TestPostgresArtifactConfirmPersistsAcceptedOutcomeAtomically(t *testing.T) 
 		objectStorage,
 		extraction,
 		tokens,
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, nil)
 
 	// ACT
 	// Call service.Confirm once through the public application interface.
@@ -380,8 +379,7 @@ func TestPostgresArtifactConfirmPersistsMismatchOutcomeAtomically(t *testing.T) 
 			nil,
 		),
 		session.NewProductionCryptoTokens(),
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, nil)
 
 	got, err := service.Confirm(
 		ctx,
@@ -562,8 +560,7 @@ func TestPostgresArtifactConfirmRollsBackAcceptedOutcomeWhenEventWriteFails(t *t
 			IdentityNumber: fixture.identityNumber,
 		}},
 		session.NewProductionCryptoTokens(),
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, nil)
 
 	got, err := service.Confirm(
 		ctx,
@@ -689,8 +686,7 @@ func TestPostgresCreateIdentityUploadIntentAtomicallySupersedesPendingIntent(t *
 		postgresArtifacts,
 		presigner,
 		tokens,
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, nil)
 
 	created, err := service.Create(ctx, sessionID, rawToken, "identity_document")
 
@@ -825,8 +821,7 @@ func TestConcurrentPostgresCreateIdentityUploadIntentLeavesOnePendingIntent(t *t
 		postgresArtifacts,
 		presigner,
 		tokens,
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, nil)
 
 	start := make(chan struct{})
 	results := make(chan artifact.CreatedUploadIntent, 2)

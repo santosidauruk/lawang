@@ -140,7 +140,7 @@ func TestConcurrentPostgresConfirmReturnsRecordedSuccessAndRunsExternalWorkOnce(
 		},
 	}
 
-	service := artifact.NewService(postgresArtifacts, confirmCoordinator, objectStorage, extraction, tokens, fixedClock{now: now})
+	service := artifact.NewService(postgresArtifacts, confirmCoordinator, objectStorage, extraction, tokens, fixedClock{now: now}, nil)
 
 	var ready sync.WaitGroup
 	var callers sync.WaitGroup
@@ -291,8 +291,7 @@ func TestPostgresConcurrentConfirmSecondCallerWaitsForSameAdvisoryLock(t *testin
 		storage,
 		extractor,
 		session.NewProductionCryptoTokens(),
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, nil)
 
 	results := make(chan confirmResult, 2)
 	callConfirm := func() {
@@ -364,8 +363,7 @@ func TestPostgresConfirmedReplayReturnsRecordedSuccessWithoutExternalWork(t *tes
 		storage,
 		extractor,
 		session.NewProductionCryptoTokens(),
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, nil)
 
 	first, err := service.Confirm(ctx, fixture.sessionID, fixture.rawToken, fixture.uploadIntentID)
 	if err != nil {
@@ -426,8 +424,7 @@ func TestPostgresValidationFailedReplayReturnsRecordedFailureWithoutExternalWork
 		storage,
 		extractor,
 		session.NewProductionCryptoTokens(),
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, nil)
 
 	_, firstErr := service.Confirm(ctx, fixture.sessionID, fixture.rawToken, fixture.uploadIntentID)
 	requireIdentityMismatchError(t, firstErr)
@@ -482,8 +479,7 @@ func TestConcurrentPostgresConfirmMismatchReturnsRecordedFailureAndRunsExternalW
 		storage,
 		extractor,
 		session.NewProductionCryptoTokens(),
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, nil)
 
 	start := make(chan struct{})
 	results := make(chan error, 2)
@@ -580,8 +576,7 @@ func TestPostgresConfirmExternalFailureReleasesLockForSuccessfulRetry(t *testing
 		storage,
 		extractor,
 		session.NewProductionCryptoTokens(),
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, nil)
 
 	_, firstErr := service.Confirm(ctx, fixture.sessionID, fixture.rawToken, fixture.uploadIntentID)
 	var artifactErr *artifact.Error
@@ -651,8 +646,7 @@ func TestPostgresConfirmCancellationWhileWaitingDoesNotLeakConnectionOrLock(t *t
 		storage,
 		extractor,
 		session.NewProductionCryptoTokens(),
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, nil)
 
 	firstResult := make(chan confirmResult, 1)
 	go func() {
@@ -754,8 +748,7 @@ func TestPostgresConcurrentConfirmDiscardsExternalResultWhenIntentIsSuperseded(t
 		storage,
 		extractor,
 		session.NewProductionCryptoTokens(),
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, nil)
 
 	results := make(chan error, 2)
 	callConfirm := func() {
@@ -834,8 +827,7 @@ func TestPostgresConcurrentConfirmDiscardsExternalResultWhenIntentExpires(t *tes
 		storage,
 		extractor,
 		session.NewProductionCryptoTokens(),
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, nil)
 
 	results := make(chan error, 2)
 	callConfirm := func() {
@@ -902,16 +894,15 @@ func TestPostgresCreateIdentityUploadIntentSupersedesInFlightConfirm(t *testing.
 		storage,
 		extractor,
 		session.NewProductionCryptoTokens(),
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, nil)
+
 	presigner := &artifactPostgresPresigner{url: "https://uploads.example.test/replacement"}
 	createService := artifact.NewUploadIntentService(
 		postgresArtifacts,
 		postgresArtifacts,
 		presigner,
 		session.NewProductionCryptoTokens(),
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, nil)
 
 	confirmResult := make(chan error, 1)
 	go func() {

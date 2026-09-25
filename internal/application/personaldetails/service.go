@@ -11,6 +11,8 @@ import (
 	"github.com/santosidauruk/lawang/internal/domain/verificationsession"
 )
 
+var errExpiryRequired = errors.New("expiry required")
+
 type Input struct {
 	FullName       string
 	DateOfBirth    time.Time
@@ -37,9 +39,10 @@ type Transactor interface {
 }
 
 type Service struct {
-	transactions Transactor
-	tokens       session.TokenIssuer
-	clock        session.Clock
+	transactions  Transactor
+	tokens        session.TokenIssuer
+	clock         session.Clock
+	expireSession session.ExpiryOperation
 }
 
 type ErrorCode string
@@ -58,8 +61,18 @@ type Error struct {
 
 func (e *Error) Error() string { return string(e.Code) }
 
-func NewService(transactions Transactor, tokens session.TokenIssuer, clock session.Clock) *Service {
-	return &Service{transactions: transactions, tokens: tokens, clock: clock}
+func NewService(
+	transactions Transactor,
+	tokens session.TokenIssuer,
+	clock session.Clock,
+	expireSession session.ExpiryOperation,
+) *Service {
+	return &Service{
+		transactions:  transactions,
+		tokens:        tokens,
+		clock:         clock,
+		expireSession: expireSession,
+	}
 }
 
 func (s *Service) Submit(
@@ -70,6 +83,7 @@ func (s *Service) Submit(
 ) (session.Summary, error) {
 	var summary session.Summary
 	err := s.transactions.WithinTransaction(ctx, func(tx Transaction) error {
+
 		stored, err := tx.LockSession(ctx, id)
 		if errors.Is(err, session.ErrSessionNotFound) {
 			return &session.Error{Code: session.CodeSessionNotFound}
@@ -82,7 +96,7 @@ func (s *Service) Submit(
 		}
 		now := s.clock.Now()
 		if !now.Before(stored.ExpiresAt) {
-			return &session.Error{Code: session.CodeSessionExpired}
+			return errExpiryRequired
 		}
 		existing, err := tx.LoadDetails(ctx, id)
 		if err != nil {
@@ -119,5 +133,11 @@ func (s *Service) Submit(
 		summary = session.Summary{ID: id, Status: next, ExpiresAt: stored.ExpiresAt}
 		return nil
 	})
+	if errors.Is(err, errExpiryRequired) {
+		if err := s.expireSession(ctx, id); err != nil {
+			return session.Summary{}, err
+		}
+		return session.Summary{}, &session.Error{Code: session.CodeSessionExpired}
+	}
 	return summary, err
 }

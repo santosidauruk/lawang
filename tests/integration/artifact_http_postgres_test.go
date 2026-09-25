@@ -77,16 +77,16 @@ func TestIdentityDocumentUploadAndConfirmOverHTTPWithPostgreSQL(t *testing.T) {
 		postgresArtifacts,
 		presigner,
 		tokens,
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, nil)
+
 	artifacts := artifact.NewService(
 		postgresArtifacts,
 		confirmCoordinator,
 		objectStorage,
 		extractor,
 		tokens,
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, nil)
+
 	handler := httpapi.NewHandler(nil, nil, artifacts, uploadIntents, nil, nil)
 
 	uploadRequest := httptest.NewRequest(
@@ -236,8 +236,8 @@ func TestIdentityDocumentUploadPutAndConfirmOverHTTPWithPostgreSQLAndMinIO(t *te
 		postgresArtifacts,
 		objectStorage,
 		tokens,
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, nil)
+
 	confirmCoordinator := postgresadapter.NewArtifactConfirmCoordinator(newArtifactConfirmAcquireFunc(pool))
 	artifacts := artifact.NewService(
 		postgresArtifacts,
@@ -245,8 +245,8 @@ func TestIdentityDocumentUploadPutAndConfirmOverHTTPWithPostgreSQLAndMinIO(t *te
 		objectStorage,
 		extractor,
 		tokens,
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, nil)
+
 	handler := httpapi.NewHandler(nil, nil, artifacts, uploadIntents, nil, nil)
 
 	uploadRequest := httptest.NewRequest(

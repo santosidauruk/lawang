@@ -39,11 +39,12 @@ type CreatedUploadIntent struct {
 }
 
 type UploadIntentService struct {
-	sessions     UploadIntentSessionReader
-	transactions UploadIntentTransactor
-	presigner    UploadPresigner
-	tokens       session.TokenIssuer
-	clock        session.Clock
+	sessions      UploadIntentSessionReader
+	transactions  UploadIntentTransactor
+	presigner     UploadPresigner
+	tokens        session.TokenIssuer
+	clock         session.Clock
+	expireSession session.ExpiryOperation
 }
 
 func NewUploadIntentService(
@@ -52,13 +53,15 @@ func NewUploadIntentService(
 	presigner UploadPresigner,
 	tokens session.TokenIssuer,
 	clock session.Clock,
+	expireSession session.ExpiryOperation,
 ) *UploadIntentService {
 	return &UploadIntentService{
-		sessions:     sessions,
-		transactions: transactions,
-		presigner:    presigner,
-		tokens:       tokens,
-		clock:        clock,
+		sessions:      sessions,
+		transactions:  transactions,
+		presigner:     presigner,
+		tokens:        tokens,
+		clock:         clock,
+		expireSession: expireSession,
 	}
 }
 
@@ -85,6 +88,9 @@ func (s *UploadIntentService) Create(
 
 	createdAt := s.clock.Now()
 	if !createdAt.Before(storedSession.ExpiresAt) {
+		if err := s.expireSession(ctx, sessionID); err != nil {
+			return CreatedUploadIntent{}, err
+		}
 		return CreatedUploadIntent{}, &session.Error{Code: session.CodeSessionExpired}
 	}
 

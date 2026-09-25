@@ -9,16 +9,18 @@ import (
 )
 
 type Server struct {
-	server  *asynq.Server
-	handler asynq.Handler
-	logger  *slog.Logger
+	server                *asynq.Server
+	providerSubmitHandler asynq.Handler
+	sessionExpiryHandler  asynq.Handler
+	logger                *slog.Logger
 }
 
-func NewProviderServer(
+func NewAsynqTaskServer(
 	config RedisConfig,
 	concurrency int,
 	shutdownTimeout time.Duration,
-	service ProviderSubmissionTaskService,
+	providerSubmitService ProviderSubmissionTaskService,
+	sessionExpiryService SessionExpiryTaskService,
 	logger *slog.Logger) *Server {
 	return &Server{
 		server: asynq.NewServer(redisClientOpt(config), asynq.Config{
@@ -27,8 +29,9 @@ func NewProviderServer(
 			RetryDelayFunc:  ProviderRetryDelay,
 			Logger:          safeAsynqLogger{logger: logger},
 		}),
-		handler: NewProviderSubmissionHandler(service),
-		logger:  logger,
+		providerSubmitHandler: NewProviderSubmissionHandler(providerSubmitService),
+		sessionExpiryHandler:  NewSessionExpiryHandler(sessionExpiryService),
+		logger:                logger,
 	}
 }
 func redisClientOpt(config RedisConfig) asynq.RedisClientOpt {
@@ -38,7 +41,11 @@ func redisClientOpt(config RedisConfig) asynq.RedisClientOpt {
 func (s *Server) Start() error {
 	mux := asynq.NewServeMux()
 	mux.Handle(outbox.TaskTypeProviderSubmit, safeTaskHandler{
-		next:   s.handler,
+		next:   s.providerSubmitHandler,
+		logger: s.logger,
+	})
+	mux.Handle(TaskTypeSessionExpiry, safeTaskHandler{
+		next:   s.sessionExpiryHandler,
 		logger: s.logger,
 	})
 	return s.server.Start(mux)

@@ -13,6 +13,7 @@ import (
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/google/uuid"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/santosidauruk/lawang/internal/adapter/deterministicextractor"
@@ -20,6 +21,7 @@ import (
 	postgresadapter "github.com/santosidauruk/lawang/internal/adapter/postgres"
 	"github.com/santosidauruk/lawang/internal/adapter/s3storage"
 	"github.com/santosidauruk/lawang/internal/application/artifact"
+	"github.com/santosidauruk/lawang/internal/application/expiry"
 	"github.com/santosidauruk/lawang/internal/application/personaldetails"
 	"github.com/santosidauruk/lawang/internal/application/providersubmission"
 	"github.com/santosidauruk/lawang/internal/application/providerverdict"
@@ -62,11 +64,23 @@ func run() int {
 		return 1
 	}
 
+	clock := systemClock{}
+	expiryTransactions := postgresadapter.NewExpiryTransactions(database)
+	expiryService := expiry.NewService(expiryTransactions, clock)
+	expiryOperation := func(ctx context.Context, sessionID uuid.UUID) error {
+		input := expiry.Input{
+			SessionID: sessionID,
+		}
+		if _, err := expiryService.Expire(ctx, input); err != nil {
+			return err
+		}
+		return nil
+	}
+
 	store := postgresadapter.NewSessionStore(database)
 	tokens := session.NewProductionCryptoTokens()
-	clock := systemClock{}
-	sessions := session.NewService(store, tokens, clock)
-	details := personaldetails.NewService(postgresadapter.NewPersonalDetailsTransactions(database), tokens, clock)
+	sessions := session.NewService(store, tokens, clock, expiryOperation)
+	details := personaldetails.NewService(postgresadapter.NewPersonalDetailsTransactions(database), tokens, clock, expiryOperation)
 
 	artifactStore := postgresadapter.NewArtifactTransactions(database)
 
@@ -103,9 +117,9 @@ func run() int {
 	acquireFunc := newAcquireFunc(database)
 	confirmCoordinator := postgresadapter.NewArtifactConfirmCoordinator(acquireFunc)
 	extractor := deterministicextractor.New(nil, nil)
-	artifactConfirm := artifact.NewService(artifactStore, confirmCoordinator, objectStorage, extractor, tokens, clock)
+	artifactConfirm := artifact.NewService(artifactStore, confirmCoordinator, objectStorage, extractor, tokens, clock, expiryOperation)
 
-	uploadIntentService := artifact.NewUploadIntentService(artifactStore, artifactStore, objectStorage, tokens, clock)
+	uploadIntentService := artifact.NewUploadIntentService(artifactStore, artifactStore, objectStorage, tokens, clock, expiryOperation)
 
 	verdictTransactor := postgresadapter.NewProviderVerdictTransactions(database)
 	providerVerdictService := providerverdict.NewProviderVerdictService(clock, verdictTransactor)
@@ -115,7 +129,7 @@ func run() int {
 	}
 
 	submissionTransactor := postgresadapter.NewProviderSubmissionTransactions(database)
-	providerSubmissionService := providersubmission.NewService(submissionTransactor, tokens, clock)
+	providerSubmissionService := providersubmission.NewService(submissionTransactor, tokens, clock, expiryOperation)
 	handler := httpapi.WithRequestLogging(httpapi.NewHandler(sessions, details, artifactConfirm, uploadIntentService, verifiedBody, providerSubmissionService), logger)
 	server := httpserver.New(cfg.HTTPAddress, handler)
 	logger.Info("API listening", "address", listener.Addr().String())

@@ -12,6 +12,7 @@ import (
 	"github.com/santosidauruk/lawang/internal/adapter/postgres"
 	"github.com/santosidauruk/lawang/internal/adapter/providerhttp"
 	queueadapter "github.com/santosidauruk/lawang/internal/adapter/queue"
+	"github.com/santosidauruk/lawang/internal/application/expiry"
 	"github.com/santosidauruk/lawang/internal/application/outbox"
 	"github.com/santosidauruk/lawang/internal/application/providersubmission"
 	"github.com/santosidauruk/lawang/internal/platform/config"
@@ -46,6 +47,7 @@ func run() int {
 		return 1
 	}
 
+	clock := systemClock{}
 	redisConfig := queueadapter.RedisConfig{
 		Address:  cfg.RedisAddress,
 		Password: cfg.RedisPassword,
@@ -55,7 +57,7 @@ func run() int {
 	defer publisher.Close()
 
 	outboxStore := postgres.NewOutboxStore(database)
-	relay := outbox.NewRelay(outboxStore, publisher, systemClock{}, cfg.OutboxClaimLease)
+	relay := outbox.NewRelay(outboxStore, publisher, clock, cfg.OutboxClaimLease)
 
 	provider, err := providerhttp.NewClient(cfg.ProviderBaseURL, cfg.ProviderTimeout)
 	if err != nil {
@@ -63,14 +65,28 @@ func run() int {
 		return 1
 	}
 	providerReader := postgres.NewProviderSubmissionReader(database)
-	taskService, err := providersubmission.NewTaskService(providerReader, provider, cfg.ProviderCallbackURL)
+	providerSubmitTaskService, err := providersubmission.NewTaskService(providerReader, provider, cfg.ProviderCallbackURL)
 	if err != nil {
 		logger.Error("provider task configuration failed")
 		return 1
 	}
 
-	providerServer := queueadapter.NewProviderServer(redisConfig, cfg.Concurrency, cfg.ShutdownTimeout, taskService, logger)
-	if err = serveWorker(ctx, relay, providerServer, cfg.RelayInterval, logger); err != nil {
+	expiryTransactions := postgres.NewExpiryTransactions(database)
+	expiryService := expiry.NewService(expiryTransactions, clock)
+
+	sweepService := expiry.NewSweepService(expiryTransactions, expiryService, clock, cfg.ExpirySweepBatchSize)
+	providerServer := queueadapter.NewAsynqTaskServer(redisConfig, cfg.Concurrency, cfg.ShutdownTimeout, providerSubmitTaskService, sweepService, logger)
+
+	scheduler, err := queueadapter.NewSessionExpiryScheduler(redisConfig, cfg.ExpirySweepInterval, logger)
+	if err != nil {
+		logger.Error("scheduler expiry configuration failed")
+		return 1
+	}
+
+	expEnqueuer := queueadapter.NewSessionExpiryEnqueuer(redisConfig)
+	defer expEnqueuer.Close()
+
+	if err = serveWorker(ctx, relay, providerServer, cfg.RelayInterval, scheduler, expEnqueuer, logger); err != nil {
 		logger.Error("worker stopped with error", "error", err)
 		return 1
 	}
@@ -82,19 +98,39 @@ type relayRunner interface {
 	RunOnce(context.Context) error
 }
 
-type taskServer interface {
+type providerSubmitServer interface {
 	Start() error
 	Shutdown()
 }
 
-func serveWorker(ctx context.Context, relay relayRunner, server taskServer, interval time.Duration, logger *slog.Logger) error {
-	if err := server.Start(); err != nil {
+type expiryScheduler interface {
+	Start() error
+	Shutdown()
+}
+
+type expiryEnqueuer interface {
+	EnqueueImmediate(ctx context.Context) error
+	Close() error
+}
+
+func serveWorker(ctx context.Context, relay relayRunner, taskServer providerSubmitServer, relayInterval time.Duration, expScheduler expiryScheduler, expEnqueuer expiryEnqueuer, logger *slog.Logger) error {
+	if err := taskServer.Start(); err != nil {
 		return err
 	}
-	defer server.Shutdown()
+	defer taskServer.Shutdown()
 
-	ticker := time.NewTicker(interval)
+	if err := expEnqueuer.EnqueueImmediate(ctx); err != nil {
+		return err
+	}
+
+	if err := expScheduler.Start(); err != nil {
+		return err
+	}
+
+	ticker := time.NewTicker(relayInterval)
+
 	defer ticker.Stop()
+	defer expScheduler.Shutdown()
 
 	for {
 		if err := relay.RunOnce(ctx); err != nil && ctx.Err() == nil {

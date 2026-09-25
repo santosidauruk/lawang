@@ -54,8 +54,7 @@ func TestCreateBiometricUploadIntentPresignsBeforeAtomicReplacement(t *testing.T
 		transactions,
 		presigner,
 		tokens,
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, nil)
 
 	created, err := service.Create(
 		ctx,
@@ -147,8 +146,7 @@ func TestCreateBiometricUploadIntentRejectsWrongInitialSessionState(t *testing.T
 		transactions,
 		presigner,
 		tokens,
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, nil)
 
 	created, err := service.Create(
 		context.Background(),
@@ -205,8 +203,7 @@ func TestCreateBiometricUploadIntentStaleRereadDiscardsURLAndWritesNothing(t *te
 		transactions,
 		presigner,
 		tokens,
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, nil)
 
 	created, err := service.Create(
 		context.Background(),
@@ -267,8 +264,7 @@ func TestCreateBiometricUploadIntentPresignFailureWritesNothing(t *testing.T) {
 		transactions,
 		presigner,
 		tokens,
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, nil)
 
 	created, err := service.Create(
 		context.Background(),
@@ -348,8 +344,7 @@ func TestCreateBiometricUploadIntentSupersedesOnlyPendingBiometricHistory(t *tes
 		transactions,
 		presigner,
 		tokens,
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, nil)
 
 	_, err := service.Create(
 		context.Background(),
@@ -410,8 +405,7 @@ func TestCreateBiometricUploadIntentRepeatedCreateKeepsOnlyLatestPendingEffect(t
 		transactions,
 		presigner,
 		tokens,
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, nil)
 
 	first, err := service.Create(
 		context.Background(),
@@ -502,8 +496,7 @@ func TestCreateUploadIntentIsolatesIdentityAndBiometricKindsAndKeys(t *testing.T
 			transactions,
 			presigner,
 			tokens,
-			fixedClock{now: now},
-		)
+			fixedClock{now: now}, nil)
 
 		created, err := service.Create(
 			context.Background(),
@@ -570,8 +563,7 @@ func TestCreateUploadIntentRejectsInvalidKindBeforePresignOrTransaction(t *testi
 		transactions,
 		presigner,
 		session.NewProductionCryptoTokens(),
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, nil)
 
 	created, err := service.Create(
 		context.Background(),
@@ -641,8 +633,7 @@ func TestCreateIdentityUploadIntentPresignsBeforeAtomicReplacement(t *testing.T)
 		transactions,
 		presigner,
 		tokens,
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, nil)
 
 	created, err := service.Create(
 		ctx,
@@ -732,8 +723,7 @@ func TestCreateIdentityUploadIntentPresignFailureWritesNothing(t *testing.T) {
 		transactions,
 		presigner,
 		tokens,
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, nil)
 
 	created, err := service.Create(ctx, sessionID, rawToken, "identity_document")
 
@@ -786,8 +776,7 @@ func TestCreateIdentityUploadIntentStaleRereadDiscardsURLAndWritesNothing(t *tes
 		transactions,
 		presigner,
 		tokens,
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, nil)
 
 	created, err := service.Create(ctx, sessionID, rawToken, "identity_document")
 
@@ -820,8 +809,7 @@ func TestCreateIdentityUploadIntentMapsMissingSession(t *testing.T) {
 		transactions,
 		presigner,
 		session.NewProductionCryptoTokens(),
-		fixedClock{now: time.Date(2026, 7, 24, 15, 0, 0, 0, time.UTC)},
-	)
+		fixedClock{now: time.Date(2026, 7, 24, 15, 0, 0, 0, time.UTC)}, nil)
 
 	created, err := service.Create(
 		context.Background(),

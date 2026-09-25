@@ -20,8 +20,8 @@ func TestProviderSubmissionInitialAndReplayOverHTTPWithPostgreSQL(t *testing.T) 
 	service := providersubmission.NewService(
 		postgresadapter.NewProviderSubmissionTransactions(database),
 		session.NewProductionCryptoTokens(),
-		fixedClock{now: fixture.now},
-	)
+		fixedClock{now: fixture.now}, nil)
+
 	handler := httpapi.NewHandler(nil, nil, nil, nil, nil, service)
 	wantBody := `{"id":"` + fixture.sessionID.String() + `","status":"verification_pending"}` + "\n"
 

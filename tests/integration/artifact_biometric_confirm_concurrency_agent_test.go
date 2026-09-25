@@ -293,8 +293,7 @@ func TestPostgresCreateBiometricUploadIntentSupersedesInFlightConfirm(t *testing
 		postgresArtifacts,
 		presigner,
 		session.NewProductionCryptoTokens(),
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, nil)
 
 	confirmResultChannel := make(chan error, 1)
 	go func() {
@@ -603,8 +602,8 @@ func newBiometricPostgresConfirmService(
 		storage,
 		extractor,
 		session.NewProductionCryptoTokens(),
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, nil)
+
 	return postgresArtifacts, service
 }
 

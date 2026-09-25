@@ -49,6 +49,8 @@ type WorkerConfig struct {
 	OutboxClaimLease      time.Duration
 	ShutdownTimeout       time.Duration
 	LogLevel              slog.Level
+	ExpirySweepInterval   time.Duration
+	ExpirySweepBatchSize  int
 }
 
 // Load reads and validates process configuration from the environment.
@@ -291,6 +293,14 @@ func LoadWorker() (WorkerConfig, error) {
 	if err != nil {
 		return WorkerConfig{}, err
 	}
+	expirySweepInterval, err := positiveDuration("EXPIRY_SWEEP_INTERVAL", 5*time.Minute)
+	if err != nil {
+		return WorkerConfig{}, err
+	}
+	expirySweepBatchSize, err := positiveMaxInt("EXPIRY_SWEEP_BATCH_SIZE", 1000, 100)
+	if err != nil {
+		return WorkerConfig{}, err
+	}
 	return WorkerConfig{
 		DatabaseURL: databaseURL, RedisAddress: redisAddress,
 		RedisPassword: os.Getenv("REDIS_PASSWORD"), RedisDatabase: redisDatabase,
@@ -298,9 +308,23 @@ func LoadWorker() (WorkerConfig, error) {
 		ProviderTimeout: providerTimeout, ProviderWebhookSecret: providerWebhookSecret,
 		Concurrency: concurrency, RelayInterval: relayInterval, OutboxClaimLease: claimLease,
 		ShutdownTimeout: shutdownTimeout, LogLevel: logLevel,
+		ExpirySweepInterval:  expirySweepInterval,
+		ExpirySweepBatchSize: expirySweepBatchSize,
 	}, nil
 }
 
+func positiveMaxInt(key string, maxValue int, fallback int) (int, error) {
+	value, err := positiveInt(key, fallback)
+	if err != nil {
+		return fallback, err
+	}
+
+	if value > maxValue {
+		return fallback, fmt.Errorf("%s is higher than allowed maximum value", key)
+	}
+
+	return value, nil
+}
 func required(key string) (string, error) {
 	value, ok := os.LookupEnv(key)
 	if !ok || value == "" {

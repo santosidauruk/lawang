@@ -25,8 +25,8 @@ func TestSubmitFirstPersonalDetailsCommitsDetailsStateAndOneSafeEvent(t *testing
 	service := personaldetails.NewService(
 		transactions,
 		&stubTokenIssuer{hash: []byte("stored-hash"), equal: true},
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, nil)
+
 	input := personaldetails.Input{
 		FullName:       "Alice Applicant",
 		DateOfBirth:    time.Date(1990, 1, 2, 0, 0, 0, 0, time.UTC),
@@ -67,8 +67,8 @@ func TestSubmitIdenticalPersonalDetailsReturnsCurrentSummaryWithoutAnotherWrite(
 	service := personaldetails.NewService(
 		transactions,
 		&stubTokenIssuer{hash: []byte("stored-hash"), equal: true},
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, nil)
+
 	input := personaldetails.Input{
 		FullName: "", DateOfBirth: time.Date(2000, 2, 29, 0, 0, 0, 0, time.UTC),
 		IdentityNumber: "", Address: "",
@@ -104,8 +104,8 @@ func TestSubmitDifferentPersonalDetailsReturnsConflictWithoutMutation(t *testing
 	service := personaldetails.NewService(
 		transactions,
 		&stubTokenIssuer{hash: []byte("stored-hash"), equal: true},
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, nil)
+
 	original := personaldetails.Input{
 		FullName: "Alice Applicant", DateOfBirth: time.Date(1990, 1, 2, 0, 0, 0, 0, time.UTC),
 		IdentityNumber: "1234567890", Address: "Jalan Perjuangan 1",
@@ -143,8 +143,7 @@ func TestSubmitRejectsWrongResumeTokenWithoutMutation(t *testing.T) {
 	service := personaldetails.NewService(
 		transactions,
 		&stubTokenIssuer{hash: []byte("wrong-hash"), equal: false},
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, nil)
 
 	_, err := service.Submit(context.Background(), id, "wrong-token", personaldetails.Input{})
 	var serviceError *session.Error
@@ -166,11 +165,14 @@ func TestSubmitRejectsExpiredSessionAtDeadlineWithoutMutation(t *testing.T) {
 		ID: id, Status: session.StatusCreated, ResumeTokenHash: []byte("stored-hash"),
 		ExpiresAt: now,
 	})
+	expiryCalls := 0
 	service := personaldetails.NewService(
 		transactions,
 		&stubTokenIssuer{hash: []byte("stored-hash"), equal: true},
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, func(context.Context, uuid.UUID) error {
+			expiryCalls++
+			return nil
+		})
 
 	_, err := service.Submit(context.Background(), id, "raw-resume-token", personaldetails.Input{})
 	var serviceError *session.Error
@@ -183,6 +185,9 @@ func TestSubmitRejectsExpiredSessionAtDeadlineWithoutMutation(t *testing.T) {
 	if transactions.detailReads != 0 {
 		t.Errorf("expired submit caused %d Personal Details reads, want 0", transactions.detailReads)
 	}
+	if expiryCalls != 1 {
+		t.Errorf("expiry operation calls = %d, want 1", expiryCalls)
+	}
 }
 
 func TestSubmitReportsUnknownSessionUsingPublicErrorCode(t *testing.T) {
@@ -192,7 +197,7 @@ func TestSubmitReportsUnknownSessionUsingPublicErrorCode(t *testing.T) {
 	transactions := newMemoryTransactions(session.VerificationSession{
 		ID: storedID, Status: session.StatusCreated, ExpiresAt: now.Add(time.Minute),
 	})
-	service := personaldetails.NewService(transactions, &stubTokenIssuer{}, fixedClock{now: now})
+	service := personaldetails.NewService(transactions, &stubTokenIssuer{}, fixedClock{now: now}, nil)
 
 	_, err := service.Submit(context.Background(), requestedID, "any-token", personaldetails.Input{})
 	var serviceError *session.Error
@@ -211,8 +216,7 @@ func TestSubmitFromWrongStateReturnsIllegalTransitionWithoutMutation(t *testing.
 	service := personaldetails.NewService(
 		transactions,
 		&stubTokenIssuer{hash: []byte("stored-hash"), equal: true},
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, nil)
 
 	_, err := service.Submit(context.Background(), id, "raw-resume-token", personaldetails.Input{})
 	var serviceError *personaldetails.Error
@@ -237,8 +241,7 @@ func TestSubmitFromTerminalStateReturnsIllegalTransitionWithoutMutation(t *testi
 	service := personaldetails.NewService(
 		transactions,
 		&stubTokenIssuer{hash: []byte("stored-hash"), equal: true},
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, nil)
 
 	_, err := service.Submit(context.Background(), id, "raw-resume-token", personaldetails.Input{})
 	var serviceError *personaldetails.Error

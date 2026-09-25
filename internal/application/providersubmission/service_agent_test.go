@@ -24,8 +24,7 @@ func TestSubmitWithoutBothAcceptedArtifactsReturnsNotReadyWithoutMutation(t *tes
 	service := providersubmission.NewService(
 		transactions,
 		&stubTokenIssuer{hash: []byte("stored-token-hash"), equal: true},
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, nil)
 
 	_, err := service.Submit(context.Background(), sessionID, "raw-resume-token")
 	var submissionError *providersubmission.Error
@@ -66,8 +65,7 @@ func TestSubmitWrongAndTerminalStatesReturnIllegalTransitionWithoutMutation(t *t
 			service := providersubmission.NewService(
 				transactions,
 				&stubTokenIssuer{hash: []byte("stored-token-hash"), equal: true},
-				fixedClock{now: now},
-			)
+				fixedClock{now: now}, nil)
 
 			_, err := service.Submit(context.Background(), sessionID, "raw-resume-token")
 			var submissionError *providersubmission.Error
@@ -90,11 +88,12 @@ func TestSubmitWrongAndTerminalStatesReturnIllegalTransitionWithoutMutation(t *t
 func TestSubmitAuthenticationAndApplicantExpiryFailuresDoNotReachReadiness(t *testing.T) {
 	now := time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
 	tests := []struct {
-		name       string
-		requested  uuid.UUID
-		stored     session.VerificationSession
-		tokenEqual bool
-		wantCode   session.ErrorCode
+		name            string
+		requested       uuid.UUID
+		stored          session.VerificationSession
+		tokenEqual      bool
+		wantCode        session.ErrorCode
+		wantExpiryCalls int
 	}{
 		{
 			name: "unknown session", requested: uuid.New(),
@@ -116,17 +115,21 @@ func TestSubmitAuthenticationAndApplicantExpiryFailuresDoNotReachReadiness(t *te
 				Status: session.StatusBiometricCaptureUploaded, ExpiresAt: now,
 			},
 			tokenEqual: true, wantCode: session.CodeSessionExpired,
+			wantExpiryCalls: 1,
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			transactions := newMemoryTransactions(test.stored)
+			expiryCalls := 0
 			service := providersubmission.NewService(
 				transactions,
 				&stubTokenIssuer{equal: test.tokenEqual},
-				fixedClock{now: now},
-			)
+				fixedClock{now: now}, func(context.Context, uuid.UUID) error {
+					expiryCalls++
+					return nil
+				})
 
 			_, err := service.Submit(context.Background(), test.requested, "raw-resume-token")
 			var sessionError *session.Error
@@ -136,6 +139,9 @@ func TestSubmitAuthenticationAndApplicantExpiryFailuresDoNotReachReadiness(t *te
 			if transactions.readinessCalls != 0 || transactions.stateUpdates != 0 ||
 				len(transactions.state.events) != 0 || transactions.state.outboxWrites != 0 {
 				t.Errorf("authentication/expiry failure mutated transaction state")
+			}
+			if expiryCalls != test.wantExpiryCalls {
+				t.Errorf("expiry operation calls = %d, want %d", expiryCalls, test.wantExpiryCalls)
 			}
 		})
 	}

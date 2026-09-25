@@ -25,7 +25,7 @@ func TestCreateReturnsRawTokenWhilePersistingOnlyItsHash(t *testing.T) {
 		raw:  "raw-resume-token",
 		hash: []byte("deterministic-token-hash"),
 	}
-	service := session.NewService(store, &issuer, fixedClock{now: createdAt})
+	service := session.NewService(store, &issuer, fixedClock{now: createdAt}, nil)
 
 	got, err := service.Create(context.Background())
 	if err != nil {
@@ -59,7 +59,7 @@ func TestResumeReturnsCurrentSessionForMatchingCredential(t *testing.T) {
 		ExpiresAt:       now.Add(time.Minute),
 	}}
 	issuer := stubTokenIssuer{hash: []byte("stored-hash"), equal: true}
-	service := session.NewService(store, &issuer, fixedClock{now: now})
+	service := session.NewService(store, &issuer, fixedClock{now: now}, nil)
 
 	got, err := service.Resume(context.Background(), id, "raw-resume-token")
 	if err != nil {
@@ -80,7 +80,15 @@ func TestResumeRejectsWrongCredentialWithPublicErrorCode(t *testing.T) {
 		ID: id, ResumeTokenHash: []byte("stored-hash"), ExpiresAt: now.Add(time.Minute),
 	}}
 	issuer := stubTokenIssuer{hash: []byte("wrong-hash"), equal: false}
-	service := session.NewService(store, &issuer, fixedClock{now: now})
+	service := session.NewService(
+		store,
+		&issuer,
+		fixedClock{now: now},
+		func(context.Context, uuid.UUID) error {
+			t.Fatal("expiry operation called before authentication succeeded")
+			return nil
+		},
+	)
 
 	_, err := service.Resume(context.Background(), id, "wrong-token")
 	var serviceError *session.Error
@@ -96,7 +104,7 @@ func TestResumeReportsUnknownSessionUsingLegacyPublicErrorCode(t *testing.T) {
 	id := uuid.MustParse("4dbfda8d-f69e-453f-a1c4-2dba229fc73b")
 	store := &recordingStore{findErr: session.ErrSessionNotFound}
 	issuer := stubTokenIssuer{}
-	service := session.NewService(store, &issuer, fixedClock{})
+	service := session.NewService(store, &issuer, fixedClock{}, nil)
 
 	_, err := service.Resume(context.Background(), id, "any-token")
 	var serviceError *session.Error
@@ -115,7 +123,19 @@ func TestResumeRejectsExpiredSessionUsingInjectedClock(t *testing.T) {
 		ID: id, ResumeTokenHash: []byte("stored-hash"), ExpiresAt: now,
 	}}
 	issuer := stubTokenIssuer{hash: []byte("stored-hash"), equal: true}
-	service := session.NewService(store, &issuer, fixedClock{now: now})
+	expiryCalls := 0
+	service := session.NewService(
+		store,
+		&issuer,
+		fixedClock{now: now},
+		func(_ context.Context, gotID uuid.UUID) error {
+			expiryCalls++
+			if gotID != id {
+				t.Errorf("expiry session ID = %s, want %s", gotID, id)
+			}
+			return nil
+		},
+	)
 
 	_, err := service.Resume(context.Background(), id, "matching-token")
 	var serviceError *session.Error
@@ -125,6 +145,9 @@ func TestResumeRejectsExpiredSessionUsingInjectedClock(t *testing.T) {
 	if serviceError.Code != session.CodeSessionExpired {
 		t.Errorf("Resume() error code = %q, want %q", serviceError.Code, session.CodeSessionExpired)
 	}
+	if expiryCalls != 1 {
+		t.Errorf("expiry operation calls = %d, want 1 after authentication", expiryCalls)
+	}
 }
 
 func TestCreatePropagatesCancellationToStorage(t *testing.T) {
@@ -132,7 +155,7 @@ func TestCreatePropagatesCancellationToStorage(t *testing.T) {
 	cancel()
 	store := cancelAwareStore{}
 	issuer := stubTokenIssuer{raw: "raw-resume-token", hash: []byte("token-hash")}
-	service := session.NewService(store, &issuer, fixedClock{})
+	service := session.NewService(store, &issuer, fixedClock{}, nil)
 
 	_, err := service.Create(ctx)
 

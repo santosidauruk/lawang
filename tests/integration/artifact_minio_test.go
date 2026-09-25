@@ -246,8 +246,7 @@ func TestMinIOObjectMetadataDrivesIdentityDocumentRejection(t *testing.T) {
 		storage,
 		deterministicextractor.New(nil, nil),
 		session.NewProductionCryptoTokens(),
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, nil)
 
 	tests := []struct {
 		name        string
@@ -336,8 +335,8 @@ func TestS3StorageFailuresRemainBoundedAtHTTPBoundary(t *testing.T) {
 				tt.storage,
 				deterministicextractor.New(nil, nil),
 				session.NewProductionCryptoTokens(),
-				fixedClock{now: now},
-			)
+				fixedClock{now: now}, nil)
+
 			handler := httpapi.NewHandler(nil, nil, service, nil, nil, nil)
 			request := httptest.NewRequest(
 				http.MethodPost,

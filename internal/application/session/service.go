@@ -54,14 +54,20 @@ type Clock interface {
 	Now() time.Time
 }
 
+// ExpiryOperation is the shared lazy-expiry seam. Applicant services authenticate
+// first, then invoke this operation for an overdue session instead of duplicating
+// the guarded state transition and event append owned by package expiry.
+type ExpiryOperation func(context.Context, uuid.UUID) error
+
 type Service struct {
-	store  Store
-	tokens TokenIssuer
-	clock  Clock
+	store         Store
+	tokens        TokenIssuer
+	clock         Clock
+	expireSession ExpiryOperation
 }
 
-func NewService(store Store, tokens TokenIssuer, clock Clock) *Service {
-	return &Service{store: store, tokens: tokens, clock: clock}
+func NewService(store Store, tokens TokenIssuer, clock Clock, expireSession ExpiryOperation) *Service {
+	return &Service{store: store, tokens: tokens, clock: clock, expireSession: expireSession}
 }
 
 type CreatedSession struct {
@@ -112,6 +118,9 @@ func (s *Service) Resume(ctx context.Context, id uuid.UUID, rawToken string) (Su
 		return Summary{}, &Error{Code: CodeInvalidResumeToken}
 	}
 	if !s.clock.Now().Before(stored.ExpiresAt) {
+		if err := s.expireSession(ctx, id); err != nil {
+			return Summary{}, err
+		}
 		return Summary{}, &Error{Code: CodeSessionExpired}
 	}
 

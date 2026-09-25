@@ -93,6 +93,13 @@ func TestProviderTaskLoadsImmutableRecordsAndSubmitsExactRequest(t *testing.T) {
 func TestProviderWorkerRelaysDurableOutboxToFakeProvider(t *testing.T) {
 	fixture := openProviderTaskFixture(t)
 	seedProviderTaskImmutableRecords(t, fixture)
+	if _, err := fixture.database.Exec(fixture.ctx, `
+		UPDATE verification_sessions
+		SET verification_deadline_at = $2
+		WHERE id = $1
+	`, fixture.sessionID, time.Now().UTC().Add(time.Hour)); err != nil {
+		t.Fatalf("keep process fixture pending during immediate expiry sweep: %v", err)
+	}
 
 	callbackRecorder := newCallbackRecorder(t)
 	fixture.callbackURL = callbackRecorder.URL() + "/webhooks/verification"

@@ -37,6 +37,18 @@ selection atau deletion logic kedua, lalu membuktikan retry dan restart recovery
 - `cmd/worker/main.go`
 - focused queue, worker, Redis, PostgreSQL, dan MinIO tests
 
+## Keputusan runtime yang diwarisi dari Checkpoint 2
+
+- Checkpoint ini memperluas composition root, serve mux, scheduler ownership, dan
+  shutdown lifecycle worker yang sudah dibuat Checkpoint 2; ia tidak membuat Asynq
+  server atau worker process kedua.
+- Ketika shutdown, seluruh scheduler termasuk storage cleanup berhenti lebih dulu,
+  kemudian relay ticker dihentikan, active handlers didrain secara bounded, dan
+  queue clients serta PostgreSQL pool ditutup terakhir.
+- Shared limiter concurrency 10 milik expiry sweep hanya membatasi expiry operation;
+  cleanup tidak boleh memakai limiter tersebut tanpa keputusan kapasitas terpisah di
+  Checkpoint 4.
+
 ## Bagian user
 
 Agent lebih dulu menyiapkan strict task decoder tracer, service recorder, dan

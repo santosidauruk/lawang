@@ -28,3 +28,18 @@ FOR UPDATE;
 update verification_sessions
 set status = 'expired', updated_at = sqlc.arg(updated_at)
 where id = sqlc.arg(id) and status not in ('verified', 'rejected', 'expired') and status = sqlc.arg(current_state);
+
+-- name: GetDueSessionIDs :many
+select id
+from verification_sessions
+where
+  ( status = 'verification_pending' and verification_deadline_at is not null and verification_deadline_at <= sqlc.arg(deadline) )
+  or
+  ( status in ( 'created', 'personal_details_submitted', 'identity_document_uploaded', 'biometric_capture_uploaded') and expires_at <= sqlc.arg(deadline) )
+order by
+  case
+    when status = 'verification_pending' then verification_deadline_at
+    else expires_at
+  end asc,
+  id asc
+limit sqlc.arg(batch_size);

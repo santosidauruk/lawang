@@ -52,7 +52,7 @@ func TestApplicantCreatesAndResumesSessionOverHTTPWithPostgreSQL(t *testing.T) {
 
 	now := time.Date(2026, 7, 15, 9, 0, 0, 0, time.UTC)
 	store := postgresadapter.NewSessionStore(database)
-	service := session.NewService(store, session.NewProductionCryptoTokens(), integrationClock{now: now})
+	service := session.NewService(store, session.NewProductionCryptoTokens(), integrationClock{now: now}, nil)
 	server := httptest.NewServer(httpapi.NewHandler(service, nil, nil, nil, nil, nil))
 	t.Cleanup(server.Close)
 
@@ -105,7 +105,7 @@ func TestApplicantCreatesAndResumesSessionOverHTTPWithPostgreSQL(t *testing.T) {
 func TestCancelledHTTPRequestReachesPostgreSQLAndReturnsSafeError(t *testing.T) {
 	_, database := openSessionEventDatabase(t)
 	store := postgresadapter.NewSessionStore(database)
-	service := session.NewService(store, session.NewProductionCryptoTokens(), integrationClock{})
+	service := session.NewService(store, session.NewProductionCryptoTokens(), integrationClock{}, nil)
 	id := uuid.New()
 	cancelled, cancel := context.WithCancel(context.Background())
 	cancel()

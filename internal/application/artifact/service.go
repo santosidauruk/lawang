@@ -12,6 +12,8 @@ import (
 	"github.com/santosidauruk/lawang/internal/domain/verificationsession"
 )
 
+var errExpiryRequired = errors.New("expiry required")
+
 type Input struct {
 	UploadIntentID string
 }
@@ -126,6 +128,7 @@ type Service struct {
 	extractor          DocumentExtractor
 	tokens             session.TokenIssuer
 	clock              session.Clock
+	expireSession      session.ExpiryOperation
 	confirmCoordinator ConfirmCoordinator
 }
 
@@ -136,6 +139,7 @@ func NewService(
 	extractor DocumentExtractor,
 	tokens session.TokenIssuer,
 	clock session.Clock,
+	expireSession session.ExpiryOperation,
 ) *Service {
 	return &Service{
 		reader:             reader,
@@ -143,6 +147,7 @@ func NewService(
 		extractor:          extractor,
 		tokens:             tokens,
 		clock:              clock,
+		expireSession:      expireSession,
 		confirmCoordinator: confirmCoordinator,
 	}
 }
@@ -164,6 +169,9 @@ func (s *Service) Confirm(ctx context.Context, sessionID uuid.UUID, rawToken str
 
 	startedAt := s.clock.Now()
 	if !startedAt.Before(storedSession.ExpiresAt) {
+		if err := s.expireSession(ctx, sessionID); err != nil {
+			return session.Summary{}, err
+		}
 		return session.Summary{}, &session.Error{
 			Code: session.CodeSessionExpired,
 		}
@@ -188,9 +196,7 @@ func (s *Service) Confirm(ctx context.Context, sessionID uuid.UUID, rawToken str
 
 		startedAt := s.clock.Now()
 		if !startedAt.Before(rereadSession.ExpiresAt) {
-			return &session.Error{
-				Code: session.CodeSessionExpired,
-			}
+			return errExpiryRequired
 		}
 
 		rereadIntent, err := r.LoadUploadIntent(ctx, sessionID, uploadIntentID)
@@ -290,9 +296,7 @@ func (s *Service) Confirm(ctx context.Context, sessionID uuid.UUID, rawToken str
 			}
 
 			if !confirmedAt.Before(lockedSession.ExpiresAt) {
-				return &session.Error{
-					Code: session.CodeSessionExpired,
-				}
+				return errExpiryRequired
 			}
 
 			if lockedSession.Status != rereadSession.Status ||
@@ -427,6 +431,14 @@ func (s *Service) Confirm(ctx context.Context, sessionID uuid.UUID, rawToken str
 		return err
 	})
 
+	if errors.Is(err, errExpiryRequired) {
+		if err := s.expireSession(ctx, sessionID); err != nil {
+			return session.Summary{}, err
+		}
+		return session.Summary{}, &session.Error{
+			Code: session.CodeSessionExpired,
+		}
+	}
 	if err != nil {
 		return session.Summary{}, err
 	}

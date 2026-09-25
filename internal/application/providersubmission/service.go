@@ -11,6 +11,8 @@ import (
 	"github.com/santosidauruk/lawang/internal/domain/verificationsession"
 )
 
+var errExpiryRequired = errors.New("expiry required")
+
 type Transaction interface {
 	LockSession(ctx context.Context, sessionID uuid.UUID) (session.VerificationSession, error)
 	HasRequiredAcceptedArtifacts(ctx context.Context, sessionID uuid.UUID) (bool, error)
@@ -24,9 +26,10 @@ type Transactor interface {
 }
 
 type Service struct {
-	transactor Transactor
-	tokens     session.TokenIssuer
-	clock      session.Clock
+	transactor    Transactor
+	tokens        session.TokenIssuer
+	clock         session.Clock
+	expireSession session.ExpiryOperation
 }
 
 type Result struct {
@@ -51,11 +54,17 @@ type Error struct {
 
 func (e *Error) Error() string { return string(e.Code) }
 
-func NewService(transactor Transactor, tokens session.TokenIssuer, clock session.Clock) *Service {
+func NewService(
+	transactor Transactor,
+	tokens session.TokenIssuer,
+	clock session.Clock,
+	expireSession session.ExpiryOperation,
+) *Service {
 	return &Service{
-		transactor: transactor,
-		tokens:     tokens,
-		clock:      clock,
+		transactor:    transactor,
+		tokens:        tokens,
+		clock:         clock,
+		expireSession: expireSession,
 	}
 }
 
@@ -80,9 +89,7 @@ func (s *Service) Submit(ctx context.Context, sessionID uuid.UUID, rawToken stri
 		case verificationsession.BiometricCaptureUploaded:
 			now := s.clock.Now()
 			if !now.Before(lockedSession.ExpiresAt) {
-				return &session.Error{
-					Code: session.CodeSessionExpired,
-				}
+				return errExpiryRequired
 			}
 			hasRequiredArtifacts, err := t.HasRequiredAcceptedArtifacts(ctx, sessionID)
 			if err != nil {
@@ -133,6 +140,14 @@ func (s *Service) Submit(ctx context.Context, sessionID uuid.UUID, rawToken stri
 			}
 		}
 	})
+	if errors.Is(err, errExpiryRequired) {
+		if err := s.expireSession(ctx, sessionID); err != nil {
+			return Result{}, err
+		}
+		return Result{}, &session.Error{
+			Code: session.CodeSessionExpired,
+		}
+	}
 	if err != nil {
 		return Result{}, err
 	}

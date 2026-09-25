@@ -127,8 +127,8 @@ func (f *confirmFixture) service() *artifact.Service {
 		f.storage,
 		f.extractor,
 		f.tokens,
-		fixedClock{now: f.now},
-	)
+		fixedClock{now: f.now}, nil)
+
 }
 
 func (f *confirmFixture) confirm() (session.Summary, error) {
@@ -253,8 +253,8 @@ func TestConfirmIdentityDocumentAcceptsValidatedUploadAtomically(t *testing.T) {
 		objectStorage,
 		extractor,
 		tokens,
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, nil)
+
 	// ACT
 	// Call Confirm exactly once through that public method.
 
@@ -460,8 +460,7 @@ func TestConfirmBiometricCaptureAcceptsUploadWithoutExtractionAtomically(t *test
 		objectStorage,
 		extractor,
 		tokens,
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, nil)
 
 	got, err := service.Confirm(context.Background(), id, rawToken, uploadIntentID)
 	// ASSERT — one successful atomic behavior
@@ -964,8 +963,7 @@ func TestConfirmIdentityDocumentRecordsMismatchAtomically(t *testing.T) {
 		objectStorage,
 		extractor,
 		tokens,
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, nil)
 
 	_, err := service.Confirm(
 		context.Background(),
@@ -1116,8 +1114,7 @@ func TestConfirmIdentityDocumentDiscardsExternalResultWhenStorageKeyChanges(t *t
 			},
 		},
 		stubTokenIssuer{hash: []byte("stored-hash"), equal: true},
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, nil)
 
 	_, err := service.Confirm(
 		context.Background(),
@@ -1473,8 +1470,7 @@ func TestConfirmIdentityDocumentRejectsInvalidTokenBeforeReadingIntentOrExternal
 			calls:      &extractorCalls,
 		},
 		stubTokenIssuer{hash: []byte("wrong-hash"), equal: false},
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, nil)
 
 	_, err := service.Confirm(context.Background(), sessionID, "wrong-token", uploadIntentID)
 
@@ -1517,6 +1513,7 @@ func TestConfirmIdentityDocumentRejectsSessionAtExactExpiryBeforeExternalIO(t *t
 	)
 	storageCalls := 0
 	extractorCalls := 0
+	expiryCalls := 0
 	service := artifact.NewService(
 		transactions,
 		stubConfirmCoordinator{
@@ -1526,8 +1523,10 @@ func TestConfirmIdentityDocumentRejectsSessionAtExactExpiryBeforeExternalIO(t *t
 		stubObjectStorage{calls: &storageCalls},
 		stubDocumentExtractor{calls: &extractorCalls},
 		stubTokenIssuer{hash: []byte("stored-hash"), equal: true},
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, func(context.Context, uuid.UUID) error {
+			expiryCalls++
+			return nil
+		})
 
 	_, err := service.Confirm(context.Background(), sessionID, "raw-resume-token", uploadIntentID)
 
@@ -1544,6 +1543,9 @@ func TestConfirmIdentityDocumentRejectsSessionAtExactExpiryBeforeExternalIO(t *t
 			storageCalls,
 			extractorCalls,
 		)
+	}
+	if expiryCalls != 1 {
+		t.Errorf("expiry operation calls = %d, want 1", expiryCalls)
 	}
 }
 
@@ -1593,8 +1595,7 @@ func TestConfirmIdentityDocumentRollsBackAllWritesWhenEventAppendFails(t *testin
 		}},
 		stubDocumentExtractor{extraction: artifact.DocumentExtraction{IdentityNumber: identityNumber}},
 		stubTokenIssuer{hash: []byte("stored-hash"), equal: true},
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, nil)
 
 	_, err := service.Confirm(context.Background(), sessionID, "raw-resume-token", uploadIntentID)
 

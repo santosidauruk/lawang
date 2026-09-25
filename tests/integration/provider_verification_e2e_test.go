@@ -24,6 +24,7 @@ import (
 	"github.com/santosidauruk/lawang/internal/adapter/providerhttp"
 	queueadapter "github.com/santosidauruk/lawang/internal/adapter/queue"
 	"github.com/santosidauruk/lawang/internal/application/artifact"
+	"github.com/santosidauruk/lawang/internal/application/expiry"
 	"github.com/santosidauruk/lawang/internal/application/fakeprovider"
 	"github.com/santosidauruk/lawang/internal/application/outbox"
 	"github.com/santosidauruk/lawang/internal/application/personaldetails"
@@ -328,6 +329,7 @@ type providerVerificationE2E struct {
 	relay           *outbox.Relay
 	worker          *queueadapter.Server
 	taskService     *providersubmission.TaskService
+	expiryService   *expiry.SweepService
 	workerMu        sync.Mutex
 	workerStarted   bool
 	now             time.Time
@@ -381,20 +383,20 @@ func newProviderVerificationE2E(t *testing.T) *providerVerificationE2E {
 		storage,
 		deterministicextractor.New(extractions, nil),
 		tokens,
-		fixedClock{now: now},
-	)
-	uploadIntents := artifact.NewUploadIntentService(artifacts, artifacts, storage, tokens, fixedClock{now: now})
+		fixedClock{now: now}, nil)
+
+	uploadIntents := artifact.NewUploadIntentService(artifacts, artifacts, storage, tokens, fixedClock{now: now}, nil)
 	verdictService := providerverdict.NewProviderVerdictService(
 		fixedClock{now: now},
 		postgresadapter.NewProviderVerdictTransactions(database),
 	)
 	apiHandler := httpapi.NewHandler(
-		session.NewService(postgresadapter.NewSessionStore(database), tokens, fixedClock{now: now}),
-		personaldetails.NewService(postgresadapter.NewPersonalDetailsTransactions(database), tokens, fixedClock{now: now}),
+		session.NewService(postgresadapter.NewSessionStore(database), tokens, fixedClock{now: now}, nil),
+		personaldetails.NewService(postgresadapter.NewPersonalDetailsTransactions(database), tokens, fixedClock{now: now}, nil),
 		artifactService,
 		uploadIntents,
 		&httpapi.VerifiedBody{Service: verdictService, ProviderWebhookSecret: checkpoint5WebhookSecret},
-		providersubmission.NewService(postgresadapter.NewProviderSubmissionTransactions(database), tokens, fixedClock{now: now}),
+		providersubmission.NewService(postgresadapter.NewProviderSubmissionTransactions(database), tokens, fixedClock{now: now}, nil),
 	)
 	apiServer := httptest.NewServer(apiHandler)
 	t.Cleanup(apiServer.Close)
@@ -522,11 +524,12 @@ func (h *providerVerificationE2E) runFlow(t *testing.T, scenario fakeprovider.Sc
 }
 
 func (h *providerVerificationE2E) newWorkerServer() *queueadapter.Server {
-	return queueadapter.NewProviderServer(
+	return queueadapter.NewAsynqTaskServer(
 		queueadapter.RedisConfig{Address: h.redisAddress},
 		2,
 		time.Second,
 		h.taskService,
+		h.expiryService,
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 	)
 }

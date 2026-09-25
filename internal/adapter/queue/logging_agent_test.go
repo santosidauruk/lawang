@@ -36,7 +36,7 @@ func TestSafeTaskLoggingOmitsPayloadAndUnderlyingErrors(t *testing.T) {
 			t.Fatalf("safe task log leaked %q: %s", forbidden, logged)
 		}
 	}
-	for _, required := range []string{"provider task completed", outbox.TaskTypeProviderSubmit, `"outcome":"retry"`} {
+	for _, required := range []string{"queue task completed", outbox.TaskTypeProviderSubmit, `"outcome":"retry"`} {
 		if !strings.Contains(logged, required) {
 			t.Fatalf("safe task log omitted %q: %s", required, logged)
 		}

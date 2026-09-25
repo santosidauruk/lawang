@@ -160,8 +160,8 @@ func TestBiometricCaptureUploadPutAndConfirmOverHTTPWithPostgreSQLAndMinIO(t *te
 		postgresArtifacts,
 		objectStorage,
 		tokens,
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, nil)
+
 	confirmCoordinator := postgresadapter.NewArtifactConfirmCoordinator(
 		newArtifactConfirmAcquireFunc(pool),
 	)
@@ -171,8 +171,8 @@ func TestBiometricCaptureUploadPutAndConfirmOverHTTPWithPostgreSQLAndMinIO(t *te
 		objectStorage,
 		extractor,
 		tokens,
-		fixedClock{now: now},
-	)
+		fixedClock{now: now}, nil)
+
 	handler := httpapi.NewHandler(nil, nil, artifacts, uploadIntents, nil, nil)
 
 	// ACT + ASSERT 1 — public upload-url contract
