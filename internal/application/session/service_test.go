@@ -120,7 +120,8 @@ func TestResumeRejectsExpiredSessionUsingInjectedClock(t *testing.T) {
 	now := time.Date(2026, 7, 15, 9, 0, 0, 0, time.UTC)
 	id := uuid.MustParse("4dbfda8d-f69e-453f-a1c4-2dba229fc73b")
 	store := &recordingStore{found: session.VerificationSession{
-		ID: id, ResumeTokenHash: []byte("stored-hash"), ExpiresAt: now,
+		ID: id, Status: session.StatusCreated,
+		ResumeTokenHash: []byte("stored-hash"), ExpiresAt: now,
 	}}
 	issuer := stubTokenIssuer{hash: []byte("stored-hash"), equal: true}
 	expiryCalls := 0
@@ -147,6 +148,101 @@ func TestResumeRejectsExpiredSessionUsingInjectedClock(t *testing.T) {
 	}
 	if expiryCalls != 1 {
 		t.Errorf("expiry operation calls = %d, want 1 after authentication", expiryCalls)
+	}
+}
+
+func TestResumePendingUsesProviderDeadlineWithoutChangingPublicExpiry(t *testing.T) {
+	now := time.Date(2026, 7, 15, 9, 0, 0, 0, time.UTC)
+	id := uuid.MustParse("1f8ebf5a-1b03-42f6-8175-18f46d6627ac")
+	applicantExpiry := now.Add(-time.Hour)
+	providerDeadline := now.Add(time.Minute)
+	store := &recordingStore{found: session.VerificationSession{
+		ID: id, Status: session.StatusVerificationPending,
+		ResumeTokenHash: []byte("stored-hash"), ExpiresAt: applicantExpiry,
+		VerificationDeadlineAt: &providerDeadline,
+	}}
+	issuer := stubTokenIssuer{hash: []byte("stored-hash"), equal: true}
+	service := session.NewService(
+		store,
+		&issuer,
+		fixedClock{now: now},
+		func(context.Context, uuid.UUID) error {
+			t.Fatal("expiry operation called before provider deadline")
+			return nil
+		},
+	)
+
+	got, err := service.Resume(context.Background(), id, "matching-token")
+	if err != nil {
+		t.Fatalf("Resume() error = %v", err)
+	}
+	if got.Status != session.StatusVerificationPending || !got.ExpiresAt.Equal(applicantExpiry) {
+		t.Fatalf("Resume() = %#v, want pending summary with applicant expiry %s", got, applicantExpiry)
+	}
+}
+
+func TestResumePendingExpiresAtExactProviderDeadline(t *testing.T) {
+	now := time.Date(2026, 7, 15, 9, 0, 0, 0, time.UTC)
+	id := uuid.MustParse("c2c145ac-af35-4acc-a835-4f75d7e4f479")
+	providerDeadline := now
+	store := &recordingStore{found: session.VerificationSession{
+		ID: id, Status: session.StatusVerificationPending,
+		ResumeTokenHash: []byte("stored-hash"), ExpiresAt: now.Add(time.Hour),
+		VerificationDeadlineAt: &providerDeadline,
+	}}
+	issuer := stubTokenIssuer{hash: []byte("stored-hash"), equal: true}
+	expiryCalls := 0
+	service := session.NewService(
+		store,
+		&issuer,
+		fixedClock{now: now},
+		func(_ context.Context, gotID uuid.UUID) error {
+			expiryCalls++
+			if gotID != id {
+				t.Fatalf("expiry ID = %s, want %s", gotID, id)
+			}
+			return nil
+		},
+	)
+
+	_, err := service.Resume(context.Background(), id, "matching-token")
+	var serviceError *session.Error
+	if !errors.As(err, &serviceError) || serviceError.Code != session.CodeSessionExpired {
+		t.Fatalf("Resume() error = %#v, want %s", err, session.CodeSessionExpired)
+	}
+	if expiryCalls != 1 {
+		t.Fatalf("expiry calls = %d, want 1", expiryCalls)
+	}
+}
+
+func TestResumeTerminalSessionDoesNotInvokeExpiry(t *testing.T) {
+	now := time.Date(2026, 7, 15, 9, 0, 0, 0, time.UTC)
+	for _, status := range []session.Status{session.StatusVerified, session.StatusRejected} {
+		t.Run(status.String(), func(t *testing.T) {
+			id := uuid.New()
+			store := &recordingStore{found: session.VerificationSession{
+				ID: id, Status: status, ResumeTokenHash: []byte("stored-hash"),
+				ExpiresAt: now.Add(-time.Hour),
+			}}
+			issuer := stubTokenIssuer{hash: []byte("stored-hash"), equal: true}
+			service := session.NewService(
+				store,
+				&issuer,
+				fixedClock{now: now},
+				func(context.Context, uuid.UUID) error {
+					t.Fatal("expiry operation called for terminal session")
+					return nil
+				},
+			)
+
+			got, err := service.Resume(context.Background(), id, "matching-token")
+			if err != nil {
+				t.Fatalf("Resume() error = %v", err)
+			}
+			if got.Status != status {
+				t.Fatalf("Resume() status = %q, want %q", got.Status, status)
+			}
+		})
 	}
 }
 

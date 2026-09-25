@@ -49,8 +49,13 @@ func (s *SessionStore) FindByID(ctx context.Context, id uuid.UUID) (session.Veri
 	if err != nil {
 		return session.VerificationSession{}, err
 	}
+	verificationDeadlineAt, err := timestamptzToTimePtr(row.VerificationDeadlineAt)
+	if err != nil {
+		return session.VerificationSession{}, err
+	}
 	return session.VerificationSession{
 		ID: row.ID, Status: state, ResumeTokenHash: row.ResumeTokenHash,
 		ExpiresAt: row.ExpiresAt, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
+		VerificationDeadlineAt: verificationDeadlineAt,
 	}, nil
 }

@@ -36,6 +36,7 @@ func TestApplicantCreatesAndResumesSessionOverHTTPWithPostgreSQL(t *testing.T) {
 		{"../../sql/migrations/00001_create_verification_sessions.sql", "/tmp/00001.sql"},
 		{"../../sql/migrations/00002_add_resume_token_authentication.sql", "/tmp/00002.sql"},
 		{"../../sql/migrations/00003_create_session_events.sql", "/tmp/00003.sql"},
+		{"../../sql/migrations/00007_add_provider_submission_outbox.sql", "/tmp/00007.sql"},
 	} {
 		runPSQLFile(t, ctx, container, migration.host, migration.container)
 	}
@@ -99,6 +100,44 @@ func TestApplicantCreatesAndResumesSessionOverHTTPWithPostgreSQL(t *testing.T) {
 	}
 	if _, exists := resumed["resumeToken"]; exists {
 		t.Fatal("GET response exposed the raw resume token")
+	}
+
+	applicantExpiry := now.Add(-time.Hour)
+	providerDeadline := now.Add(time.Hour)
+	if _, err := database.Exec(ctx, `
+		UPDATE verification_sessions
+		SET status = 'verification_pending',
+		    expires_at = $2,
+		    verification_deadline_at = $3
+		WHERE id = $1
+	`, created.ID, applicantExpiry, providerDeadline); err != nil {
+		t.Fatalf("prepare pending session: %v", err)
+	}
+
+	pendingRequest, err := http.NewRequest(http.MethodGet, server.URL+"/verification-sessions/"+created.ID, nil)
+	if err != nil {
+		t.Fatalf("build pending GET request: %v", err)
+	}
+	pendingRequest.Header.Set("Authorization", "Bearer "+created.ResumeToken)
+	pendingResponse, err := http.DefaultClient.Do(pendingRequest)
+	if err != nil {
+		t.Fatalf("GET pending Verification Session: %v", err)
+	}
+	defer pendingResponse.Body.Close()
+	if pendingResponse.StatusCode != http.StatusOK {
+		t.Fatalf("pending GET status = %d, want %d", pendingResponse.StatusCode, http.StatusOK)
+	}
+	var pending map[string]any
+	if err := json.NewDecoder(pendingResponse.Body).Decode(&pending); err != nil {
+		t.Fatalf("decode pending GET response: %v", err)
+	}
+	if pending["status"] != "verification_pending" ||
+		pending["expiresAt"] != applicantExpiry.Format(time.RFC3339) {
+		t.Errorf(
+			"pending GET body = %#v, want pending status and public applicant expiry %s",
+			pending,
+			applicantExpiry.Format(time.RFC3339),
+		)
 	}
 }
 

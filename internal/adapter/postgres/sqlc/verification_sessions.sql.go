@@ -143,18 +143,19 @@ func (q *Queries) GetDueSessionIDs(ctx context.Context, arg GetDueSessionIDsPara
 }
 
 const getVerificationSessionByID = `-- name: GetVerificationSessionByID :one
-SELECT id, status, resume_token_hash, expires_at, created_at, updated_at
+SELECT id, status, resume_token_hash, expires_at, created_at, updated_at, verification_deadline_at
 FROM verification_sessions
 WHERE id = $1
 `
 
 type GetVerificationSessionByIDRow struct {
-	ID              uuid.UUID `json:"id"`
-	Status          string    `json:"status"`
-	ResumeTokenHash []byte    `json:"resume_token_hash"`
-	ExpiresAt       time.Time `json:"expires_at"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	ID                     uuid.UUID          `json:"id"`
+	Status                 string             `json:"status"`
+	ResumeTokenHash        []byte             `json:"resume_token_hash"`
+	ExpiresAt              time.Time          `json:"expires_at"`
+	CreatedAt              time.Time          `json:"created_at"`
+	UpdatedAt              time.Time          `json:"updated_at"`
+	VerificationDeadlineAt pgtype.Timestamptz `json:"verification_deadline_at"`
 }
 
 func (q *Queries) GetVerificationSessionByID(ctx context.Context, id uuid.UUID) (GetVerificationSessionByIDRow, error) {
@@ -167,6 +168,7 @@ func (q *Queries) GetVerificationSessionByID(ctx context.Context, id uuid.UUID) 
 		&i.ExpiresAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.VerificationDeadlineAt,
 	)
 	return i, err
 }

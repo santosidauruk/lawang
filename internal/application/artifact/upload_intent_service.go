@@ -12,6 +12,8 @@ import (
 
 const uploadIntentTTL = 5 * time.Minute
 
+var errUploadIntentExpiryRequired = errors.New("upload intent session expiry required")
+
 type UploadPresigner interface {
 	PresignUpload(context.Context, string, time.Duration) (string, error)
 }
@@ -85,9 +87,16 @@ func (s *UploadIntentService) Create(
 	if !s.tokens.Equal(s.tokens.Hash(rawToken), storedSession.ResumeTokenHash) {
 		return CreatedUploadIntent{}, &session.Error{Code: session.CodeInvalidResumeToken}
 	}
+	if storedSession.Status == session.StatusExpired {
+		return CreatedUploadIntent{}, &session.Error{Code: session.CodeSessionExpired}
+	}
 
 	createdAt := s.clock.Now()
-	if !createdAt.Before(storedSession.ExpiresAt) {
+	due, err := session.IsExpiryDue(createdAt, storedSession)
+	if err != nil {
+		return CreatedUploadIntent{}, err
+	}
+	if due {
 		if err := s.expireSession(ctx, sessionID); err != nil {
 			return CreatedUploadIntent{}, err
 		}
@@ -130,8 +139,15 @@ func (s *UploadIntentService) Create(
 			if !s.tokens.Equal(s.tokens.Hash(rawToken), lockedSession.ResumeTokenHash) {
 				return &session.Error{Code: session.CodeInvalidResumeToken}
 			}
-			if !createdAt.Before(lockedSession.ExpiresAt) {
+			if lockedSession.Status == session.StatusExpired {
 				return &session.Error{Code: session.CodeSessionExpired}
+			}
+			due, err := session.IsExpiryDue(createdAt, lockedSession)
+			if err != nil {
+				return err
+			}
+			if due {
+				return errUploadIntentExpiryRequired
 			}
 			if lockedSession.Status != storedSession.Status ||
 				!lockedSession.ExpiresAt.Equal(storedSession.ExpiresAt) {
@@ -158,6 +174,12 @@ func (s *UploadIntentService) Create(
 			})
 		},
 	)
+	if errors.Is(err, errUploadIntentExpiryRequired) {
+		if err := s.expireSession(ctx, sessionID); err != nil {
+			return CreatedUploadIntent{}, err
+		}
+		return CreatedUploadIntent{}, &session.Error{Code: session.CodeSessionExpired}
+	}
 	if err != nil {
 		return CreatedUploadIntent{}, err
 	}

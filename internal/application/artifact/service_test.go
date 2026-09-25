@@ -1549,6 +1549,38 @@ func TestConfirmIdentityDocumentRejectsSessionAtExactExpiryBeforeExternalIO(t *t
 	}
 }
 
+func TestConfirmPendingSessionUsesProviderDeadlineBeforeRejectingState(t *testing.T) {
+	f := newConfirmFixture()
+	providerDeadline := f.now.Add(time.Minute)
+	f.transactions.state.session.Status = session.StatusVerificationPending
+	f.transactions.state.session.ExpiresAt = f.now.Add(-time.Hour)
+	f.transactions.state.session.VerificationDeadlineAt = &providerDeadline
+	service := artifact.NewService(
+		f.transactions,
+		f.coordinator,
+		f.storage,
+		f.extractor,
+		f.tokens,
+		fixedClock{now: f.now},
+		func(context.Context, uuid.UUID) error {
+			t.Fatal("expiry operation called before provider deadline")
+			return nil
+		},
+	)
+
+	_, err := service.Confirm(
+		context.Background(),
+		f.sessionID,
+		"raw-resume-token",
+		f.uploadIntentID,
+	)
+
+	requireArtifactError(t, err, artifact.CodeConfirmationStale, "")
+	if f.storageCalls != 0 || f.extractorCalls != 0 {
+		t.Fatalf("external calls = storage:%d extractor:%d, want 0/0", f.storageCalls, f.extractorCalls)
+	}
+}
+
 func TestConfirmIdentityDocumentRollsBackAllWritesWhenEventAppendFails(t *testing.T) {
 	now := time.Date(2026, 7, 16, 10, 0, 0, 0, time.UTC)
 	previousUpdatedAt := now.Add(-time.Minute)

@@ -127,6 +127,9 @@ func (s *Service) Submit(ctx context.Context, sessionID uuid.UUID, rawToken stri
 			}
 			return nil
 		case verificationsession.VerificationPending:
+			if lockedSession.VerificationDeadlineAt == nil {
+				return errors.New("invalid deadline on submission")
+			}
 			result = Result{
 				ID:       lockedSession.ID,
 				Status:   lockedSession.Status,

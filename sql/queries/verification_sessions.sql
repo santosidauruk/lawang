@@ -4,7 +4,7 @@ VALUES ($1, $2)
 RETURNING id, status, resume_token_hash, expires_at, created_at, updated_at;
 
 -- name: GetVerificationSessionByID :one
-SELECT id, status, resume_token_hash, expires_at, created_at, updated_at
+SELECT id, status, resume_token_hash, expires_at, created_at, updated_at, verification_deadline_at
 FROM verification_sessions
 WHERE id = $1;
 

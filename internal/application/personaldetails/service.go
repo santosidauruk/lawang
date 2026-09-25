@@ -94,8 +94,16 @@ func (s *Service) Submit(
 		if !s.tokens.Equal(s.tokens.Hash(rawToken), stored.ResumeTokenHash) {
 			return &session.Error{Code: session.CodeInvalidResumeToken}
 		}
+
+		if stored.Status == session.StatusExpired {
+			return &session.Error{Code: session.CodeSessionExpired}
+		}
 		now := s.clock.Now()
-		if !now.Before(stored.ExpiresAt) {
+		due, err := session.IsExpiryDue(now, stored)
+		if err != nil {
+			return err
+		}
+		if due {
 			return errExpiryRequired
 		}
 		existing, err := tx.LoadDetails(ctx, id)

@@ -174,6 +174,48 @@ func TestCreateBiometricUploadIntentRejectsWrongInitialSessionState(t *testing.T
 	}
 }
 
+func TestCreateUploadIntentPendingSessionUsesProviderDeadlineBeforeRejectingState(t *testing.T) {
+	now := time.Date(2026, 8, 13, 9, 30, 0, 0, time.UTC)
+	sessionID := uuid.MustParse("4ba67e23-8406-4701-8950-f2d1bc7bdd39")
+	rawToken := "pending-provider-upload-intent-token"
+	tokens := session.NewProductionCryptoTokens()
+	providerDeadline := now.Add(time.Minute)
+	sequence := make([]string, 0)
+	transactions := &memoryUploadIntentTransactions{
+		storedSession: session.VerificationSession{
+			ID: sessionID, Status: session.StatusVerificationPending,
+			ResumeTokenHash: tokens.Hash(rawToken), ExpiresAt: now.Add(-time.Hour),
+			VerificationDeadlineAt: &providerDeadline,
+		},
+		sequence: &sequence,
+	}
+	presigner := &recordingUploadPresigner{
+		sequence: &sequence,
+		active:   &transactions.transactionActive,
+	}
+	service := artifact.NewUploadIntentService(
+		transactions,
+		transactions,
+		presigner,
+		tokens,
+		fixedClock{now: now},
+		func(context.Context, uuid.UUID) error {
+			t.Fatal("expiry operation called before provider deadline")
+			return nil
+		},
+	)
+
+	created, err := service.Create(context.Background(), sessionID, rawToken, "identity_document")
+
+	requireArtifactError(t, err, artifact.CodeUploadIntentStale, "")
+	if created != (artifact.CreatedUploadIntent{}) {
+		t.Fatalf("Create() = %#v, want zero result", created)
+	}
+	if len(sequence) != 0 {
+		t.Fatalf("operations = %#v, want no presign or transaction", sequence)
+	}
+}
+
 func TestCreateBiometricUploadIntentStaleRereadDiscardsURLAndWritesNothing(t *testing.T) {
 	now := time.Date(2026, 8, 13, 10, 0, 0, 0, time.UTC)
 	sessionID := uuid.MustParse("36fc802e-d535-46d2-825c-1047110ef3af")

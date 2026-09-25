@@ -166,9 +166,16 @@ func (s *Service) Confirm(ctx context.Context, sessionID uuid.UUID, rawToken str
 			Code: session.CodeInvalidResumeToken,
 		}
 	}
+	if storedSession.Status == session.StatusExpired {
+		return session.Summary{}, &session.Error{Code: session.CodeSessionExpired}
+	}
 
 	startedAt := s.clock.Now()
-	if !startedAt.Before(storedSession.ExpiresAt) {
+	due, err := session.IsExpiryDue(startedAt, storedSession)
+	if err != nil {
+		return session.Summary{}, err
+	}
+	if due {
 		if err := s.expireSession(ctx, sessionID); err != nil {
 			return session.Summary{}, err
 		}
@@ -193,9 +200,16 @@ func (s *Service) Confirm(ctx context.Context, sessionID uuid.UUID, rawToken str
 				Code: session.CodeInvalidResumeToken,
 			}
 		}
+		if rereadSession.Status == session.StatusExpired {
+			return &session.Error{Code: session.CodeSessionExpired}
+		}
 
 		startedAt := s.clock.Now()
-		if !startedAt.Before(rereadSession.ExpiresAt) {
+		due, err := session.IsExpiryDue(startedAt, rereadSession)
+		if err != nil {
+			return err
+		}
+		if due {
 			return errExpiryRequired
 		}
 
@@ -294,8 +308,15 @@ func (s *Service) Confirm(ctx context.Context, sessionID uuid.UUID, rawToken str
 					Code: session.CodeInvalidResumeToken,
 				}
 			}
+			if lockedSession.Status == session.StatusExpired {
+				return &session.Error{Code: session.CodeSessionExpired}
+			}
 
-			if !confirmedAt.Before(lockedSession.ExpiresAt) {
+			due, err := session.IsExpiryDue(confirmedAt, lockedSession)
+			if err != nil {
+				return err
+			}
+			if due {
 				return errExpiryRequired
 			}
 
