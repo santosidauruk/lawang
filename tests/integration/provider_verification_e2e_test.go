@@ -24,6 +24,7 @@ import (
 	"github.com/santosidauruk/lawang/internal/adapter/providerhttp"
 	queueadapter "github.com/santosidauruk/lawang/internal/adapter/queue"
 	"github.com/santosidauruk/lawang/internal/application/artifact"
+	"github.com/santosidauruk/lawang/internal/application/cleanup"
 	"github.com/santosidauruk/lawang/internal/application/expiry"
 	"github.com/santosidauruk/lawang/internal/application/fakeprovider"
 	"github.com/santosidauruk/lawang/internal/application/outbox"
@@ -330,6 +331,7 @@ type providerVerificationE2E struct {
 	worker          *queueadapter.Server
 	taskService     *providersubmission.TaskService
 	expiryService   *expiry.SweepService
+	cleanupService  *cleanup.Service
 	workerMu        sync.Mutex
 	workerStarted   bool
 	now             time.Time
@@ -375,6 +377,11 @@ func newProviderVerificationE2E(t *testing.T) *providerVerificationE2E {
 	now := time.Date(2026, 9, 16, 10, 0, 0, 0, time.UTC)
 	tokens := session.NewProductionCryptoTokens()
 	storage := newMinIOTestStorage(t, ctx)
+	cleanupService := cleanup.NewService(
+		postgresadapter.NewCleanupRepository(database),
+		storage,
+		fixedClock{now: now},
+	)
 	extractions := map[string]artifact.DocumentExtraction{}
 	artifacts := postgresadapter.NewArtifactTransactions(database)
 	artifactService := artifact.NewService(
@@ -418,6 +425,7 @@ func newProviderVerificationE2E(t *testing.T) *providerVerificationE2E {
 		extractions:     extractions,
 		redisAddress:    parsedRedisURL.Host,
 		redis:           redisContainer,
+		cleanupService:  cleanupService,
 		now:             now,
 		providerKeys:    map[uuid.UUID][]string{},
 		providerAttempt: make(chan uuid.UUID, 1),
@@ -530,6 +538,8 @@ func (h *providerVerificationE2E) newWorkerServer() *queueadapter.Server {
 		time.Second,
 		h.taskService,
 		h.expiryService,
+		h.cleanupService,
+		10,
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 	)
 }

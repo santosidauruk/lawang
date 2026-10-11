@@ -20,7 +20,7 @@ API_IMAGE := $(IMAGE_REGISTRY)/lawang-api:$(IMAGE_TAG)
 FAKE_PROVIDER_IMAGE := $(IMAGE_REGISTRY)/lawang-fake-provider:$(IMAGE_TAG)
 WORKER_IMAGE := $(IMAGE_REGISTRY)/lawang-worker:$(IMAGE_TAG)
 
-.PHONY: tools deps-up deps-down migrate sql proof proof-events run run-fake-provider run-worker fmt fmt-check vet staticcheck test sqlc-generate sqlc-diff migration-validate compose-validate quality docker-build docker-build-api docker-build-fake-provider docker-build-worker
+.PHONY: tools deps-up deps-down migrate sql proof proof-events run run-fake-provider run-worker fmt fmt-check vet staticcheck test sqlc-generate sqlc-diff migration-validate compose-validate quality docker-build docker-build-api docker-build-fake-provider docker-build-worker cleanup-orphans
 
 tools:
 	GOBIN=$(TOOLS_DIR) $(GO) install github.com/sqlc-dev/sqlc/cmd/sqlc@$(SQLC_VERSION)
@@ -106,3 +106,6 @@ docker-build-worker:
         .
 
 docker-build: docker-build-api docker-build-fake-provider docker-build-worker
+
+cleanup-orphans:
+	$(GO) run ./cmd/cleanup-orphans

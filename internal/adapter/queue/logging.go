@@ -37,7 +37,6 @@ func (h safeTaskHandler) ProcessTask(ctx context.Context, task *asynq.Task) erro
 		"task_id", taskID,
 		"task_type", task.Type(),
 		"attempt", retryCount+1,
-		"max_attempts", maxRetry+1,
 		"duration", time.Since(startedAt),
 		"outcome", outcome)
 	return err

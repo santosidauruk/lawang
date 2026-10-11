@@ -61,16 +61,31 @@ func TestProviderRetryDelayIsDeterministicForNineRetries(t *testing.T) {
 
 	for retryCount := 1; retryCount <= queue.MaxProviderRetries; retryCount++ {
 		want := time.Second * time.Duration(1<<(retryCount-1))
-		if got := queue.ProviderRetryDelay(retryCount, errors.New("sensitive"), nil); got != want {
+		if got := queue.ProviderSubmitRetryDelay(retryCount, errors.New("sensitive"), nil); got != want {
 			t.Fatalf("retry %d: expected %s, got %s", retryCount, want, got)
 		}
 	}
 
-	if got := queue.ProviderRetryDelay(0, nil, nil); got != time.Second {
+	if got := queue.ProviderSubmitRetryDelay(0, nil, nil); got != time.Second {
 		t.Fatalf("expected retry count zero to clamp to 1s, got %s", got)
 	}
-	if got := queue.ProviderRetryDelay(queue.MaxProviderRetries+1, nil, nil); got != 256*time.Second {
+	if got := queue.ProviderSubmitRetryDelay(queue.MaxProviderRetries+1, nil, nil); got != 256*time.Second {
 		t.Fatalf("expected retries above the limit to clamp to 256s, got %s", got)
+	}
+}
+
+func TestTaskRetryDelayKeepsProviderPolicySeparate(t *testing.T) {
+	t.Parallel()
+	providerTask := asynq.NewTask(outbox.TaskTypeProviderSubmit, nil)
+	cleanupTask := queue.NewStorageCleanupTask()
+	for n := 1; n <= queue.MaxProviderRetries; n++ {
+		want := time.Second * time.Duration(1<<(n-1))
+		if got := queue.TaskRetryDelay(n, errors.New("retry"), providerTask); got != want {
+			t.Fatalf("provider retry %d = %s, want %s", n, got, want)
+		}
+	}
+	if got := queue.TaskRetryDelay(1, errors.New("retry"), cleanupTask); got < 15*time.Second || got > 75*time.Second {
+		t.Fatalf("cleanup retry delay = %s, want Asynq default range", got)
 	}
 }
 

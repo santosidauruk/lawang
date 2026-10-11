@@ -29,6 +29,7 @@ CREATE TABLE session_events (
     )
 );
 
+-- +goose StatementBegin
 CREATE FUNCTION reject_session_event_mutation()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -38,6 +39,7 @@ BEGIN
         USING ERRCODE = 'object_not_in_prerequisite_state';
 END;
 $$;
+-- +goose StatementEnd
 
 CREATE TRIGGER session_events_reject_mutation
 BEFORE UPDATE OR DELETE ON session_events

@@ -12,6 +12,7 @@ type Server struct {
 	server                *asynq.Server
 	providerSubmitHandler asynq.Handler
 	sessionExpiryHandler  asynq.Handler
+	storageCleanupHandler asynq.Handler
 	logger                *slog.Logger
 }
 
@@ -21,16 +22,19 @@ func NewAsynqTaskServer(
 	shutdownTimeout time.Duration,
 	providerSubmitService ProviderSubmissionTaskService,
 	sessionExpiryService SessionExpiryTaskService,
+	storageCleanupService StorageCleanupTaskService,
+	cleanupBatchSize int32,
 	logger *slog.Logger) *Server {
 	return &Server{
 		server: asynq.NewServer(redisClientOpt(config), asynq.Config{
 			Concurrency:     concurrency,
 			ShutdownTimeout: shutdownTimeout,
-			RetryDelayFunc:  ProviderRetryDelay,
+			RetryDelayFunc:  TaskRetryDelay,
 			Logger:          safeAsynqLogger{logger: logger},
 		}),
 		providerSubmitHandler: NewProviderSubmissionHandler(providerSubmitService),
 		sessionExpiryHandler:  NewSessionExpiryHandler(sessionExpiryService),
+		storageCleanupHandler: NewStorageCleanupHandler(storageCleanupService, cleanupBatchSize),
 		logger:                logger,
 	}
 }
@@ -48,11 +52,14 @@ func (s *Server) Start() error {
 		next:   s.sessionExpiryHandler,
 		logger: s.logger,
 	})
+	mux.Handle(TaskTypeStorageCleanup, safeTaskHandler{
+		next: s.storageCleanupHandler, logger: s.logger,
+	})
 	return s.server.Start(mux)
 }
 func (s *Server) Shutdown() { s.server.Shutdown() }
 
-func ProviderRetryDelay(retryCount int, _ error, _ *asynq.Task) time.Duration {
+func ProviderSubmitRetryDelay(retryCount int, _ error, _ *asynq.Task) time.Duration {
 	if retryCount < 1 {
 		retryCount = 1
 	}
@@ -60,6 +67,13 @@ func ProviderRetryDelay(retryCount int, _ error, _ *asynq.Task) time.Duration {
 		retryCount = MaxProviderRetries
 	}
 	return time.Second * time.Duration(1<<(retryCount-1))
+}
+
+func TaskRetryDelay(n int, err error, task *asynq.Task) time.Duration {
+	if task != nil && task.Type() == outbox.TaskTypeProviderSubmit {
+		return ProviderSubmitRetryDelay(n, err, task)
+	}
+	return asynq.DefaultRetryDelayFunc(n, err, task)
 }
 
 type safeAsynqLogger struct{ logger *slog.Logger }

@@ -25,6 +25,14 @@ func setValidWorkerEnvironment(t *testing.T) {
 		"OUTBOX_CLAIM_LEASE":      "45s",
 		"SHUTDOWN_TIMEOUT":        "11s",
 		"LOG_LEVEL":               "warn",
+		"S3_INTERNAL_ENDPOINT":    "http://minio.internal:9000",
+		"S3_REGION":               "us-east-1",
+		"S3_ACCESS_KEY":           "test-access",
+		"S3_SECRET_KEY":           "test-secret",
+		"S3_BUCKET":               "test-artifacts",
+		"S3_USE_PATH_STYLE":       "true",
+		"CLEANUP_INTERVAL":        "2m",
+		"CLEANUP_BATCH_SIZE":      "17",
 	}
 	for key, value := range values {
 		t.Setenv(key, value)
@@ -43,6 +51,9 @@ func TestLoadWorkerParsesTypedConfiguration(t *testing.T) {
 	}
 	if got.ProviderTimeout != 3*time.Second || got.RelayInterval != 125*time.Millisecond || got.OutboxClaimLease != 45*time.Second || got.ShutdownTimeout != 11*time.Second {
 		t.Fatalf("unexpected duration config: %+v", got)
+	}
+	if got.CleanupInterval != 2*time.Minute || got.CleanupBatchSize != 17 || got.S3InternalEndpoint != "http://minio.internal:9000" || !got.S3UsePathStyle {
+		t.Fatalf("unexpected cleanup or storage config: %+v", got)
 	}
 }
 
@@ -65,6 +76,20 @@ func TestLoadWorkerRejectsMissingAndMalformedValuesSafely(t *testing.T) {
 		{name: "invalid claim lease", key: "OUTBOX_CLAIM_LEASE", value: "-1s", errorText: "OUTBOX_CLAIM_LEASE must be a positive duration"},
 		{name: "invalid shutdown timeout", key: "SHUTDOWN_TIMEOUT", value: "0s", errorText: "SHUTDOWN_TIMEOUT must be a positive duration"},
 		{name: "invalid log level", key: "LOG_LEVEL", value: "secret-level", errorText: "LOG_LEVEL must be one of"},
+		{name: "zero cleanup interval", key: "CLEANUP_INTERVAL", value: "0s", errorText: "CLEANUP_INTERVAL must be a positive duration"},
+		{name: "negative cleanup interval", key: "CLEANUP_INTERVAL", value: "-1s", errorText: "CLEANUP_INTERVAL must be a positive duration"},
+		{name: "malformed cleanup interval", key: "CLEANUP_INTERVAL", value: "secret-duration", errorText: "CLEANUP_INTERVAL must be a positive duration"},
+		{name: "zero cleanup batch", key: "CLEANUP_BATCH_SIZE", value: "0", errorText: "CLEANUP_BATCH_SIZE must be a positive integer"},
+		{name: "negative cleanup batch", key: "CLEANUP_BATCH_SIZE", value: "-1", errorText: "CLEANUP_BATCH_SIZE must be a positive integer"},
+		{name: "malformed cleanup batch", key: "CLEANUP_BATCH_SIZE", value: "secret-batch", errorText: "CLEANUP_BATCH_SIZE must be a positive integer"},
+		{name: "oversized cleanup batch", key: "CLEANUP_BATCH_SIZE", value: "1001", errorText: "CLEANUP_BATCH_SIZE is higher than allowed maximum value"},
+		{name: "missing S3 endpoint", key: "S3_INTERNAL_ENDPOINT", value: "", errorText: "S3_INTERNAL_ENDPOINT is required"},
+		{name: "invalid S3 endpoint", key: "S3_INTERNAL_ENDPOINT", value: "s3-secret", errorText: "S3_INTERNAL_ENDPOINT must be an absolute HTTP or HTTPS URL"},
+		{name: "missing S3 region", key: "S3_REGION", value: "", errorText: "S3_REGION is required"},
+		{name: "missing S3 access key", key: "S3_ACCESS_KEY", value: "", errorText: "S3_ACCESS_KEY is required"},
+		{name: "missing S3 secret key", key: "S3_SECRET_KEY", value: "", errorText: "S3_SECRET_KEY is required"},
+		{name: "missing S3 bucket", key: "S3_BUCKET", value: "", errorText: "S3_BUCKET is required"},
+		{name: "invalid path style", key: "S3_USE_PATH_STYLE", value: "secret-path-style", errorText: "S3_USE_PATH_STYLE must be true or false"},
 	}
 
 	for _, testCase := range testCases {

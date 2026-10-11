@@ -43,7 +43,7 @@ set status = 'confirmed', confirmed_at = sqlc.arg(upload_intent_confirmed_at), l
 where status = 'pending' and id = sqlc.arg(upload_intent_id);
 
 -- name: MarkUploadIntentValidationFailed :execrows
-update upload_intents 
+update upload_intents
 set status = 'validation_failed', failure_code = sqlc.arg(upload_intent_failure_code), latest_status_change_at = sqlc.arg(upload_intent_latest_status_change_at)
 where status = 'pending' and id = sqlc.arg(upload_intent_id);
 
@@ -76,3 +76,27 @@ INSERT INTO upload_intents (
     sqlc.arg(latest_status_change_at),
     sqlc.arg(expires_at)
 );
+
+
+-- name: MaterializeExpiredUploadIntents :execrows
+update upload_intents
+set status = 'expired', latest_status_change_at = expires_at
+where expires_at <= sqlc.arg(deadline) and status in ('pending');
+
+-- name: SelectStaleUploadIntents :many
+select id, storage_key
+from upload_intents u
+where u.status in ('superseded', 'expired', 'validation_failed')
+  and u.object_deleted_at is null
+  and u.latest_status_change_at < sqlc.arg(cutoff_time)::timestamptz
+  and not exists(
+    select 1
+    from verification_artifacts va
+    where va.upload_intent_id = u.id
+  )
+limit sqlc.arg(batch_size);
+
+-- name: MarkDeletedIntentById :execrows
+update upload_intents
+set object_deleted_at = sqlc.arg(deleted_at)::timestamptz
+where id = sqlc.arg(upload_intent_id) and status in ('superseded', 'expired', 'validation_failed') and object_deleted_at is null;

@@ -8,10 +8,16 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/santosidauruk/lawang/internal/adapter/postgres"
 	"github.com/santosidauruk/lawang/internal/adapter/providerhttp"
 	queueadapter "github.com/santosidauruk/lawang/internal/adapter/queue"
+	"github.com/santosidauruk/lawang/internal/adapter/s3storage"
+	"github.com/santosidauruk/lawang/internal/application/cleanup"
 	"github.com/santosidauruk/lawang/internal/application/expiry"
 	"github.com/santosidauruk/lawang/internal/application/outbox"
 	"github.com/santosidauruk/lawang/internal/application/providersubmission"
@@ -47,6 +53,27 @@ func run() int {
 		return 1
 	}
 
+	awsConfig, err := awsconfig.LoadDefaultConfig(
+		ctx,
+		awsconfig.WithRegion(cfg.S3Region),
+		awsconfig.WithCredentialsProvider(
+			credentials.NewStaticCredentialsProvider(
+				cfg.S3AccessKey,
+				cfg.S3SecretKey,
+				"",
+			),
+		),
+	)
+	if err != nil {
+		logger.Error("storage configuration failed")
+		return 1
+	}
+
+	s3Client := s3.NewFromConfig(awsConfig, func(options *s3.Options) {
+		options.BaseEndpoint = aws.String(cfg.S3InternalEndpoint)
+		options.UsePathStyle = cfg.S3UsePathStyle
+	})
+
 	clock := systemClock{}
 	redisConfig := queueadapter.RedisConfig{
 		Address:  cfg.RedisAddress,
@@ -75,9 +102,17 @@ func run() int {
 	expiryService := expiry.NewService(expiryTransactions, clock)
 
 	sweepService := expiry.NewSweepService(expiryTransactions, expiryService, clock, cfg.ExpirySweepBatchSize)
-	providerServer := queueadapter.NewAsynqTaskServer(redisConfig, cfg.Concurrency, cfg.ShutdownTimeout, providerSubmitTaskService, sweepService, logger)
 
-	scheduler, err := queueadapter.NewSessionExpiryScheduler(redisConfig, cfg.ExpirySweepInterval, logger)
+	cleanupStorage := s3storage.New(
+		s3.NewPresignClient(s3Client),
+		cfg.S3Bucket,
+		s3Client,
+	)
+	cleanupRepository := postgres.NewCleanupRepository(database)
+	cleanupService := cleanup.NewService(cleanupRepository, cleanupStorage, clock)
+	providerServer := queueadapter.NewAsynqTaskServer(redisConfig, cfg.Concurrency, cfg.ShutdownTimeout, providerSubmitTaskService, sweepService, cleanupService, int32(cfg.CleanupBatchSize), logger)
+
+	scheduler, err := queueadapter.NewWorkerScheduler(redisConfig, cfg.ExpirySweepInterval, cfg.CleanupInterval, logger)
 	if err != nil {
 		logger.Error("scheduler expiry configuration failed")
 		return 1

@@ -8,7 +8,7 @@ Source: `docs/plan-go.md` sections 5.3, 9.5, 10-16, 16 Issue 10, 17.2, and 20
 Approved collaboration plan:
 [`docs/plans/issue_010/README.md`](../plans/issue_010/README.md).
 Active checkpoint:
-[`Checkpoint 1 — Guarded Expiry Operation`](../plans/issue_010/checkpoint-1-guarded-expiry-operation.md).
+[`Checkpoint 5 — Redacted Audit CLI`](../plans/issue_010/checkpoint-5-redacted-audit-cli.md).
 
 ## User stories covered
 
@@ -51,16 +51,16 @@ race/selection correctness and contract drift; then completes sibling cases.
 
 ## Acceptance criteria
 
-- [ ] User-authored cleanup-safety SQL proof receives critical review; expiry race
+- [x] User-authored cleanup-safety SQL proof receives critical review; expiry race
       tests are agent-owned.
 - [ ] Lazy applicant operations and scheduled Asynq sweep use the same idempotent
       expiry operation and produce one `expired` state plus one `expire` event under
       a race.
 - [ ] Pending-provider sessions use their separate deadline; late signed callbacks
       are stored as ignored and do not leave `expired`.
-- [ ] Scheduled and manual cleanup invoke the same use case, apply the 24-hour grace
+- [x] Scheduled and manual cleanup invoke the same use case, apply the 24-hour grace
       period, retry transient failure, and record deletion idempotently.
-- [ ] Cleanup query and integration test structurally exclude confirmed intents and
+- [x] Cleanup query and integration test structurally exclude confirmed intents and
       every object referenced by a Verification Artifact.
 - [ ] `cmd/audit --session-id` prints state and ordered redacted events without tokens,
       PII, URLs, raw webhook/extraction bodies, or object contents.

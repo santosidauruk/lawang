@@ -411,7 +411,7 @@ func TestProviderWorkerRestartRecoversActiveTaskWithStableIdempotencyKey(t *test
 				ShutdownTimeout:          shutdownTimeout,
 				TaskCheckInterval:        10 * time.Millisecond,
 				DelayedTaskCheckInterval: 10 * time.Millisecond,
-				RetryDelayFunc:           queue.ProviderRetryDelay,
+				RetryDelayFunc:           queue.ProviderSubmitRetryDelay,
 			},
 		)
 	}

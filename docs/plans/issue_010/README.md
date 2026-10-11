@@ -1,7 +1,7 @@
 # Issue 010 Collaboration Plan
 
-Status: disetujui pada 2026-09-16; Checkpoint 1 selesai pada 2026-09-19 dan
-Checkpoint 2 aktif dengan Bagian user poin 1-6 sudah melewati focused review.
+Status: disetujui pada 2026-09-16; Checkpoint 1-4 selesai, dan Checkpoint 5 menjadi
+checkpoint berikutnya pada 2026-10-09.
 
 Dokumen ini membagi operability MVP menjadi delapan checkpoint belajar. Setiap
 checkpoint menghasilkan satu perilaku yang dapat diamati dan memiliki `Bagian user`,

@@ -166,8 +166,27 @@ func (q *Queries) LockUploadIntent(ctx context.Context, arg LockUploadIntentPara
 	return i, err
 }
 
+const markDeletedIntentById = `-- name: MarkDeletedIntentById :execrows
+update upload_intents
+set object_deleted_at = $1::timestamptz
+where id = $2 and status in ('superseded', 'expired', 'validation_failed') and object_deleted_at is null
+`
+
+type MarkDeletedIntentByIdParams struct {
+	DeletedAt      time.Time `json:"deleted_at"`
+	UploadIntentID uuid.UUID `json:"upload_intent_id"`
+}
+
+func (q *Queries) MarkDeletedIntentById(ctx context.Context, arg MarkDeletedIntentByIdParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markDeletedIntentById, arg.DeletedAt, arg.UploadIntentID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const markUploadIntentValidationFailed = `-- name: MarkUploadIntentValidationFailed :execrows
-update upload_intents 
+update upload_intents
 set status = 'validation_failed', failure_code = $1, latest_status_change_at = $2
 where status = 'pending' and id = $3
 `
@@ -184,6 +203,64 @@ func (q *Queries) MarkUploadIntentValidationFailed(ctx context.Context, arg Mark
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const materializeExpiredUploadIntents = `-- name: MaterializeExpiredUploadIntents :execrows
+update upload_intents
+set status = 'expired', latest_status_change_at = expires_at
+where expires_at <= $1 and status in ('pending')
+`
+
+func (q *Queries) MaterializeExpiredUploadIntents(ctx context.Context, deadline time.Time) (int64, error) {
+	result, err := q.db.Exec(ctx, materializeExpiredUploadIntents, deadline)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const selectStaleUploadIntents = `-- name: SelectStaleUploadIntents :many
+select id, storage_key
+from upload_intents u
+where u.status in ('superseded', 'expired', 'validation_failed')
+  and u.object_deleted_at is null
+  and u.latest_status_change_at < $1::timestamptz
+  and not exists(
+    select 1
+    from verification_artifacts va
+    where va.upload_intent_id = u.id
+  )
+limit $2
+`
+
+type SelectStaleUploadIntentsParams struct {
+	CutoffTime time.Time `json:"cutoff_time"`
+	BatchSize  int32     `json:"batch_size"`
+}
+
+type SelectStaleUploadIntentsRow struct {
+	ID         uuid.UUID `json:"id"`
+	StorageKey string    `json:"storage_key"`
+}
+
+func (q *Queries) SelectStaleUploadIntents(ctx context.Context, arg SelectStaleUploadIntentsParams) ([]SelectStaleUploadIntentsRow, error) {
+	rows, err := q.db.Query(ctx, selectStaleUploadIntents, arg.CutoffTime, arg.BatchSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SelectStaleUploadIntentsRow
+	for rows.Next() {
+		var i SelectStaleUploadIntentsRow
+		if err := rows.Scan(&i.ID, &i.StorageKey); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const supersedePendingUploadIntent = `-- name: SupersedePendingUploadIntent :execrows

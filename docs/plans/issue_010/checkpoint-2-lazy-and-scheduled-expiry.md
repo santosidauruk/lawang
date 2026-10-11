@@ -1,7 +1,8 @@
 # Checkpoint 2 — Lazy dan Scheduled Expiry Convergence
 
-Status: dimulai pada 2026-09-19; Bagian user poin 1-6 sudah melewati focused review,
-dan keputusan sebelum implementasi poin 9-10 dibekukan sebagian pada 2026-09-20.
+Status: selesai pada 2026-09-25; Bagian user dan review gate lulus, lalu focused
+application, PostgreSQL, Redis, late-callback, build, SQLC, migration, Compose, dan
+`git diff --check` verification GREEN.
 
 ## Tujuan
 

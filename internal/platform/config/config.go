@@ -25,6 +25,7 @@ type Config struct {
 	S3Bucket              string
 	S3UsePathStyle        bool
 	ProviderWebhookSecret string
+	CleanupBatchSize      int
 }
 
 type FakeConfig struct {
@@ -51,6 +52,14 @@ type WorkerConfig struct {
 	LogLevel              slog.Level
 	ExpirySweepInterval   time.Duration
 	ExpirySweepBatchSize  int
+	CleanupInterval       time.Duration
+	CleanupBatchSize      int
+	S3InternalEndpoint    string
+	S3Region              string
+	S3AccessKey           string
+	S3SecretKey           string
+	S3Bucket              string
+	S3UsePathStyle        bool
 }
 
 // Load reads and validates process configuration from the environment.
@@ -128,6 +137,11 @@ func Load() (Config, error) {
 		return Config{}, errors.New("PROVIDER_WEBHOOK_SECRET is required")
 	}
 
+	cleanupBatchSize, err := positiveMaxInt("CLEANUP_BATCH_SIZE", 1000, 10)
+	if err != nil {
+		return Config{}, err
+	}
+
 	return Config{
 		DatabaseURL:           databaseURL,
 		HTTPAddress:           lookupOrDefault("HTTP_ADDRESS", ":8080"),
@@ -141,6 +155,7 @@ func Load() (Config, error) {
 		S3Bucket:              s3Bucket,
 		S3UsePathStyle:        s3BoolUsePathStyle,
 		ProviderWebhookSecret: providerWebhookSecret,
+		CleanupBatchSize:      cleanupBatchSize,
 	}, nil
 }
 
@@ -301,6 +316,54 @@ func LoadWorker() (WorkerConfig, error) {
 	if err != nil {
 		return WorkerConfig{}, err
 	}
+	cleanupInterval, err := positiveDuration("CLEANUP_INTERVAL", 5*time.Minute)
+	if err != nil {
+		return WorkerConfig{}, err
+	}
+	cleanupBatchSize, err := positiveMaxInt("CLEANUP_BATCH_SIZE", 1000, 10)
+	if err != nil {
+		return WorkerConfig{}, err
+	}
+
+	s3Endpoint, err := required("S3_INTERNAL_ENDPOINT")
+	if err != nil {
+		return WorkerConfig{}, err
+	}
+	if err := validateS3Endpoint("S3_INTERNAL_ENDPOINT", s3Endpoint); err != nil {
+		return WorkerConfig{}, err
+	}
+
+	s3Region, err := required("S3_REGION")
+	if err != nil {
+		return WorkerConfig{}, err
+	}
+	s3AccessKey, err := required("S3_ACCESS_KEY")
+	if err != nil {
+		return WorkerConfig{}, err
+	}
+	s3SecretKey, err := required("S3_SECRET_KEY")
+	if err != nil {
+		return WorkerConfig{}, err
+	}
+	s3Bucket, err := required("S3_BUCKET")
+	if err != nil {
+		return WorkerConfig{}, err
+	}
+	rawPathStyle, err := required("S3_USE_PATH_STYLE")
+	if err != nil {
+		return WorkerConfig{}, err
+	}
+
+	var s3UsePathStyle bool
+	switch rawPathStyle {
+	case "true":
+		s3UsePathStyle = true
+	case "false":
+		s3UsePathStyle = false
+	default:
+		return WorkerConfig{}, errors.New("S3_USE_PATH_STYLE must be true or false")
+	}
+
 	return WorkerConfig{
 		DatabaseURL: databaseURL, RedisAddress: redisAddress,
 		RedisPassword: os.Getenv("REDIS_PASSWORD"), RedisDatabase: redisDatabase,
@@ -310,6 +373,14 @@ func LoadWorker() (WorkerConfig, error) {
 		ShutdownTimeout: shutdownTimeout, LogLevel: logLevel,
 		ExpirySweepInterval:  expirySweepInterval,
 		ExpirySweepBatchSize: expirySweepBatchSize,
+		CleanupInterval:      cleanupInterval,
+		CleanupBatchSize:     cleanupBatchSize,
+		S3InternalEndpoint:   s3Endpoint,
+		S3Region:             s3Region,
+		S3AccessKey:          s3AccessKey,
+		S3SecretKey:          s3SecretKey,
+		S3Bucket:             s3Bucket,
+		S3UsePathStyle:       s3UsePathStyle,
 	}, nil
 }
 

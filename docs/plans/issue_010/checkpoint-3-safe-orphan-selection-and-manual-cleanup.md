@@ -1,6 +1,6 @@
 # Checkpoint 3 — Safe Orphan Selection dan Manual Cleanup
 
-Status: menunggu Checkpoint 2 selesai dan gate `[review]` lulus.
+Status: selesai pada 2026-10-08; Bagian user 1-14 dan seluruh Bagian agent GREEN.
 
 ## Tujuan
 
@@ -59,21 +59,62 @@ Agent lebih dulu menyiapkan semantic SQL fixtures, fake object storage port, man
 command runner, dan RED real-MinIO tracer tanpa mengisi production selection/delete
 behavior.
 
+Scaffold tersedia di:
+
+- `sql/proofs/009_safe_orphan_cleanup.sql` untuk fixed semantic fixtures dan marker
+  RED tempat user menulis ACT serta assertion proof;
+- `internal/application/cleanup/service_test.go` untuk urutan materialize -> select
+  -> delete -> mark dengan fake object storage;
+- `tests/integration/cleanup_postgres_minio_test.go` untuk tracer production service
+  terhadap disposable PostgreSQL dan MinIO;
+- `cmd/cleanup-orphans/main.go` untuk runner yang sementara fail-closed tanpa
+  mencetak data sensitif.
+
+Mulai dari handwritten SQL poin 1-4. Setelah `make sqlc-generate`, lengkapi ACT dan
+assertion milik user di proof, lalu jalankan:
+
+```sh
+psql "$DATABASE_URL" -f sql/proofs/009_safe_orphan_cleanup.sql
+```
+
+Proof sekarang GREEN dengan exact candidate set berisi tiga row aman, hard exclusion
+untuk confirmed, artifact-backed, already-deleted, dan exact grace boundary, serta
+materialization timestamp yang tetap memakai `expires_at`. Setelah proof GREEN,
+lanjutkan application tracer:
+
+```sh
+GOCACHE=/tmp/lawang-go-build go test ./internal/application/cleanup \
+  -run '^TestRunMaterializesBeforeSelectingAndMarksOnlyAfterDelete$' -count=1 -v
+```
+
+Expected RED awal adalah `undefined: cleanup.Candidate`, `cleanup.NewService`, dan
+`cleanup.Input`. Jangan menambahkan production behavior di test fake.
+
+Setelah service serta PostgreSQL dan S3 adapters tersedia, jalankan vertical tracer:
+
+```sh
+GOCACHE=/tmp/lawang-go-build go test ./tests/integration \
+  -run '^TestManualCleanupDeletesOneSafeObjectAndPersistsItsMarker$' -count=1 -v
+```
+
+Expected RED scaffold saat ini adalah `undefined: cleanup.NewService`,
+`postgresadapter.NewCleanupRepository`, dan `cleanup.Input`.
+
 1. `[sql query]` Mulai dengan query yang mencari pending Upload Intents saat
    `expires_at <= now`. Ubah hanya row tersebut menjadi `expired`, lalu isi
-   `latest_status_change_at` memakai nilai `expires_at` milik row agar waktu domain
+   `latest_status_change_at` memakai nilai `expires_at` milik row agar waktu domain //update ke expired
    expiry tidak bergeser ke waktu cleanup command dijalankan.
 2. `[sql query]` Buat query terpisah untuk mengambil kandidat dalam jumlah maksimum
    yang diberikan caller. Batasi status ke `superseded`, `expired`, atau
-   `validation_failed`, minta logical transition time sudah lewat 24 jam, dan pilih
+   `validation_failed`, minta logical transition time sudah lewat 24 jam, dan pilih // cari sessionIds yang expired
    hanya row dengan `object_deleted_at IS NULL`.
 3. `[sql query]` Tambahkan structural exclusion langsung ke candidate query dengan
    `NOT EXISTS` terhadap Verification Artifact. Hubungkan exclusion memakai Upload
    Intent/storage ownership yang benar sehingga object tetap terlindungi walaupun
-   fixture memiliki status yang tampak eligible untuk cleanup.
+   fixture memiliki status yang tampak eligible untuk cleanup.// masih 1 query dengan poin 2
 4. `[sql query]` Tulis named guarded update untuk merekam deletion time. Query harus
    menerima exact intent ID, hanya mengubah row yang masih cleanup-eligible dan belum
-   memiliki marker, serta tidak mengubah status atau metadata lain.
+   memiliki marker, serta tidak mengubah status atau metadata lain. // mark deleted
 5. `[verification]` Jalankan `make sqlc-generate` setelah keempat handwritten queries
    selesai. Periksa generated methods satu per satu—parameter waktu, limit, result
    columns, dan affected-row return—lalu perbaiki SQL sumber bila bentuk generated
@@ -150,3 +191,24 @@ Setelah cleanup-safety SQL proof dan gate `[review]` lulus, agent menambahkan:
 Checkpoint selesai ketika manual command memakai production use case yang sama dengan
 tracer, protected objects terbukti tidak selectable, dan all focused gates GREEN.
 Scheduled cleanup tetap milik Checkpoint 4.
+
+## Evidence penyelesaian
+
+- SQL proof mengembalikan `safe orphan cleanup proof passed` dan `ROLLBACK` terhadap
+  PostgreSQL Compose lokal.
+- application unit siblings GREEN untuk empty batch, partial batch, context
+  cancellation, dan marker failure; cancellation sekarang menghentikan batch tanpa
+  menyentuh kandidat berikutnya.
+- PostgreSQL integration matrix GREEN untuk seluruh status, exact grace boundary,
+  corrupted artifact-backed fixture, already-deleted row, materialization time,
+  serta concurrent guarded marker dengan satu winner dan satu stale outcome.
+- PostgreSQL + MinIO tracers GREEN untuk successful deletion, missing-object replay,
+  transient failure setelah MinIO dihentikan, dan crash-window recovery; confirmed
+  object tetap ada dan marker-nya tetap `NULL`.
+- CLI tests GREEN untuk invalid configuration, canceled parent context, safe
+  stdout/stderr, dan non-zero exit code; target `make cleanup-orphans` tetap membungkus
+  `go run ./cmd/cleanup-orphans` tanpa credential argument.
+- focused application/CLI tests, focused integration suite, application race test,
+  concurrent PostgreSQL race test, `go vet ./...`, bundled Staticcheck, SQLC diff,
+  Goose migration validation, Compose validation, formatting, dan
+  `git diff --check` seluruhnya GREEN.

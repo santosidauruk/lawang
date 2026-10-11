@@ -3,6 +3,7 @@ package queue
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"strings"
@@ -58,5 +59,38 @@ func TestSafeAsynqLoggerDiscardsUntrustedArguments(t *testing.T) {
 	}
 	if !strings.Contains(logged, "queue internal event") {
 		t.Fatalf("expected bounded queue event message, got %s", logged)
+	}
+}
+
+func TestCleanupTaskLogContainsOnlyAllowlistedFields(t *testing.T) {
+	var output bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&output, nil))
+	err := errors.New("secret-bucket/secret-key")
+	handler := safeTaskHandler{next: failingTaskHandler{err: err}, logger: logger}
+	if got := handler.ProcessTask(context.Background(), NewStorageCleanupTask()); !errors.Is(got, err) {
+		t.Fatalf("handler error = %v, want original failure", got)
+	}
+	var event map[string]any
+	if err := json.Unmarshal(output.Bytes(), &event); err != nil {
+		t.Fatalf("decode task log: %v", err)
+	}
+	allowed := map[string]bool{
+		"time": true, "level": true, "msg": true,
+		"task_id": true, "task_type": true, "attempt": true,
+		"duration": true, "outcome": true,
+	}
+	for key := range event {
+		if !allowed[key] {
+			t.Fatalf("unexpected task log field %q: %s", key, output.String())
+		}
+	}
+	if len(event) != len(allowed) {
+		t.Fatalf("task log fields = %v, want %v", event, allowed)
+	}
+	if event["task_type"] != TaskTypeStorageCleanup || event["outcome"] != "retry" {
+		t.Fatalf("unexpected cleanup event: %v", event)
+	}
+	if strings.Contains(output.String(), "secret-bucket") || strings.Contains(output.String(), "secret-key") {
+		t.Fatalf("cleanup log leaked underlying storage error: %s", output.String())
 	}
 }

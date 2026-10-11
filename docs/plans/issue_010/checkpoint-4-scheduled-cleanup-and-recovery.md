@@ -1,6 +1,6 @@
 # Checkpoint 4 — Scheduled Cleanup dan Failure Recovery
 
-Status: menunggu Checkpoint 3 selesai dan cleanup-safety gate `[review]` lulus.
+Status: selesai pada 2026-10-09; poin 10-11 dan Bagian agent GREEN.
 
 ## Tujuan
 
@@ -53,6 +53,29 @@ selection atau deletion logic kedua, lalu membuktikan retry dan restart recovery
 
 Agent lebih dulu menyiapkan strict task decoder tracer, service recorder, dan
 worker-restart fixture tanpa mengisi queue/runtime production behavior.
+
+Scaffold awal:
+
+- `internal/adapter/queue/storage_cleanup_test.go` mematok task type
+  `storage:cleanup`, payload exact `{}`, strict rejection untuk `null`, unknown field,
+  dan trailing JSON, serta satu panggilan ke `cleanup.Service.Run` dengan limit dari
+  worker config. Test ini sengaja RED sampai queue adapter Bagian user ditulis.
+- `cmd/worker/cleanup_restart_fixture_test.go` menyediakan recorder event yang dapat
+  dipakai ulang untuk dua process lifetime. Fixture ini belum menguji runtime;
+  sambungkan setelah queue dan worker wiring Bagian user selesai.
+
+Mulai dari poin 1-3 dan jalankan tracer paling kecil:
+
+```sh
+rtk proxy env GOCACHE=/tmp/lawang-go-build go test ./internal/adapter/queue \
+  -run '^TestStorageCleanupTaskStrictPayloadAndServiceCall$' -count=1 -v
+```
+
+RED awal yang diharapkan adalah simbol `NewStorageCleanupHandler`,
+`NewStorageCleanupTask`, dan `TaskTypeStorageCleanup` belum tersedia. Jika memilih
+nama API berbeda, ubah nama di tracer tanpa melemahkan assertion payload dan
+panggilan service. Batch limit berasal dari typed worker config, bukan task payload;
+handler tidak membawa storage key, candidate row, atau credentials ke Redis.
 
 1. `[queue adapter]` Mulai dengan mendefinisikan task type `storage:cleanup` dan exact
    payload shape yang dibutuhkan handler. Gunakan payload sekecil mungkin, terapkan
@@ -129,3 +152,36 @@ Setelah gate `[review]` lulus, agent menambahkan:
 Checkpoint selesai ketika manual dan scheduled cleanup converge, recovery matrix
 GREEN, serta provider/expiry worker behavior tetap lulus. Audit output tetap milik
 Checkpoint 5.
+
+## Bukti penyelesaian (2026-10-09)
+
+- Gate `[review]` lulus: handler cleanup memanggil `cleanup.Service.Run` yang sama
+  dengan command manual; queue tidak memiliki selection/deletion rule kedua;
+  scheduler menggunakan Redis/Asynq tanpa outbox; provider backoff tetap 1-256 detik
+  untuk sembilan retry. Worker menghentikan scheduler sebelum server drain.
+- Focused queue, worker, dan config tests GREEN. Strict payload menolak `null`,
+  unknown field, dan trailing JSON; permanent failure memakai `SkipRetry`,
+  transient error tetap retryable, dan raw storage error tidak keluar ke log.
+- Tracer PostgreSQL + Redis + MinIO GREEN: attempt pertama `retry`, attempt kedua
+  menghapus object dan menyimpan `object_deleted_at`; tick scheduler berikutnya
+  memproses kandidat baru. Duplicate tasks tidak mengulang delete, confirmed object
+  dan marker-nya tetap utuh. Outage MinIO nyata pulih setelah retry. Pending task
+  selamat dari restart worker dan Redis. Shutdown saat active delete bounded dan
+  worker baru menyelesaikan marker.
+- Routing provider, expiry, cleanup melalui Redis GREEN; provider E2E dan cleanup
+  manual tetap GREEN. Focused `go test -race` untuk queue, worker, config GREEN;
+  `go vet ./...`, `docker compose config --quiet`, dan `git diff --check` GREEN.
+- Contoh log yang diamati: `task_type=storage:cleanup`, `attempt=1`,
+  `outcome=retry`, dengan `task_id` dan `duration`; tidak ada payload, storage key,
+  credential, atau raw SDK error. Tes memeriksa daftar field log secara ketat.
+
+Perintah verifikasi utama:
+
+```sh
+rtk proxy env GOCACHE=/tmp/lawang-go-build go test ./internal/adapter/queue ./cmd/worker ./internal/platform/config -count=1
+rtk proxy env GOCACHE=/tmp/lawang-go-build go test ./tests/integration -run '^(TestScheduledCleanupRedisMinIORetriesAndMarksObject|TestCleanupRetriesRealMinIOOutageThroughRedis|TestCleanupWorkerAndRedisRestartPreservesPendingTask|TestCleanupShutdownDuringActiveDeleteIsBoundedAndRecoverable|TestWorkerMuxRoutesProviderExpiryAndCleanupThroughRedis|TestFullProviderVerificationVerifiedFlowUsesEveryRealBoundary|TestManualCleanupDeletesOneSafeObjectAndPersistsItsMarker)$' -count=1
+rtk proxy env GOCACHE=/tmp/lawang-go-build go test -race ./internal/adapter/queue ./cmd/worker ./internal/platform/config -count=1
+rtk proxy env GOCACHE=/tmp/lawang-go-build go vet ./...
+rtk proxy docker compose config --quiet
+rtk proxy git diff --check
+```
